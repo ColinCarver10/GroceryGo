@@ -2,36 +2,33 @@ import Link from 'next/link'
 
 export default function HomePage() {
   return (
-    <div className="min-h-screen bg-[#FAFAFA]">
+    <div className="gg-bg-page min-h-screen">
       {/* Hero Section */}
-      <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="flex min-h-screen flex-col items-center justify-center py-12 text-center">
+      <main className="gg-container">
+        <div className="gg-hero">
           
           {/* Logo/Brand */}
           <div className="mb-8">
-            <h1 className="text-5xl font-bold text-[#2DBE60] sm:text-6xl lg:text-7xl">
+            <h1 className="gg-logo">
               GroceryGo
             </h1>
           </div>
 
           {/* Main Headline */}
           <div className="mb-6 max-w-3xl">
-            <h2 className="text-3xl font-bold text-[#1F2937] sm:text-4xl lg:text-5xl">
+            <h2 className="gg-heading-hero">
               Let&apos;s make healthy eating easy this week!
             </h2>
           </div>
 
           {/* Subheadline */}
-          <p className="mb-12 max-w-2xl text-lg text-[#6B7280] sm:text-xl">
+          <p className="gg-text-subtitle mb-12 max-w-2xl">
             Get AI-powered weekly meal plans, a ready-to-go grocery cart, and Instacart delivery — all while staying under your budget.
           </p>
 
           {/* CTA Button */}
           <div className="mb-16">
-            <Link
-              href="/ai-chat"
-              className="inline-block rounded-xl bg-[#2DBE60] px-8 py-4 text-lg font-semibold text-white shadow-md transition-all hover:bg-[#26a854] hover:shadow-lg"
-            >
+            <Link href="/onboarding" className="gg-btn-primary">
               Get Started
             </Link>
           </div>
@@ -40,34 +37,34 @@ export default function HomePage() {
           <div className="mt-8 grid w-full max-w-5xl gap-6 sm:grid-cols-3">
             
             {/* Feature 1 */}
-            <div className="rounded-xl bg-white p-6 shadow-md">
-              <div className="mb-4 text-4xl">🍽️</div>
-              <h3 className="mb-2 text-xl font-semibold text-[#1F2937]">
+            <div className="gg-card-feature">
+              <div className="gg-card-icon">🍽️</div>
+              <h3 className="gg-heading-card mb-2">
                 Healthy Meal Plans
               </h3>
-              <p className="text-[#6B7280]">
+              <p className="gg-text-body">
                 AI creates personalized weekly meal plans perfect for beginner cooks.
               </p>
             </div>
 
             {/* Feature 2 */}
-            <div className="rounded-xl bg-white p-6 shadow-md">
-              <div className="mb-4 text-4xl">🛒</div>
-              <h3 className="mb-2 text-xl font-semibold text-[#1F2937]">
+            <div className="gg-card-feature">
+              <div className="gg-card-icon">🛒</div>
+              <h3 className="gg-heading-card mb-2">
                 Auto Grocery Cart
               </h3>
-              <p className="text-[#6B7280]">
+              <p className="gg-text-body">
                 We build your shopping list automatically and check out via Instacart.
               </p>
             </div>
 
             {/* Feature 3 */}
-            <div className="rounded-xl bg-white p-6 shadow-md">
-              <div className="mb-4 text-4xl">💰</div>
-              <h3 className="mb-2 text-xl font-semibold text-[#1F2937]">
+            <div className="gg-card-feature">
+              <div className="gg-card-icon">💰</div>
+              <h3 className="gg-heading-card mb-2">
                 Budget Friendly
               </h3>
-              <p className="text-[#6B7280]">
+              <p className="gg-text-body">
                 Stay under your weekly budget with smart suggestions and savings.
               </p>
             </div>

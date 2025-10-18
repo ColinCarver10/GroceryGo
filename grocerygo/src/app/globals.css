@@ -1,26 +1,242 @@
 @import "tailwindcss";
 
+/* ============================================
+   GroceryGo Design System
+   Based on planner specifications
+   ============================================ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  /* Brand Colors */
+  --gg-primary: #2DBE60;      /* main CTAs */
+  --gg-primary-hover: #26a854;
+  --gg-secondary: #8B5CF6;    /* AI/assistant accents */
+  --gg-accent: #F6A609;       /* deals/savings */
+  
+  /* Text Colors */
+  --gg-text: #1F2937;
+  --gg-text-sub: #6B7280;
+  
+  /* Background Colors */
+  --gg-bg: #FAFAFA;
+  --gg-bg-white: #FFFFFF;
+  --gg-border: #E5E7EB;
+  
+  /* Status Colors */
+  --gg-success: #16A34A;
+  --gg-warning: #F59E0B;
+  --gg-error: #DC2626;
+  
+  /* Typography */
+  --gg-font-family: 'Inter', system-ui, sans-serif;
+  --gg-font-size-base: 16px;
+  --gg-line-height: 1.5;
+  
+  /* Border Radius */
+  --gg-radius-sm: 8px;
+  --gg-radius-md: 12px;
+  --gg-radius-lg: 16px;
+  
+  /* Spacing (4px grid) */
+  --gg-space-1: 4px;
+  --gg-space-2: 8px;
+  --gg-space-3: 12px;
+  --gg-space-4: 16px;
+  --gg-space-5: 20px;
+  --gg-space-6: 24px;
+  --gg-space-8: 32px;
+  --gg-space-12: 48px;
+  --gg-space-16: 64px;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--gg-bg);
+  color: var(--gg-text);
+  font-family: var(--gg-font-family);
+  font-size: var(--gg-font-size-base);
+  line-height: var(--gg-line-height);
+}
+
+/* ============================================
+   Typography Components
+   ============================================ */
+
+.gg-logo {
+  @apply text-5xl sm:text-6xl lg:text-7xl font-bold;
+  color: var(--gg-primary);
+}
+
+.gg-heading-hero {
+  @apply text-3xl sm:text-4xl lg:text-5xl font-bold;
+  color: var(--gg-text);
+}
+
+.gg-heading-section {
+  @apply text-2xl sm:text-3xl font-bold;
+  color: var(--gg-text);
+}
+
+.gg-heading-card {
+  @apply text-xl font-semibold;
+  color: var(--gg-text);
+}
+
+.gg-text-body {
+  @apply text-base sm:text-lg;
+  color: var(--gg-text-sub);
+}
+
+.gg-text-subtitle {
+  @apply text-lg sm:text-xl;
+  color: var(--gg-text-sub);
+}
+
+/* ============================================
+   Button Components
+   ============================================ */
+
+.gg-btn-primary {
+  @apply inline-block px-8 py-4 text-lg font-semibold text-white rounded-xl shadow-md transition-all;
+  background-color: var(--gg-primary);
+}
+
+.gg-btn-primary:hover {
+  background-color: var(--gg-primary-hover);
+  @apply shadow-lg;
+}
+
+.gg-btn-secondary {
+  @apply inline-block px-8 py-4 text-lg font-semibold text-white rounded-xl shadow-md transition-all;
+  background-color: var(--gg-secondary);
+}
+
+.gg-btn-secondary:hover {
+  @apply brightness-110 shadow-lg;
+}
+
+.gg-btn-outline {
+  @apply inline-block px-8 py-4 text-lg font-semibold rounded-xl border-2 transition-all;
+  color: var(--gg-primary);
+  border-color: var(--gg-primary);
+  background-color: transparent;
+}
+
+.gg-btn-outline:hover {
+  background-color: var(--gg-primary);
+  @apply text-white shadow-md;
+}
+
+/* Button Size Modifiers */
+.gg-btn-sm {
+  @apply px-4 py-2 text-sm;
+}
+
+/* ============================================
+   Card Components
+   ============================================ */
+
+.gg-card {
+  @apply rounded-xl shadow-md p-6 transition-all;
+  background-color: var(--gg-bg-white);
+  border: 1px solid var(--gg-border);
+}
+
+.gg-card:hover {
+  @apply shadow-lg;
+}
+
+.gg-card-feature {
+  @apply rounded-xl shadow-md p-6;
+  background-color: var(--gg-bg-white);
+}
+
+.gg-card-icon {
+  @apply mb-4 text-4xl;
+}
+
+/* ============================================
+   Layout Components
+   ============================================ */
+
+.gg-container {
+  @apply mx-auto max-w-7xl px-4 sm:px-6 lg:px-8;
+}
+
+.gg-section {
+  @apply py-12 sm:py-16 lg:py-20;
+}
+
+.gg-hero {
+  @apply min-h-screen flex flex-col items-center justify-center py-12 text-center;
+}
+
+/* ============================================
+   Status & Feedback Components
+   ============================================ */
+
+.gg-badge-success {
+  @apply inline-block px-3 py-1 rounded-lg text-sm font-medium text-white;
+  background-color: var(--gg-success);
+}
+
+.gg-badge-warning {
+  @apply inline-block px-3 py-1 rounded-lg text-sm font-medium text-white;
+  background-color: var(--gg-warning);
+}
+
+.gg-badge-accent {
+  @apply inline-block px-3 py-1 rounded-lg text-sm font-medium text-white;
+  background-color: var(--gg-accent);
+}
+
+.gg-alert {
+  @apply p-4 rounded-xl border;
+  background-color: var(--gg-bg-white);
+}
+
+/* ============================================
+   Form Components
+   ============================================ */
+
+.gg-input {
+  @apply w-full rounded-xl border-2 px-4 py-3 transition-colors;
+  border-color: var(--gg-border);
+}
+
+.gg-input:focus {
+  border-color: var(--gg-primary);
+  @apply outline-none;
+}
+
+.gg-input::placeholder {
+  color: var(--gg-text-sub);
+  opacity: 0.5;
+}
+
+.gg-label {
+  @apply mb-2 block text-sm font-semibold;
+  color: var(--gg-text);
+}
+
+.gg-form-group {
+  @apply mb-6;
+}
+
+/* ============================================
+   Utility Classes
+   ============================================ */
+
+.gg-bg-page {
+  background-color: var(--gg-bg);
+}
+
+.gg-text-primary {
+  color: var(--gg-primary);
+}
+
+.gg-text-secondary {
+  color: var(--gg-secondary);
+}
+
+.gg-text-accent {
+  color: var(--gg-accent);
 }
