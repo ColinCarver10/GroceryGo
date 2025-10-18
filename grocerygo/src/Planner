@@ -1,0 +1,47 @@
+GroecryGo is a mobile-first web app that generates healthy weekly meal plans using AI, builds a grocery cart, and checks out via Instacart delivery. Core goals: eat healthier, save time, stay under a hard weekly budget. Users are families or individuals, mostly beginner cooks.
+
+🎨 Visual Design Language
+Brand Personality
+
+Cheerful, positive, practical
+
+Feels like a friendly helper, not a “tech platform”
+
+Family and wellness oriented
+
+color:
+  primary:  "#2DBE60"   # main CTAs
+  secondary:"#8B5CF6"   # AI/assistant accents
+  accent:   "#F6A609"   # deals/savings
+  text:     "#1F2937"
+  textSub:  "#6B7280"
+  bg:       "#FAFAFA"
+  border:   "#E5E7EB"
+  success:  "#16A34A"
+  warning:  "#F59E0B"
+  error:    "#DC2626"
+typography:
+  familyHeadings: "Inter, system-ui, sans-serif"
+  familyBody:     "Inter, system-ui, sans-serif"
+  base: 16
+  lineHeight: 1.5
+radius:
+  sm: 8
+  md: 12
+  lg: 16
+elevation:
+  card: "shadow-md"
+spacingScale: 4   # 4px grid (use multiples)
+
+
+💡 Microcopy Guidelines
+
+Tone: Supportive, optimistic, never guilt-driven.
+
+Examples:
+
+“Let’s make healthy eating easy this week!”
+
+“You’re right on budget — nice work 👏”
+
+“Need to save a little? Try the Smart Save switch.”
