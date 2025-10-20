@@ -1,6 +1,28 @@
 import Link from 'next/link'
+import { createClient } from '@/utils/supabase/server'
 
-export default function HomePage() {
+export default async function HomePage() {
+  const supabase = await createClient()
+  
+  // Check if user is authenticated and has completed survey
+  const { data: { user } } = await supabase.auth.getUser()
+  
+  let ctaHref = '/onboarding'
+  
+  if (user) {
+    // Check if user has completed the questionnaire
+    const { data: userData } = await supabase
+      .from('users')
+      .select('survey_response')
+      .eq('user_id', user.id)
+      .single()
+    
+    // If user has completed survey, send them to dashboard
+    if (userData?.survey_response) {
+      ctaHref = '/dashboard'
+    }
+  }
+  
   return (
     <div className="gg-bg-page min-h-screen">
       {/* Hero Section */}
@@ -28,7 +50,7 @@ export default function HomePage() {
 
           {/* CTA Button */}
           <div className="mb-16">
-            <Link href="/onboarding" className="gg-btn-primary">
+            <Link href={ctaHref} className="gg-btn-primary">
               Get Started
             </Link>
           </div>

@@ -206,6 +206,21 @@ export interface MealPlanFeedbackInsert {
   would_make_again?: boolean
 }
 
+// Saved Recipe types
+export interface SavedRecipe {
+  id: string
+  user_id: string
+  recipe_id: string
+  created_at: string
+  notes?: string
+}
+
+export interface SavedRecipeInsert {
+  user_id: string
+  recipe_id: string
+  notes?: string
+}
+
 // Extended types with relations for queries
 export interface MealPlanWithRecipes extends MealPlan {
   meal_plan_recipes: Array<MealPlanRecipe & { recipe: Recipe }>

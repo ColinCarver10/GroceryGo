@@ -21,6 +21,7 @@ export default async function DashboardPage() {
     <DashboardClient 
       surveyResponse={dashboardData.surveyResponse}
       mealPlans={dashboardData.mealPlans}
+      savedRecipes={dashboardData.savedRecipes}
     />
   )
 }

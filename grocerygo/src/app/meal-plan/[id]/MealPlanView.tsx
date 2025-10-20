@@ -4,15 +4,39 @@ import { useState } from 'react'
 import Link from 'next/link'
 import type { MealPlanWithRecipes, Recipe } from '@/types/database'
 import RecipeModal from '@/components/RecipeModal'
+import RecipeCardActions from '@/components/RecipeCardActions'
+import AdjustPlanPanel from '@/components/AdjustPlanPanel'
+import IngredientActions from '@/components/IngredientActions'
+import type { PlanAdjustments } from '@/components/AdjustPlanPanel'
+import { 
+  createInstacartOrder,
+  replaceRecipe,
+  regenerateWithAdjustments,
+  // scaleRecipeServings, // COMMENTED OUT: Scale servings functionality
+  // swapIngredient, // COMMENTED OUT: Swap ingredient functionality
+  // simplifyRecipe // COMMENTED OUT: Simplify recipe functionality
+} from './actions'
+import { excludeIngredient, favorIngredient, saveRecipe, unsaveRecipe } from '@/app/actions/userPreferences'
+import { useRouter } from 'next/navigation'
 
 interface MealPlanViewProps {
   mealPlan: MealPlanWithRecipes
+  savedRecipeIds: string[]
 }
 
-export default function MealPlanView({ mealPlan }: MealPlanViewProps) {
+export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewProps) {
+  const router = useRouter()
   const [activeTab, setActiveTab] = useState<'recipes' | 'shopping'>('recipes')
   const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set())
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null)
+  const [isOrderingInstacart, setIsOrderingInstacart] = useState(false)
+  const [instacartError, setInstacartError] = useState<string | null>(null)
+  
+  // New state for meal plan adjustments
+  const [isAdjustPanelOpen, setIsAdjustPanelOpen] = useState(false)
+  const [favoriteRecipes, setFavoriteRecipes] = useState<Set<string>>(new Set(savedRecipeIds))
+  const [isProcessing, setIsProcessing] = useState(false)
+  const [actionError, setActionError] = useState<string | null>(null)
 
   const toggleItem = (itemId: string) => {
     setCheckedItems(prev => {
@@ -24,6 +48,233 @@ export default function MealPlanView({ mealPlan }: MealPlanViewProps) {
       }
       return newSet
     })
+  }
+
+  // Handler functions for new features
+  const handleReplaceRecipe = async (recipeId: string) => {
+    setIsProcessing(true)
+    setActionError(null)
+    
+    try {
+      // Find the meal type for this recipe
+      const mealPlanRecipe = mealPlan.meal_plan_recipes.find(mpr => mpr.recipe_id === recipeId)
+      const mealType = mealPlanRecipe?.meal_type || 'dinner'
+      
+      const result = await replaceRecipe(mealPlan.id, recipeId, mealType)
+      
+      if (result.success) {
+        router.refresh()
+      } else {
+        setActionError(result.error || 'Failed to replace recipe')
+      }
+    } catch (error) {
+      setActionError('An unexpected error occurred')
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
+  const handleToggleFavorite = async (recipeId: string, isFavorite: boolean) => {
+    // Get recipe name for feedback tracking
+    const recipe = mealPlan.meal_plan_recipes.find(mpr => mpr.recipe_id === recipeId)?.recipe
+    const recipeName = recipe?.name || 'Unknown Recipe'
+    
+    // Optimistically update UI
+    setFavoriteRecipes(prev => {
+      const newSet = new Set(prev)
+      if (isFavorite) {
+        newSet.add(recipeId)
+      } else {
+        newSet.delete(recipeId)
+      }
+      return newSet
+    })
+
+    try {
+      if (isFavorite) {
+        const result = await saveRecipe(mealPlan.user_id, recipeId, recipeName, mealPlan.id)
+        if (!result.success) {
+          // Revert on error
+          setFavoriteRecipes(prev => {
+            const newSet = new Set(prev)
+            newSet.delete(recipeId)
+            return newSet
+          })
+          setActionError(result.error || 'Failed to save recipe')
+        }
+      } else {
+        const result = await unsaveRecipe(mealPlan.user_id, recipeId, recipeName, mealPlan.id)
+        if (!result.success) {
+          // Revert on error
+          setFavoriteRecipes(prev => {
+            const newSet = new Set(prev)
+            newSet.add(recipeId)
+            return newSet
+          })
+          setActionError(result.error || 'Failed to unsave recipe')
+        }
+      }
+    } catch (error) {
+      // Revert on error
+      setFavoriteRecipes(prev => {
+        const newSet = new Set(prev)
+        if (isFavorite) {
+          newSet.delete(recipeId)
+        } else {
+          newSet.add(recipeId)
+        }
+        return newSet
+      })
+      setActionError('An unexpected error occurred')
+    }
+  }
+
+  const handleApplyAdjustments = async (adjustments: PlanAdjustments) => {
+    setIsProcessing(true)
+    setActionError(null)
+    
+    try {
+      const result = await regenerateWithAdjustments(mealPlan.id, adjustments)
+      
+      if (result.success) {
+        setIsAdjustPanelOpen(false)
+        router.refresh()
+      } else {
+        setActionError(result.error || 'Failed to apply adjustments')
+      }
+    } catch (error) {
+      setActionError('An unexpected error occurred')
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
+  const handleExcludeIngredient = async (itemId: string, itemName: string) => {
+    setIsProcessing(true)
+    setActionError(null)
+    
+    try {
+      // Get current user from mealPlan
+      const result = await excludeIngredient(mealPlan.user_id, itemName)
+      
+      if (!result.success) {
+        setActionError(result.error || 'Failed to exclude ingredient')
+      }
+    } catch (error) {
+      setActionError('An unexpected error occurred')
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
+  const handleFavorIngredient = async (itemId: string, itemName: string) => {
+    setIsProcessing(true)
+    setActionError(null)
+    
+    try {
+      const result = await favorIngredient(mealPlan.user_id, itemName)
+      
+      if (!result.success) {
+        setActionError(result.error || 'Failed to favor ingredient')
+      }
+    } catch (error) {
+      setActionError('An unexpected error occurred')
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
+  // COMMENTED OUT: Scale servings functionality (may be added back later)
+  // const handleScaleServings = async (recipeId: string, multiplier: number) => {
+  //   setIsProcessing(true)
+  //   setActionError(null)
+  //   
+  //   try {
+  //     const result = await scaleRecipeServings(mealPlan.id, recipeId, multiplier)
+  //     
+  //     if (result.success) {
+  //       router.refresh()
+  //     } else {
+  //       setActionError(result.error || 'Failed to scale recipe')
+  //     }
+  //   } catch (error) {
+  //     setActionError('An unexpected error occurred')
+  //   } finally {
+  //     setIsProcessing(false)
+  //   }
+  // }
+
+  // COMMENTED OUT: Swap ingredient functionality (may be added back later)
+  // const handleSwapIngredient = async (recipeId: string, oldIngredient: string, newIngredient: string) => {
+  //   setIsProcessing(true)
+  //   setActionError(null)
+  //   
+  //   try {
+  //     const result = await swapIngredient(mealPlan.id, recipeId, oldIngredient, newIngredient)
+  //     
+  //     if (result.success) {
+  //       router.refresh()
+  //     } else {
+  //       setActionError(result.error || 'Failed to swap ingredient')
+  //     }
+  //   } catch (error) {
+  //     setActionError('An unexpected error occurred')
+  //   } finally {
+  //     setIsProcessing(false)
+  //   }
+  // }
+
+  // COMMENTED OUT: Simplify recipe functionality (may be added back later)
+  // const handleSimplifySteps = async (recipeId: string) => {
+  //   setIsProcessing(true)
+  //   setActionError(null)
+  //   
+  //   try {
+  //     const result = await simplifyRecipe(mealPlan.id, recipeId)
+  //     
+  //     if (result.success) {
+  //       router.refresh()
+  //     } else {
+  //       setActionError(result.error || 'Failed to simplify recipe')
+  //     }
+  //   } catch (error) {
+  //     setActionError('An unexpected error occurred')
+  //   } finally {
+  //     setIsProcessing(false)
+  //   }
+  // }
+
+  const handleOrderInstacart = async () => {
+    if (mealPlan.grocery_items.length === 0) {
+      setInstacartError('No items to order')
+      return
+    }
+
+    setIsOrderingInstacart(true)
+    setInstacartError(null)
+
+    try {
+      const mealPlanUrl = `${window.location.origin}/meal-plan/${mealPlan.id}`
+      const mealPlanTitle = `Meal Plan for ${formatDate(mealPlan.week_of)}`
+      
+      const result = await createInstacartOrder(
+        mealPlan.grocery_items,
+        mealPlanTitle,
+        mealPlanUrl
+      )
+
+      if (result.success && result.link) {
+        // Open Instacart in a new tab
+        window.open(result.link, '_blank')
+      } else {
+        setInstacartError(result.error || 'Failed to create Instacart order')
+      }
+    } catch (error) {
+      setInstacartError('An unexpected error occurred')
+      console.error('Error ordering from Instacart:', error)
+    } finally {
+      setIsOrderingInstacart(false)
+    }
   }
 
   const formatDate = (dateStr: string) => {
@@ -98,11 +349,16 @@ export default function MealPlanView({ mealPlan }: MealPlanViewProps) {
               </div>
               <div className="flex items-center gap-3">
                 {getStatusBadge(mealPlan.status)}
-                <button className="gg-btn-outline text-sm py-2 px-4">
-                  Print
-                </button>
-                <button className="gg-btn-primary text-sm py-2 px-4">
-                  Share
+                
+                {/* Adjust Plan Button */}
+                <button
+                  onClick={() => setIsAdjustPanelOpen(true)}
+                  className="gg-btn-outline flex items-center gap-2"
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                  </svg>
+                  Adjust Plan
                 </button>
               </div>
             </div>
@@ -205,12 +461,23 @@ export default function MealPlanView({ mealPlan }: MealPlanViewProps) {
                             </ul>
                           </div>
 
-                            <button 
-                              onClick={() => setSelectedRecipe(recipe)}
-                              className="gg-btn-outline w-full text-sm py-2"
-                            >
-                              View Full Recipe
-                            </button>
+                          {/* Recipe Actions */}
+                          <div className="mb-3">
+                            <RecipeCardActions
+                              recipeId={recipe.id}
+                              recipeName={recipe.name}
+                              isFavorite={favoriteRecipes.has(recipe.id)}
+                              onReplace={handleReplaceRecipe}
+                              onToggleFavorite={handleToggleFavorite}
+                            />
+                          </div>
+
+                          <button 
+                            onClick={() => setSelectedRecipe(recipe)}
+                            className="gg-btn-outline w-full text-sm py-2"
+                          >
+                            View Full Recipe
+                          </button>
                         </div>
                       )
                     })}
@@ -278,6 +545,14 @@ export default function MealPlanView({ mealPlan }: MealPlanViewProps) {
                               ${item.estimated_price.toFixed(2)}
                             </span>
                           )}
+
+                          {/* Ingredient Actions Menu */}
+                          <IngredientActions
+                            itemId={item.id}
+                            itemName={item.item_name}
+                            onExclude={handleExcludeIngredient}
+                            onFavor={handleFavorIngredient}
+                          />
                         </div>
                       ))}
                     </div>
@@ -317,6 +592,42 @@ export default function MealPlanView({ mealPlan }: MealPlanViewProps) {
                   </div>
                 </div>
 
+                {/* Order from Instacart */}
+                <div className="gg-card">
+                  <button
+                    onClick={handleOrderInstacart}
+                    disabled={isOrderingInstacart || mealPlan.grocery_items.length === 0}
+                    className="w-full gg-btn-primary flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isOrderingInstacart ? (
+                      <>
+                        <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Creating Order...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
+                        </svg>
+                        Order from Instacart
+                      </>
+                    )}
+                  </button>
+                  
+                  {instacartError && (
+                    <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                      <p className="text-sm text-red-800">{instacartError}</p>
+                    </div>
+                  )}
+                  
+                  <p className="mt-3 text-xs text-gray-500 text-center">
+                    Your shopping list will open in Instacart where you can complete your order
+                  </p>
+                </div>
+
                 <div className="gg-card bg-blue-50 border-blue-200">
                   <div className="flex gap-3">
                     <svg className="h-6 w-6 text-blue-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -345,7 +656,76 @@ export default function MealPlanView({ mealPlan }: MealPlanViewProps) {
           recipe={selectedRecipe}
           isOpen={!!selectedRecipe}
           onClose={() => setSelectedRecipe(null)}
+          // onScaleServings={handleScaleServings} // COMMENTED OUT: Scale servings functionality
+          // onSwapIngredient={handleSwapIngredient} // COMMENTED OUT: Swap ingredient functionality
+          // onSimplifySteps={handleSimplifySteps} // COMMENTED OUT: Simplify recipe functionality
         />
+      )}
+
+      {/* Adjust Plan Panel */}
+      <AdjustPlanPanel
+        isOpen={isAdjustPanelOpen}
+        onClose={() => setIsAdjustPanelOpen(false)}
+        onApplyAdjustments={handleApplyAdjustments}
+        appliedAdjustments={mealPlan.survey_snapshot?.applied_adjustments || []}
+      />
+
+      {/* Action Error Toast */}
+      {actionError && (
+        <div className="fixed bottom-4 right-4 bg-red-50 border-2 border-red-500 rounded-lg p-4 shadow-lg z-50 max-w-md">
+          <div className="flex items-start gap-3">
+            <svg className="h-6 w-6 text-red-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-red-900">Action Failed</p>
+              <p className="text-sm text-red-800 mt-1">{actionError}</p>
+            </div>
+            <button
+              onClick={() => setActionError(null)}
+              className="text-red-600 hover:text-red-800"
+            >
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Processing Overlay */}
+      {isProcessing && (
+        <>
+          {/* Backdrop */}
+          <div className="fixed inset-0 bg-black opacity-40 z-50" />
+          
+          {/* Content */}
+          <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
+            <div className="bg-white rounded-xl shadow-2xl p-6 flex flex-col items-center gap-4 pointer-events-auto">
+              <svg
+                className="animate-spin h-12 w-12 text-[var(--gg-primary)]"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                />
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                />
+              </svg>
+              <p className="text-gray-700 font-semibold">Processing your request...</p>
+            </div>
+          </div>
+        </>
       )}
     </div>
   )

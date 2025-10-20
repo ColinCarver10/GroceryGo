@@ -1,5 +1,5 @@
 const MEASUREMENT_UNITS_PROMPT = `
-When specifying ingredient quantities, use these standardized measurement units:
+When specifying ingredient quantities, use these standardized measurement units based on Instacart's API requirements:
 
 Volume Measurements:
 - cup, cups, or c (e.g., walnuts, heavy cream, rolled oats)
@@ -9,7 +9,7 @@ Volume Measurements:
 - liter, litre, liters, litres, or l (e.g., water, juice)
 - pint, pints, pt, or pts (e.g., ice cream)
 - quart, quarts, qt, or qts (e.g., ice cream)
-- tablespoon, tablespoons, tb, or tbs (e.g., oil, salt, sugar)
+- tablespoon, tablespoons, tb, or tbs (e.g., oil, salt, sugar) - DO NOT use "tbsp"
 - teaspoon, teaspoons, ts, tsp, or tspn (e.g., pepper, spices)
 
 Weight Measurements:
@@ -21,7 +21,7 @@ Weight Measurements:
 Countable Items:
 - bunch or bunches (e.g., carrots, beets)
 - can or cans (e.g., corn, beans)
-- each (e.g., tomatoes, onions)
+- each (e.g., tomatoes, onions, garlic cloves) - Use for individual items
 - ears (e.g., corn)
 - head or heads (e.g., lettuce)
 - large, lrg, lge, or lg (e.g., eggs, avocados)
@@ -39,10 +39,11 @@ Container Types:
 
 Important Rules:
 1. For countable items (like tomatoes, onions), use "each" rather than weight
-2. Use the most appropriate unit for the ingredient (e.g., "2 cups milk" not "16 fl oz milk")
-3. Be consistent with units throughout the recipe
-4. Use standard abbreviations when appropriate (e.g., "tbsp" for tablespoon)
-5. Include both quantity and unit in the format: "quantity unit" (e.g., "2 cups", "1 lb", "3 each")
+2. For garlic cloves, use "each" as the unit (e.g., "4 each garlic cloves") - DO NOT use "cloves" as a unit
+3. Use the most appropriate unit for the ingredient (e.g., "2 cups milk" not "16 fl oz milk")
+4. Be consistent with units throughout the recipe
+5. ONLY use abbreviations from the list above (e.g., "tbs" or "tb" for tablespoon, NEVER "tbsp")
+6. Include both quantity and unit in the format: "quantity unit" (e.g., "2 cups", "1 lb", "3 each")
 `;
 
 const mealPlanFromSurveyPrompt = `You are an expert meal planner generating personalized meal plans based on user preferences.  

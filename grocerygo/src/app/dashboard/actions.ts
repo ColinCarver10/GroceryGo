@@ -3,7 +3,7 @@
 import { createClient } from '@/utils/supabase/server'
 import { unstable_cache } from 'next/cache'
 import { revalidateTag } from 'next/cache'
-import type { MealPlanWithRecipes } from '@/types/database'
+import type { MealPlanWithRecipes, Recipe } from '@/types/database'
 
 export async function getUserDashboardData(userId: string) {
   const supabase = await createClient()
@@ -37,10 +37,25 @@ export async function getUserDashboardData(userId: string) {
     console.error('Error fetching meal plans:', plansError)
   }
 
+  // Fetch saved recipes with full recipe details
+  const { data: savedRecipes, error: savedError } = await supabase
+    .from('saved_recipes')
+    .select(`
+      *,
+      recipe:recipes (*)
+    `)
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+
+  if (savedError) {
+    console.error('Error fetching saved recipes:', savedError)
+  }
+
   return {
     surveyResponse: userData?.survey_response || null,
     email: userData?.email || '',
-    mealPlans: (mealPlans as MealPlanWithRecipes[]) || []
+    mealPlans: (mealPlans as MealPlanWithRecipes[]) || [],
+    savedRecipes: savedRecipes || []
   }
 }
 

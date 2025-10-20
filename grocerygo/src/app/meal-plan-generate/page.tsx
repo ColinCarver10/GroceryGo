@@ -164,59 +164,59 @@ export default function MealPlanGeneratePage() {
                 <h2 className="gg-heading-section mb-6">Select Your Meals</h2>
 
                 {/* Meal Type Headers */}
-                <div className="grid grid-cols-[120px,1fr,1fr,1fr] gap-4 mb-4">
-                  <div></div>
-                  <button
-                    onClick={() => toggleAllForMealType('breakfast')}
-                    className="text-center font-semibold text-gray-700 hover:text-[var(--gg-primary)] transition-colors"
-                  >
-                    🍳 Breakfast
-                  </button>
-                  <button
-                    onClick={() => toggleAllForMealType('lunch')}
-                    className="text-center font-semibold text-gray-700 hover:text-[var(--gg-primary)] transition-colors"
-                  >
-                    🥗 Lunch
-                  </button>
-                  <button
-                    onClick={() => toggleAllForMealType('dinner')}
-                    className="text-center font-semibold text-gray-700 hover:text-[var(--gg-primary)] transition-colors"
-                  >
-                    🍽️ Dinner
-                  </button>
+                <div className="flex items-center gap-4 mb-3 px-3">
+                  <div className="w-24"></div>
+                  <div className="flex items-center gap-6 flex-1">
+                    <button
+                      onClick={() => toggleAllForMealType('breakfast')}
+                      className="text-center text-sm font-semibold text-gray-700 hover:text-[var(--gg-primary)] transition-colors flex-1"
+                    >
+                      🍳 Breakfast
+                    </button>
+                    <button
+                      onClick={() => toggleAllForMealType('lunch')}
+                      className="text-center text-sm font-semibold text-gray-700 hover:text-[var(--gg-primary)] transition-colors flex-1"
+                    >
+                      🥗 Lunch
+                    </button>
+                    <button
+                      onClick={() => toggleAllForMealType('dinner')}
+                      className="text-center text-sm font-semibold text-gray-700 hover:text-[var(--gg-primary)] transition-colors flex-1"
+                    >
+                      🍽️ Dinner
+                    </button>
+                  </div>
                 </div>
 
                 {/* Day Rows */}
-                <div className="space-y-3">
+                <div className="space-y-2">
                   {daysOfWeek.map((day) => (
                     <div 
                       key={day.full}
-                      className="grid grid-cols-[120px,1fr,1fr,1fr] gap-4 items-center p-4 rounded-xl border-2 border-gray-200 bg-white hover:border-gray-300 transition-colors"
+                      className="flex items-center gap-4 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors"
                     >
                       <button
                         onClick={() => toggleAllForDay(day.full)}
-                        className="font-semibold text-gray-900 text-left hover:text-[var(--gg-primary)] transition-colors"
+                        className="text-sm font-medium text-gray-900 text-left hover:text-[var(--gg-primary)] transition-colors w-24"
                       >
                         {day.full}
                       </button>
                       
-                      {(['breakfast', 'lunch', 'dinner'] as MealType[]).map((mealType) => (
-                        <button
-                          key={mealType}
-                          onClick={() => toggleMeal(day.full, mealType)}
-                          className={`flex items-center justify-center h-12 rounded-lg border-2 transition-all ${
-                            selections[day.full][mealType]
-                              ? 'border-[var(--gg-primary)] bg-[var(--gg-primary)] bg-opacity-10'
-                              : 'border-gray-200 hover:border-gray-300'
-                          }`}
-                        >
-                          {selections[day.full][mealType] && (
-                            <svg className="h-6 w-6 text-[var(--gg-primary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                            </svg>
-                          )}
-                        </button>
-                      ))}
+                      <div className="flex items-center gap-6 flex-1">
+                        {(['breakfast', 'lunch', 'dinner'] as MealType[]).map((mealType) => (
+                          <label
+                            key={mealType}
+                            className="flex items-center justify-center cursor-pointer flex-1"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selections[day.full][mealType]}
+                              onChange={() => toggleMeal(day.full, mealType)}
+                              className="gg-checkbox"
+                            />
+                          </label>
+                        ))}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -310,8 +310,8 @@ export default function MealPlanGeneratePage() {
                       {totals.dinner}
                     </span>
                   </div>
-                  <div className="flex items-center justify-between py-3 bg-[var(--gg-primary)] bg-opacity-10 rounded-lg px-4">
-                    <span className="font-semibold text-gray-900">Total Meals</span>
+                  <div className="flex items-center justify-between py-3 bg-opacity-10 rounded-lg px-4">
+                    <span className="font-semibold text-gray-900 text-2xl">Total Meals</span>
                     <span className="text-3xl font-bold text-[var(--gg-primary)]">
                       {totals.total}
                     </span>

@@ -2,14 +2,26 @@
 
 import { useEffect } from 'react'
 import type { Recipe } from '@/types/database'
+import RecipeAdjustments from './RecipeAdjustments'
 
 interface RecipeModalProps {
   recipe: Recipe
   isOpen: boolean
   onClose: () => void
+  // Optional callbacks for recipe adjustments
+  onScaleServings?: (recipeId: string, multiplier: number) => void
+  onSwapIngredient?: (recipeId: string, oldIngredient: string, newIngredient: string) => void
+  onSimplifySteps?: (recipeId: string) => void
 }
 
-export default function RecipeModal({ recipe, isOpen, onClose }: RecipeModalProps) {
+export default function RecipeModal({ 
+  recipe, 
+  isOpen, 
+  onClose,
+  onScaleServings,
+  onSwapIngredient,
+  onSimplifySteps
+}: RecipeModalProps) {
   // Handle ESC key to close modal
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
@@ -31,7 +43,7 @@ export default function RecipeModal({ recipe, isOpen, onClose }: RecipeModalProp
     <div className="fixed inset-0 z-50 overflow-y-auto">
       {/* Backdrop */}
       <div 
-        className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
+        className="fixed inset-0 bg-black opacity-40 transition-opacity"
         onClick={onClose}
       />
 
@@ -190,6 +202,26 @@ export default function RecipeModal({ recipe, isOpen, onClose }: RecipeModalProp
                     </div>
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* Recipe Adjustments */}
+            {(onScaleServings || onSwapIngredient || onSimplifySteps) && (
+              <div className="mt-8">
+                <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                  <svg className="h-6 w-6 text-[var(--gg-primary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                  </svg>
+                  Customize This Recipe
+                </h3>
+                <RecipeAdjustments
+                  recipeId={recipe.id}
+                  currentServings={recipe.servings || 4}
+                  ingredients={recipe.ingredients}
+                  onScaleServings={onScaleServings}
+                  onSwapIngredient={onSwapIngredient}
+                  onSimplifySteps={onSimplifySteps}
+                />
               </div>
             )}
 
