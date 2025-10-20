@@ -12,6 +12,7 @@ import {
   createInstacartOrder,
   replaceRecipe,
   regenerateWithAdjustments,
+  saveCookingNote,
   // scaleRecipeServings, // COMMENTED OUT: Scale servings functionality
   // swapIngredient, // COMMENTED OUT: Swap ingredient functionality
   // simplifyRecipe // COMMENTED OUT: Simplify recipe functionality
@@ -243,6 +244,22 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
   //     setIsProcessing(false)
   //   }
   // }
+
+  // Handler for saving cooking notes from AI assistant
+  const handleSaveCookingNote = async (recipeId: string, note: string) => {
+    try {
+      const result = await saveCookingNote(recipeId, note)
+      
+      if (result.success) {
+        // Refresh the page to show updated notes
+        router.refresh()
+      } else {
+        console.error('Failed to save cooking note:', result.error)
+      }
+    } catch (error) {
+      console.error('Error saving cooking note:', error)
+    }
+  }
 
   const handleOrderInstacart = async () => {
     if (mealPlan.grocery_items.length === 0) {
@@ -656,6 +673,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
           recipe={selectedRecipe}
           isOpen={!!selectedRecipe}
           onClose={() => setSelectedRecipe(null)}
+          onSaveCookingNote={handleSaveCookingNote}
           // onScaleServings={handleScaleServings} // COMMENTED OUT: Scale servings functionality
           // onSwapIngredient={handleSwapIngredient} // COMMENTED OUT: Swap ingredient functionality
           // onSimplifySteps={handleSimplifySteps} // COMMENTED OUT: Simplify recipe functionality

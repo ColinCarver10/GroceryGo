@@ -603,3 +603,63 @@ function parseUnit(quantityStr: string): string | undefined {
   return match ? match[1].trim() : undefined
 }
 
+/**
+ * Save a cooking note to a recipe
+ * This adds AI-generated cooking tips to the recipe's cooking_notes array
+ */
+export async function saveCookingNote(
+  recipeId: string,
+  note: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createClient()
+
+    // Validate input
+    if (!note || note.trim().length === 0) {
+      return { success: false, error: 'Note cannot be empty' }
+    }
+
+    if (note.length > 500) {
+      return { success: false, error: 'Note is too long' }
+    }
+
+    // Get current recipe to append to cooking_notes
+    const { data: recipe, error: fetchError } = await supabase
+      .from('recipes')
+      .select('cooking_notes')
+      .eq('id', recipeId)
+      .single()
+
+    if (fetchError) {
+      console.error('Error fetching recipe:', fetchError)
+      return { success: false, error: 'Recipe not found' }
+    }
+
+    // Append note to existing notes (or create new array)
+    const existingNotes = recipe.cooking_notes || []
+    const updatedNotes = [...existingNotes, note.trim()]
+
+    // Update recipe with new notes
+    const { error: updateError } = await supabase
+      .from('recipes')
+      .update({ cooking_notes: updatedNotes })
+      .eq('id', recipeId)
+
+    if (updateError) {
+      console.error('Error updating recipe notes:', updateError)
+      return { success: false, error: 'Failed to save note' }
+    }
+
+    // Revalidate to refresh the UI
+    revalidateTag('meal-plans')
+
+    return { success: true }
+  } catch (error) {
+    console.error('Error saving cooking note:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Failed to save note' 
+    }
+  }
+}
+

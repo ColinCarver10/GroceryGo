@@ -46,6 +46,7 @@ export interface Recipe {
   
   times_used?: number
   avg_rating?: number
+  cooking_notes?: string[] // AI-generated cooking tips and notes
 }
 
 export interface RecipeInsert {
@@ -75,6 +76,7 @@ export interface RecipeInsert {
     carbs?: number
     fat?: number
   }
+  cooking_notes?: string[]
 }
 
 // Meal Plan types

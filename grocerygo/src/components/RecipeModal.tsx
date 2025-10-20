@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import type { Recipe } from '@/types/database'
 import RecipeAdjustments from './RecipeAdjustments'
+import { askRecipeCookingQuestion } from '@/app/actions/recipeCookingAssistant'
 
 interface RecipeModalProps {
   recipe: Recipe
@@ -12,6 +13,14 @@ interface RecipeModalProps {
   onScaleServings?: (recipeId: string, multiplier: number) => void
   onSwapIngredient?: (recipeId: string, oldIngredient: string, newIngredient: string) => void
   onSimplifySteps?: (recipeId: string) => void
+  // Optional callback to save cooking notes
+  onSaveCookingNote?: (recipeId: string, note: string) => void
+}
+
+interface ChatMessage {
+  question: string
+  answer: string
+  timestamp: Date
 }
 
 export default function RecipeModal({ 
@@ -20,8 +29,15 @@ export default function RecipeModal({
   onClose,
   onScaleServings,
   onSwapIngredient,
-  onSimplifySteps
+  onSimplifySteps,
+  onSaveCookingNote
 }: RecipeModalProps) {
+  // State for cooking assistant
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
+  const [currentQuestion, setCurrentQuestion] = useState('')
+  const [isAsking, setIsAsking] = useState(false)
+  const [askError, setAskError] = useState<string | null>(null)
+
   // Handle ESC key to close modal
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
@@ -36,6 +52,60 @@ export default function RecipeModal({
       document.body.style.overflow = 'unset'
     }
   }, [isOpen, onClose])
+
+  // Reset chat when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      setChatMessages([])
+      setCurrentQuestion('')
+      setAskError(null)
+    }
+  }, [isOpen])
+
+  // Handle asking a cooking question
+  const handleAskQuestion = async () => {
+    if (!currentQuestion.trim()) return
+
+    setIsAsking(true)
+    setAskError(null)
+
+    try {
+      const result = await askRecipeCookingQuestion(
+        recipe.name,
+        recipe.ingredients,
+        recipe.steps,
+        currentQuestion
+      )
+
+      if (result.success && result.data) {
+        // Add message to chat
+        setChatMessages(prev => [...prev, {
+          question: currentQuestion,
+          answer: result.data!.detailedResponse,
+          timestamp: new Date()
+        }])
+
+        // Save note to recipe if callback provided AND response is recipe-related
+        // Don't save notes for rejection messages (non-recipe questions)
+        const isRejectionMessage = 
+          result.data.shortSummary.toLowerCase().includes('not related') ||
+          result.data.detailedResponse.toLowerCase().includes('only help with questions about cooking this specific recipe')
+        
+        if (onSaveCookingNote && result.data.shortSummary && !isRejectionMessage) {
+          onSaveCookingNote(recipe.id, result.data.shortSummary)
+        }
+
+        // Clear input
+        setCurrentQuestion('')
+      } else {
+        setAskError(result.error || 'Failed to get answer')
+      }
+    } catch (error) {
+      setAskError('An unexpected error occurred')
+    } finally {
+      setIsAsking(false)
+    }
+  }
 
   if (!isOpen) return null
 
@@ -254,6 +324,113 @@ export default function RecipeModal({
                 ))}
               </div>
             )}
+
+            {/* Cooking Notes Section */}
+            {recipe.cooking_notes && recipe.cooking_notes.length > 0 && (
+              <div className="mt-8 p-6 rounded-xl bg-gradient-to-br from-amber-50 to-yellow-50 border border-amber-200">
+                <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                  <svg className="h-6 w-6 text-[var(--gg-primary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  Cooking Notes
+                </h3>
+                <div className="space-y-2">
+                  {recipe.cooking_notes.map((note, index) => (
+                    <div 
+                      key={index}
+                      className="flex items-start gap-3 p-3 rounded-lg bg-white"
+                    >
+                      <div className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-500 text-white text-xs font-bold flex-shrink-0 mt-0.5">
+                        •
+                      </div>
+                      <p className="flex-1 text-gray-700 text-sm">
+                        {note}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Cooking Assistant */}
+            <div className="mt-8 p-6 rounded-xl bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-200">
+              <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                <svg className="h-6 w-6 text-[var(--gg-primary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Cooking Assistant
+                <span className="text-xs text-gray-500 font-normal ml-2">
+                  Ask questions about cooking this recipe
+                </span>
+              </h3>
+
+              {/* Chat Messages */}
+              {chatMessages.length > 0 && (
+                <div className="mb-4 space-y-3 max-h-60 overflow-y-auto">
+                  {chatMessages.map((msg, index) => (
+                    <div key={index} className="space-y-2">
+                      {/* User Question */}
+                      <div className="flex justify-end">
+                        <div className="max-w-[80%] p-3 rounded-lg bg-indigo-600 text-white">
+                          <p className="text-sm">{msg.question}</p>
+                        </div>
+                      </div>
+                      {/* AI Answer */}
+                      <div className="flex justify-start">
+                        <div className="max-w-[80%] p-3 rounded-lg bg-white border border-indigo-200">
+                          <p className="text-sm text-gray-700">{msg.answer}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Error Message */}
+              {askError && (
+                <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200">
+                  <p className="text-sm text-red-600">{askError}</p>
+                </div>
+              )}
+
+              {/* Question Input */}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={currentQuestion}
+                  onChange={(e) => setCurrentQuestion(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !isAsking) {
+                      handleAskQuestion()
+                    }
+                  }}
+                  placeholder="Ask about ingredients, techniques, timing..."
+                  className="flex-1 px-4 py-3 rounded-lg border border-indigo-300 focus:outline-none focus:ring-2 focus:ring-[var(--gg-primary)] focus:border-transparent text-sm"
+                  disabled={isAsking}
+                />
+                <button
+                  onClick={handleAskQuestion}
+                  disabled={isAsking || !currentQuestion.trim()}
+                  className="px-6 py-3 rounded-lg bg-[var(--gg-primary)] text-white font-medium hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {isAsking ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      <span>Asking...</span>
+                    </>
+                  ) : (
+                    <span>Ask</span>
+                  )}
+                </button>
+              </div>
+              
+              <p className="mt-3 text-xs text-gray-500 italic">
+                Note: This assistant only answers questions about cooking this specific recipe.
+              </p>
+            </div>
           </div>
         </div>
       </div>
