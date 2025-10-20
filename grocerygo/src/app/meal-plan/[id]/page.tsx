@@ -1,6 +1,5 @@
 import { createClient } from '@/utils/supabase/server'
 import { redirect, notFound } from 'next/navigation'
-import Link from 'next/link'
 import MealPlanView from './MealPlanView'
 import { getMealPlanById } from '@/app/actions/mealPlans'
 import { getSavedRecipeIds } from '@/app/actions/userPreferences'

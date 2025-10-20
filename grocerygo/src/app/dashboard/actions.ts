@@ -3,7 +3,7 @@
 import { createClient } from '@/utils/supabase/server'
 import { unstable_cache } from 'next/cache'
 import { revalidateTag } from 'next/cache'
-import type { MealPlanWithRecipes, Recipe } from '@/types/database'
+import type { MealPlanWithRecipes } from '@/types/database'
 
 export async function getUserDashboardData(userId: string) {
   const supabase = await createClient()

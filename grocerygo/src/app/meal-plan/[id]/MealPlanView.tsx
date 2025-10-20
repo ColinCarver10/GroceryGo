@@ -69,7 +69,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
         setActionError(result.error || 'Failed to replace recipe')
       }
     } catch (error) {
-      setActionError('An unexpected error occurred')
+      setActionError('An unexpected error occurred:' + error)
     } finally {
       setIsProcessing(false)
     }
@@ -126,7 +126,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
         }
         return newSet
       })
-      setActionError('An unexpected error occurred')
+      setActionError('An unexpected error occurred' + error)
     }
   }
 
@@ -144,7 +144,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
         setActionError(result.error || 'Failed to apply adjustments')
       }
     } catch (error) {
-      setActionError('An unexpected error occurred')
+      setActionError('An unexpected error occurred' + error)
     } finally {
       setIsProcessing(false)
     }
@@ -162,7 +162,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
         setActionError(result.error || 'Failed to exclude ingredient')
       }
     } catch (error) {
-      setActionError('An unexpected error occurred')
+      setActionError('An unexpected error occurred' + error)
     } finally {
       setIsProcessing(false)
     }
@@ -179,7 +179,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
         setActionError(result.error || 'Failed to favor ingredient')
       }
     } catch (error) {
-      setActionError('An unexpected error occurred')
+      setActionError('An unexpected error occurred' + error)
     } finally {
       setIsProcessing(false)
     }

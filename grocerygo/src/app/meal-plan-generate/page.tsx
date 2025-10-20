@@ -30,7 +30,6 @@ export default function MealPlanGeneratePage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
-  const [mealPlanId, setMealPlanId] = useState<string | null>(null)
 
   // Initialize with all meals selected
   const [selections, setSelections] = useState<MealSelections>(
@@ -120,7 +119,6 @@ export default function MealPlanGeneratePage() {
         }
       } else if (result.saved) {
         setSuccess(true)
-        setMealPlanId(result.mealPlanId || null)
       } else {
         setError('Failed to save meal plan. Please try again.')
       }

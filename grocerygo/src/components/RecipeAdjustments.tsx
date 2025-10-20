@@ -1,6 +1,5 @@
 'use client'
 
-import { useState } from 'react'
 
 interface RecipeAdjustmentsProps {
   recipeId: string
@@ -8,6 +7,7 @@ interface RecipeAdjustmentsProps {
   ingredients: Array<{
     item: string
     quantity: string
+    unit?: string
   }>
   onScaleServings?: (recipeId: string, multiplier: number) => void
   onSwapIngredient?: (recipeId: string, oldIngredient: string, newIngredient: string) => void
@@ -21,7 +21,7 @@ export default function RecipeAdjustments({
   onScaleServings,
   onSwapIngredient,
   onSimplifySteps
-}: RecipeAdjustmentsProps) {
+}: RecipeAdjustmentsProps){
   // COMMENTED OUT: Scale servings state and handlers
   // const [selectedMultiplier, setSelectedMultiplier] = useState(1)
   // const [isScaling, setIsScaling] = useState(false)

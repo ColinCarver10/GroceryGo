@@ -12,7 +12,6 @@ interface RecipeCardActionsProps {
 
 export default function RecipeCardActions({
   recipeId,
-  recipeName,
   isFavorite,
   onReplace,
   onToggleFavorite

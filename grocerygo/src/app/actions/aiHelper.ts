@@ -103,11 +103,4 @@ export async function callOpenAI<T>(
   }
 }
 
-/**
- * Helper to extract JSON from markdown code blocks
- */
-function extractJSON(response: string): string {
-  const jsonMatch = response.match(/```json\n?([\s\S]*?)\n?```/) || response.match(/```\n?([\s\S]*?)\n?```/)
-  return jsonMatch ? jsonMatch[1] : response
-}
 

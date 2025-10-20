@@ -9,7 +9,6 @@ import { trackMealPlanAction } from '@/app/actions/feedbackHelper'
 import { 
   replaceRecipePrompt, 
   bulkAdjustmentPrompt, 
-  swapIngredientPrompt, 
   simplifyRecipePrompt 
 } from './prompts'
 

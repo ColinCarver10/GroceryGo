@@ -101,7 +101,7 @@ export default function RecipeModal({
         setAskError(result.error || 'Failed to get answer')
       }
     } catch (error) {
-      setAskError('An unexpected error occurred')
+      setAskError('An unexpected error occurred: ' + error)
     } finally {
       setIsAsking(false)
     }
