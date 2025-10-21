@@ -219,7 +219,6 @@ export default function OnboardingPage() {
   const handleNext = async () => {
     if (isLastSection) {
       // Save answers and redirect to meal planning
-      console.log('Final answers:', answers)
       const result = await saveSurveyResponse(answers)
       
       if (result.success) {
