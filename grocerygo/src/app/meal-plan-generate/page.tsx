@@ -133,15 +133,17 @@ export default function MealPlanGeneratePage() {
         } else {
           setError(result.error)
         }
-      } else if (result.saved) {
-        setSuccess(true)
+        setLoading(false)
+      } else if (result.success && result.mealPlanId) {
+        // Redirect to streaming generation page
+        router.push(`/meal-plan/generating/${result.mealPlanId}`)
       } else {
-        setError('Failed to save meal plan. Please try again.')
+        setError('Failed to create meal plan. Please try again.')
+        setLoading(false)
       }
     } catch (err) {
       console.error('Generation error:', err)
       setError('An unexpected error occurred. Please try again.')
-    } finally {
       setLoading(false)
     }
   }
@@ -174,16 +176,17 @@ export default function MealPlanGeneratePage() {
         } else {
           setError(result.error)
         }
-      } else if (result.saved) {
-        setSuccess(true)
-        setConflictData(null)
+        setLoading(false)
+      } else if (result.success && result.mealPlanId) {
+        // Redirect to streaming generation page
+        router.push(`/meal-plan/generating/${result.mealPlanId}`)
       } else {
-        setError('Failed to save meal plan. Please try again.')
+        setError('Failed to create meal plan. Please try again.')
+        setLoading(false)
       }
     } catch (err) {
       console.error('Replacement error:', err)
       setError('An unexpected error occurred. Please try again.')
-    } finally {
       setLoading(false)
     }
   }

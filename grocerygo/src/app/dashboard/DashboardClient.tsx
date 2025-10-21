@@ -318,10 +318,13 @@ export default function DashboardClient({ surveyResponse, mealPlans, savedRecipe
                                   ? 'bg-green-100 text-green-800'
                                   : plan.status === 'in-progress'
                                   ? 'bg-blue-100 text-blue-800'
+                                  : plan.status === 'generating'
+                                  ? 'bg-yellow-100 text-yellow-800'
                                   : 'bg-gray-100 text-gray-800'
                               }`}>
                                 {plan.status === 'completed' ? 'Completed' : 
-                                 plan.status === 'in-progress' ? 'In Progress' : 'Pending'}
+                                 plan.status === 'in-progress' ? 'In Progress' :
+                                 plan.status === 'generating' ? 'Generating...' : 'Pending'}
                               </span>
                             </div>
                             

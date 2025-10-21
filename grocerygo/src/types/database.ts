@@ -85,7 +85,7 @@ export interface MealPlan {
   user_id: string
   created_at: string
   week_of: string
-  status: 'completed' | 'in-progress' | 'pending'
+  status: 'completed' | 'in-progress' | 'pending' | 'generating'
   total_meals: number
   total_budget?: number
   
@@ -98,7 +98,7 @@ export interface MealPlan {
 export interface MealPlanInsert {
   user_id: string
   week_of: string
-  status: 'completed' | 'in-progress' | 'pending'
+  status: 'completed' | 'in-progress' | 'pending' | 'generating'
   total_meals: number
   total_budget?: number
   
