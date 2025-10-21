@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { generateMealPlanFromPreferences } from '@/app/meal-plan-generate/actions'
+import { generateMealPlanFromPreferences, replaceExistingMealPlan } from '@/app/meal-plan-generate/actions'
 
 const daysOfWeek = [
   { short: 'Mon', full: 'Monday' },
@@ -30,6 +30,11 @@ export default function MealPlanGeneratePage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
+  const [showReplaceDialog, setShowReplaceDialog] = useState(false)
+  const [conflictData, setConflictData] = useState<{
+    existingPlanId: string
+    weekOf: string
+  } | null>(null)
 
   // Initialize with all meals selected
   const [selections, setSelections] = useState<MealSelections>(
@@ -110,6 +115,17 @@ export default function MealPlanGeneratePage() {
         dinner: totals.dinner
       })
 
+      // Check if there's a conflict (existing meal plan)
+      if ((result as any).conflict) {
+        setConflictData({
+          existingPlanId: (result as any).existingPlanId,
+          weekOf: (result as any).weekOf
+        })
+        setShowReplaceDialog(true)
+        setLoading(false)
+        return
+      }
+
       if (result.error) {
         if (result.needsSurvey) {
           setError(result.error)
@@ -128,6 +144,53 @@ export default function MealPlanGeneratePage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleReplace = async () => {
+    if (!conflictData) return
+
+    const totals = getTotalMeals()
+    
+    setLoading(true)
+    setError('')
+    setSuccess(false)
+    setShowReplaceDialog(false)
+
+    try {
+      const result = await replaceExistingMealPlan(
+        conflictData.existingPlanId,
+        conflictData.weekOf,
+        {
+          breakfast: totals.breakfast,
+          lunch: totals.lunch,
+          dinner: totals.dinner
+        }
+      )
+
+      if (result.error) {
+        if (result.needsSurvey) {
+          setError(result.error)
+          setTimeout(() => router.push('/onboarding'), 2000)
+        } else {
+          setError(result.error)
+        }
+      } else if (result.saved) {
+        setSuccess(true)
+        setConflictData(null)
+      } else {
+        setError('Failed to save meal plan. Please try again.')
+      }
+    } catch (err) {
+      console.error('Replacement error:', err)
+      setError('An unexpected error occurred. Please try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleCancelReplace = () => {
+    setShowReplaceDialog(false)
+    setConflictData(null)
   }
 
   const totals = getTotalMeals()
@@ -419,6 +482,39 @@ export default function MealPlanGeneratePage() {
 
         </div>
       </div>
+
+      {/* Replace Meal Plan Dialog */}
+      {showReplaceDialog && (
+        <>
+          <div className="fixed inset-0 z-50 bg-black opacity-30" onClick={handleCancelReplace} />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+            <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 pointer-events-auto">
+              <h3 className="text-xl font-bold text-gray-900 mb-4">
+                Meal Plan Already Exists
+              </h3>
+              <p className="text-gray-600 mb-6">
+                You already have a meal plan for this week. Would you like to replace it with a new one?
+              </p>
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={handleCancelReplace}
+                  disabled={loading}
+                  className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleReplace}
+                  disabled={loading}
+                  className="gg-btn-primary disabled:opacity-50"
+                >
+                  {loading ? 'Replacing...' : 'Replace Meal Plan'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }

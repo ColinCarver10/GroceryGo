@@ -35,6 +35,24 @@ export async function generateMealPlanFromPreferences(
       return { error: 'User not authenticated' }
     }
 
+    // Check if meal plan already exists for this week FIRST (before any expensive operations)
+    const { data: existingPlan } = await supabase
+      .from('meal_plans')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('week_of', weekOf)
+      .single()
+
+    if (existingPlan) {
+      return {
+        parsed: true,
+        conflict: true,
+        existingPlanId: existingPlan.id,
+        weekOf,
+        error: 'A meal plan already exists for this week.'
+      }
+    }
+
     // Get user's survey responses
     const { data: userData } = await supabase
       .from('users')
@@ -64,26 +82,55 @@ export async function generateMealPlanFromPreferences(
 ### User Input:
 ${JSON.stringify(surveyData, null, 2)}
 
-### Special Instructions:
-Generate exactly ${totalMeals} recipes distributed as follows:
-${mealBreakdown.join(', ')}
+---
 
-Make sure to label each recipe with appropriate meal_type: "breakfast", "lunch", or "dinner" based on the meal distribution requested.`
+## 🎯 GENERATION REQUIREMENTS (MANDATORY)
+
+**Recipe Count:** You MUST generate exactly ${totalMeals} recipes total.
+
+**Breakdown:**
+- ${mealSelection.breakfast} recipes with mealType: "Breakfast"
+- ${mealSelection.lunch} recipes with mealType: "Lunch"
+- ${mealSelection.dinner} recipes with mealType: "Dinner"
+
+**Process:**
+1. Generate ${mealSelection.breakfast} breakfast recipes
+2. Generate ${mealSelection.lunch} lunch recipes  
+3. Generate ${mealSelection.dinner} dinner recipes
+4. VALIDATE: Count recipes in your "recipes" array
+   - Breakfasts: Must equal ${mealSelection.breakfast}
+   - Lunches: Must equal ${mealSelection.lunch}
+   - Dinners: Must equal ${mealSelection.dinner}
+   - Total: Must equal ${totalMeals}
+5. If count is incorrect, regenerate the meal plan
+6. Only output when validation passes
+
+**Critical:** The "recipes" array must contain exactly ${totalMeals} recipe objects. Not ${totalMeals - 1}. Not ${totalMeals + 1}. Exactly ${totalMeals}.`
 
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: 'gpt-5',
       messages: [
         {
           role: 'system',
-          content: 'You are an expert meal planning assistant for GroceryGo. Generate detailed, personalized meal plans with recipes and grocery lists in JSON format. Follow the measurement units and formatting guidelines strictly.',
+          content: `You are an expert meal planning assistant for GroceryGo. Generate detailed and personalized meal plans with recipes and a corresponding grocery list in JSON format.
+
+CRITICAL RULES:
+- Generate the EXACT number of recipes requested—no more, no less
+- After generating all recipes, COUNT them and verify the total matches exactly
+- If the count is wrong, you MUST regenerate until it matches
+- Follow measurement units and formatting guidelines strictly
+
+PROCESS:
+1. Plan: Determine recipe distribution (X breakfasts, Y lunches, Z dinners)
+2. Generate: Create each recipe group-by-group (all breakfasts, then all lunches, then all dinners)
+3. Validate: Count recipes per meal type and total before outputting
+4. Output: Return only if validation passes`,
         },
         {
           role: 'user',
           content: enhancedPrompt,
         },
       ],
-      temperature: 0.7,
-      max_tokens: 4000,
     })
 
     const response = completion.choices[0]?.message?.content || 'No response generated'
@@ -104,6 +151,25 @@ Make sure to label each recipe with appropriate meal_type: "breakfast", "lunch",
       }
     }
 
+    // Validate recipe count
+    const generatedCount = aiMealPlan.recipes?.length || 0
+    if (generatedCount !== totalMeals) {
+      console.error(`Recipe count mismatch: Expected ${totalMeals}, got ${generatedCount}`)
+      
+      // Count by meal type
+      const counts = {
+        breakfast: aiMealPlan.recipes?.filter(r => r.mealType?.toLowerCase() === 'breakfast').length || 0,
+        lunch: aiMealPlan.recipes?.filter(r => r.mealType?.toLowerCase() === 'lunch').length || 0,
+        dinner: aiMealPlan.recipes?.filter(r => r.mealType?.toLowerCase() === 'dinner').length || 0,
+      }
+      
+      return {
+        response,
+        parsed: true,
+        error: `AI generated ${generatedCount} recipes instead of ${totalMeals}. Breakdown: ${counts.breakfast} breakfasts (expected ${mealSelection.breakfast}), ${counts.lunch} lunches (expected ${mealSelection.lunch}), ${counts.dinner} dinners (expected ${mealSelection.dinner}). Please try again.`
+      }
+    }
+
     // Save to database
     const result = await createMealPlanFromAI(
       user.id,
@@ -116,7 +182,7 @@ Make sure to label each recipe with appropriate meal_type: "breakfast", "lunch",
       return {
         response,
         parsed: true,
-        error: 'Generated meal plan but failed to save to database.'
+        error: result.error || 'Generated meal plan but failed to save to database.'
       }
     }
 
@@ -141,6 +207,62 @@ Make sure to label each recipe with appropriate meal_type: "breakfast", "lunch",
 
     return {
       error: error?.message || 'Failed to generate meal plan'
+    }
+  }
+}
+
+export async function replaceExistingMealPlan(
+  existingPlanId: string,
+  weekOf: string,
+  mealSelection: MealSelection
+) {
+  try {
+    // Get authenticated user
+    const supabase = await createClient()
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+
+    if (authError || !user) {
+      return { error: 'User not authenticated' }
+    }
+
+    // Verify the existing plan belongs to this user
+    const { data: existingPlan } = await supabase
+      .from('meal_plans')
+      .select('id')
+      .eq('id', existingPlanId)
+      .eq('user_id', user.id)
+      .single()
+
+    if (!existingPlan) {
+      return { error: 'Meal plan not found or does not belong to you' }
+    }
+
+    // Delete the existing meal plan (cascade will handle recipes and grocery items)
+    const { error: deleteError } = await supabase
+      .from('meal_plans')
+      .delete()
+      .eq('id', existingPlanId)
+      .eq('user_id', user.id)
+
+    if (deleteError) {
+      console.error('Error deleting existing meal plan:', deleteError)
+      return { error: 'Failed to delete existing meal plan' }
+    }
+
+    // Now call the existing generate function to create the new meal plan
+    const result = await generateMealPlanFromPreferences(weekOf, mealSelection)
+    
+    // Add replaced flag if successful
+    if (result.saved) {
+      return { ...result, replaced: true }
+    }
+    
+    return result
+
+  } catch (error: any) {
+    console.error('Meal plan replacement error:', error)
+    return {
+      error: error?.message || 'Failed to replace meal plan'
     }
   }
 }

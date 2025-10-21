@@ -174,7 +174,7 @@ export async function replaceRecipe(
         name: newRecipeData.name,
         ingredients: newRecipeData.ingredients,
         steps: newRecipeData.steps,
-        meal_type: [mealType],
+        meal_type: mealType,
         times_used: 1
       } as RecipeInsert)
       .select()
@@ -307,6 +307,7 @@ export async function regenerateWithAdjustments(
           name: aiRecipe.name,
           ingredients: aiRecipe.ingredients,
           steps: aiRecipe.steps,
+          meal_type: aiRecipe.mealType ? aiRecipe.mealType : null,
           times_used: 1
         } as RecipeInsert)
         .select()

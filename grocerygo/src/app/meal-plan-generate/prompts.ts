@@ -53,58 +53,45 @@ Use the provided user input (below) to generate a detailed meal plan.
 {
   "1": "25-34",
   "2": "5+ people",
-  "3": "4-7 meals",
-  "4": "$50-100",
-  "5": "Intermediate (Comfortable with most recipes)",
-  "6": "Quick (15-30 minutes)",
-  "7": ["No restrictions"],
-  "8": ["None"],
-  "9": ["Savory", "Spicy", "Sweet"],
-  "10": ["Eat healthier", "Learn new recipes", "Save money on groceries", "Reduce food waste"],
-  "11": ["Wednesday", "Sunday"],
-  "12": ["Cost efficiency", "Nutrition", "Time saving"]
+  "3": "$50-100",
+  "4": "Intermediate (Comfortable with most recipes)",
+  "5": "Quick (15-30 minutes)",
+  "6": ["No restrictions"],
+  "7": ["None"],
+  "8": ["Savory", "Spicy", "Sweet"],
+  "9": ["Eat healthier", "Learn new recipes", "Save money on groceries", "Reduce food waste"],
+  "10": ["Wednesday", "Sunday"],
+  "11": ["Cost efficiency", "Nutrition", "Time saving"]
 }
 
 ### Your task:
-1. **Number of recipes**:  
-   The total number of recipes you generate must match the user's answer to question 3:  
-   - "0-3 meals" = 3 recipes  
-   - "4-7 meals" = 7 recipes  
-   - "8-14 meals" = 14 recipes  
+1. **Number of recipes** (CRITICAL):  
+   Generate the EXACT number of recipes specified in special instructions below.
+   Distribute precisely by meal type (breakfast, lunch, dinner) as specified.
+   COUNT before outputting. If count is wrong, your response will be rejected.
 
 2. **Dietary restrictions and allergies**:  
-   - Absolutely DO NOT include any ingredients listed in question 7 (Dietary Restrictions) or question 8 (Allergies/Intolerances).  
-   - If none are listed, no restrictions apply.
+   - DO NOT include ingredients from question 6 (Dietary Restrictions) or question 7 (Allergies).
+   - If none listed, no restrictions apply.
 
-3. **User priorities (Question 12)**:  
-   Follow the user's ranked priorities strictly:  
-   - If **Nutrition** is #1: prioritize whole, fresh, healthy ingredients; avoid processed food unless it's unavoidable.
-   - If **Cost efficiency** is #1: strictly reuse ingredients across recipes; reduce total unique items (under 20 if budget is "$50-100").
-   - If **Time saving** is #1: favor pre-made, pre-cut, or ready-to-eat components (rotisserie chicken, salad kits, yogurt bowls) that reduce cooking time.
+3. **User priorities (Question 11)** - Follow ranked priorities:
+   - **Nutrition #1**: Use whole, fresh ingredients. Include protein in every recipe (chicken, fish, eggs, tofu, legumes, yogurt).
+   - **Cost efficiency #1**: Reuse ingredients. Limit unique items (under 20 for "$50-100" budget).
+   - **Time saving #1**: Use pre-made/pre-cut items (rotisserie chicken, salad kits).
 
-4. **Budget (Question 4)**:  
-   - "$50-100": limit total unique grocery items to under 20.
-   - "$101-200": limit unique items to under 30, but ingredient reuse is still encouraged.
-   - "$200+": more flexibility, but reuse ingredients where possible.
+4. **Budget (Question 3)**: "$50-100" = under 20 unique items; "$101-200" = under 30 items; "$200+" = flexible but reuse encouraged.
 
-5. **Cooking skill level (Question 5)**:  
-   - "Beginner": no complex techniques, simple preparation.
-   - "Intermediate": moderate complexity allowed.
-   - "Advanced": complex techniques and diverse ingredients are acceptable.
+5. **Skill level (Question 4)**: Beginner = simple; Intermediate = moderate; Advanced = complex techniques OK.
 
-6. **Available time (Question 6)**:  
-   - "Quick (15-30 minutes)": recipes must be fast or involve minimal cooking (ex: yogurt bowls, sandwiches, sheet pan meals).
-   - "Standard (30-45 minutes)": moderate time recipes okay.
-   - "Extended (45+ minutes)": longer, more complex recipes allowed.
+6. **Time (Question 5)**: "Quick (15-30 min)" = fast recipes; "Standard (30-45 min)" = moderate; "Extended (45+ min)" = complex OK.
 
-7. **Flavor Preferences (Question 9)**:  
-   - Incorporate these flavor profiles (Savory, Sweet, Spicy, etc.) into recipe choices.
+7. **Flavors (Question 8)**: Incorporate requested flavor profiles.
 
-8. **Meal Purpose (Question 10)**:  
-   - "Eat healthier": prefer vegetables, lean proteins, whole grains.
-   - "Learn new recipes": introduce 1-2 new techniques or global cuisines.
-   - "Save money on groceries": reuse ingredients maximally.
-   - "Reduce food waste": plan ingredients carefully so they are used fully across recipes.
+8. **Goals (Question 9)**:
+   - "Eat healthier": Include protein in every recipe.
+   - "Learn new recipes": Introduce 1-2 new techniques.
+   - "Save money": Reuse ingredients maximally.
+   - "Reduce waste": Use ingredients fully across recipes.
 
 9. **Measurement Units**:
 ${MEASUREMENT_UNITS_PROMPT}
@@ -118,6 +105,7 @@ json
   "recipes": [
     {
       "name": "Recipe Name",
+      "mealType": "Breakfast | Lunch | Dinner",
       "ingredients": [
         { "item": "Ingredient Name", "quantity": "Amount + Unit" }
       ],
@@ -130,6 +118,8 @@ json
   "grocery_list": [
     { "item": "Ingredient Name", "quantity": "Total Amount + Unit" }
   ]
-}`;
+}
+
+**Important**: Every recipe MUST include a "mealType" field indicating the type of meal (Breakfast, Lunch, or Dinner).`;
 
 export { MEASUREMENT_UNITS_PROMPT, mealPlanFromSurveyPrompt };

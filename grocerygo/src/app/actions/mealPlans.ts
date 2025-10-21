@@ -38,18 +38,19 @@ export async function createMealPlanFromAI(
         total_meals: aiResponse.recipes.length,
         survey_snapshot: surveySnapshot,
         generation_method: 'ai-generated',
-        ai_model: 'gpt-4o-mini'
+        ai_model: 'gpt-5'
       } as MealPlanInsert)
       .select()
       .single()
 
     if (mealPlanError) {
       console.error('Error creating meal plan:', mealPlanError)
-      return { success: false, error: 'Failed to create meal plan' }
+      return { success: false, error: `Failed to create meal plan: ${mealPlanError.message}` }
     }
 
     // 2. Create recipes (vector-based deduplication to be added later)
     const recipeIds: string[] = []
+    const recipeErrors: string[] = []
     
     for (const aiRecipe of aiResponse.recipes) {
       // Create new recipe for this meal plan
@@ -59,18 +60,29 @@ export async function createMealPlanFromAI(
           name: aiRecipe.name,
           ingredients: aiRecipe.ingredients,
           steps: aiRecipe.steps,
+          meal_type: aiRecipe.mealType ? aiRecipe.mealType : null,
           times_used: 1
         } as RecipeInsert)
         .select()
         .single()
 
       if (recipeError) {
-        console.error('Error creating recipe:', recipeError)
+        console.error('Error creating recipe:', aiRecipe.name, recipeError)
+        recipeErrors.push(`${aiRecipe.name}: ${recipeError.message}`)
         continue // Skip this recipe but continue with others
       }
 
       if (newRecipe) {
         recipeIds.push(newRecipe.id)
+      }
+    }
+
+    // Check if we created any recipes
+    if (recipeIds.length === 0) {
+      console.error('No recipes were created successfully. Errors:', recipeErrors)
+      return { 
+        success: false, 
+        error: `Failed to create recipes. Errors: ${recipeErrors.join('; ')}` 
       }
     }
 
@@ -88,6 +100,7 @@ export async function createMealPlanFromAI(
 
     if (linkError) {
       console.error('Error linking recipes to meal plan:', linkError)
+      return { success: false, error: `Failed to link recipes: ${linkError.message}` }
     }
 
     // 4. Create grocery list items
@@ -105,6 +118,7 @@ export async function createMealPlanFromAI(
 
     if (groceryError) {
       console.error('Error creating grocery items:', groceryError)
+      return { success: false, error: `Failed to create grocery items: ${groceryError.message}` }
     }
 
     // Invalidate cache
@@ -116,11 +130,11 @@ export async function createMealPlanFromAI(
       data: mealPlan
     }
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error in createMealPlanFromAI:', error)
     return {
       success: false,
-      error: 'An unexpected error occurred'
+      error: `An unexpected error occurred: ${error?.message || error}`
     }
   }
 }

@@ -322,19 +322,40 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
     )
   }
 
-  // Group recipes by meal type if available
-  const recipesByType = mealPlan.meal_plan_recipes.reduce((acc, mpr) => {
-    const type = mpr.meal_type || 'other'
-    if (!acc[type]) acc[type] = []
-    acc[type].push(mpr)
+  // Group recipes by day and meal type
+  const recipesByDay = mealPlan.meal_plan_recipes.reduce((acc, mpr) => {
+    const date = mpr.planned_for_date || 'unscheduled'
+    if (!acc[date]) acc[date] = { breakfast: null, lunch: null, dinner: null }
+    
+    // Get meal type from recipe or junction table
+    let mealTypeRaw = mpr.recipe?.meal_type || mpr.meal_type || 'other'
+    // Handle if it's an array, take first element
+    const mealType = (Array.isArray(mealTypeRaw) ? mealTypeRaw[0] : mealTypeRaw).toLowerCase()
+    
+    if (mealType === 'breakfast' || mealType === 'lunch' || mealType === 'dinner') {
+      acc[date][mealType as 'breakfast' | 'lunch' | 'dinner'] = mpr
+    }
+    
     return acc
-  }, {} as Record<string, typeof mealPlan.meal_plan_recipes>)
+  }, {} as Record<string, { breakfast: any, lunch: any, dinner: any }>)
+
+  // Sort days chronologically
+  const sortedDays = Object.keys(recipesByDay).sort()
+
+  const formatDayLabel = (dateStr: string) => {
+    if (dateStr === 'unscheduled') return 'Unscheduled'
+    const date = new Date(dateStr + 'T00:00:00')
+    return date.toLocaleDateString('en-US', { 
+      weekday: 'long',
+      month: 'short',
+      day: 'numeric'
+    })
+  }
 
   const mealTypeEmojis = {
     breakfast: '🍳',
     lunch: '🥗',
     dinner: '🍽️',
-    snack: '🍪',
     other: '🍴'
   }
 
@@ -419,26 +440,52 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
 
           {/* Content */}
           {activeTab === 'recipes' ? (
-            <div className="space-y-6">
-              {Object.entries(recipesByType).map(([mealType, recipes]) => (
-                <div key={mealType} className="gg-card">
-                  <h2 className="gg-heading-section mb-6 flex items-center gap-2">
-                    <span>{mealTypeEmojis[mealType as keyof typeof mealTypeEmojis]}</span>
-                    <span className="capitalize">{mealType}</span>
-                    <span className="text-gray-400">({recipes.length})</span>
-                  </h2>
-                  
-                  <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-                    {recipes.map((mpr) => {
-                      if (!mpr.recipe) return null
-                      const recipe = mpr.recipe
-                      
-                      return (
-                        <div
-                          key={mpr.id}
-                          className="rounded-xl border-2 border-gray-200 bg-white p-6 transition-all hover:border-[var(--gg-primary)] hover:shadow-md"
-                        >
-                          <h3 className="gg-heading-card mb-4">{recipe.name}</h3>
+            <div className="space-y-8">
+              {sortedDays.map((day) => {
+                const meals = recipesByDay[day]
+                const mealTypes: Array<'breakfast' | 'lunch' | 'dinner'> = ['breakfast', 'lunch', 'dinner']
+                
+                return (
+                  <div key={day} className="gg-card">
+                    <h2 className="gg-heading-section mb-6 flex items-center gap-2">
+                      <svg className="h-6 w-6 text-[var(--gg-primary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      <span>{formatDayLabel(day)}</span>
+                    </h2>
+                    
+                    <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                      {mealTypes.map((mealType) => {
+                        const mpr = meals[mealType]
+                        
+                        if (!mpr || !mpr.recipe) {
+                          return (
+                            <div
+                              key={mealType}
+                              className="rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 p-6 flex flex-col items-center justify-center text-gray-400 min-h-[200px]"
+                            >
+                              <span className="text-4xl mb-2">{mealTypeEmojis[mealType]}</span>
+                              <span className="text-sm font-medium capitalize">{mealType}</span>
+                              <span className="text-xs mt-1">No recipe</span>
+                            </div>
+                          )
+                        }
+                        
+                        const recipe = mpr.recipe
+                        
+                        return (
+                          <div
+                            key={mpr.id}
+                            className="rounded-xl border-2 border-gray-200 bg-white p-6 transition-all hover:border-[var(--gg-primary)] hover:shadow-md"
+                          >
+                          <div className="flex items-start justify-between mb-4">
+                            <h3 className="gg-heading-card flex-1">{recipe.name}</h3>
+                            {recipe.meal_type && (
+                              <span className="inline-flex items-center justify-center gap-1 px-2 py-1 rounded-full bg-[var(--gg-primary)] text-xs font-semibold text-white capitalize ml-2 flex-shrink-0">
+                                {recipe.meal_type}
+                              </span>
+                            )}
+                          </div>
                           
                           {/* Recipe Info */}
                           <div className="mb-4 flex flex-wrap gap-3 text-sm text-gray-600">
@@ -464,7 +511,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
                           <div className="mb-4">
                             <p className="mb-2 text-sm font-semibold text-gray-700">Ingredients:</p>
                             <ul className="space-y-1 text-sm text-gray-600">
-                              {recipe.ingredients.slice(0, 3).map((ing, idx) => (
+                              {recipe.ingredients.slice(0, 3).map((ing: { item: string; quantity: string }, idx: number) => (
                                 <li key={idx} className="flex items-start gap-2">
                                   <span className="text-[var(--gg-primary)]">•</span>
                                   <span>{ing.quantity} {ing.item}</span>
@@ -496,11 +543,12 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
                             View Full Recipe
                           </button>
                         </div>
-                      )
-                    })}
+                        )
+                      })}
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
 
               {mealPlan.meal_plan_recipes.length === 0 && (
                 <div className="gg-card text-center py-12">

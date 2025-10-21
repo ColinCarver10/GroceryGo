@@ -42,17 +42,11 @@ const sections: Section[] = [
       {
         id: 3,
         type: 'multiple-choice',
-        question: 'How many individual home-cooked meals do you prepare per week? (Count each meal separately)',
-        options: ['0-3 meals', '4-7 meals', '8-14 meals', '15+ meals'],
-      },
-      {
-        id: 4,
-        type: 'multiple-choice',
         question: 'What is your weekly meal planning budget?',
         options: ['$50-100', '$101-200', '$201-300', '$301+'],
       },
       {
-        id: 5,
+        id: 4,
         type: 'multiple-choice',
         question: 'What is your cooking skill level?',
         options: [
@@ -62,7 +56,7 @@ const sections: Section[] = [
         ],
       },
       {
-        id: 6,
+        id: 5,
         type: 'multiple-choice',
         question: 'What is your average time available for meal preparation?',
         options: [
@@ -77,7 +71,7 @@ const sections: Section[] = [
     title: "Dietary Preferences",
     questions: [
       {
-        id: 7,
+        id: 6,
         type: 'multiple-select',
         question: 'Dietary restrictions: (Select all that apply)',
         options: [
@@ -92,7 +86,7 @@ const sections: Section[] = [
         ],
       },
       {
-        id: 8,
+        id: 7,
         type: 'multiple-select',
         question: 'Food allergies or intolerances: (Select all that apply)',
         options: [
@@ -106,7 +100,7 @@ const sections: Section[] = [
         ],
       },
       {
-        id: 9,
+        id: 8,
         type: 'multiple-select',
         question: 'Flavor preferences: (Select up to 3)',
         options: [
@@ -125,7 +119,7 @@ const sections: Section[] = [
     title: "Scheduling",
     questions: [
       {
-        id: 10,
+        id: 9,
         type: 'multiple-select',
         question: 'What are your main goals with meal planning?',
         options: [
@@ -138,7 +132,7 @@ const sections: Section[] = [
         ],
       },
       {
-        id: 11,
+        id: 10,
         type: 'multiple-select',
         question: 'Preferred grocery delivery days: (Select up to 2)',
         options: [
@@ -158,7 +152,7 @@ const sections: Section[] = [
     title: "Priorities",
     questions: [
       {
-        id: 12,
+        id: 11,
         type: 'ranking',
         question: "What's most important to you in meal planning? (Rank your top 3)",
         description: "Use the up/down buttons to arrange by importance. Your #1 choice is most important.",

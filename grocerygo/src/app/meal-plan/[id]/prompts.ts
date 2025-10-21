@@ -145,7 +145,7 @@ ${MEASUREMENT_UNITS_PROMPT}
   "recipes": [
     {
       "name": "Recipe Name",
-      "meal_type": "breakfast|lunch|dinner",
+      "mealType": "Breakfast | Lunch | Dinner",
       "ingredients": [
         { "item": "Ingredient Name", "quantity": "Amount + Unit" }
       ],
@@ -158,7 +158,9 @@ ${MEASUREMENT_UNITS_PROMPT}
   "grocery_list": [
     { "item": "Ingredient Name", "quantity": "Total Amount + Unit" }
   ]
-}`;
+}
+
+**Important**: Every recipe MUST include a "mealType" field indicating the type of meal (Breakfast, Lunch, or Dinner).`;
 };
 
 export const swapIngredientPrompt = (

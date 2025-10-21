@@ -65,7 +65,7 @@ export interface RecipeInsert {
   steps: string[]
   
   cuisine_type?: string[]
-  meal_type?: string[]
+  meal_type?: string
   dietary_tags?: string[]
   flavor_profile?: string[]
   
@@ -114,7 +114,7 @@ export interface MealPlanRecipe {
   meal_plan_id: string
   recipe_id: string
   planned_for_date?: string
-  meal_type?: 'breakfast' | 'lunch' | 'dinner' | 'snack'
+  meal_type?: 'breakfast' | 'lunch' | 'dinner'
   notes?: string
   recipe?: Recipe // For joins
 }
@@ -123,7 +123,7 @@ export interface MealPlanRecipeInsert {
   meal_plan_id: string
   recipe_id: string
   planned_for_date?: string
-  meal_type?: 'breakfast' | 'lunch' | 'dinner' | 'snack'
+  meal_type?: 'breakfast' | 'lunch' | 'dinner'
   notes?: string
 }
 
@@ -233,6 +233,7 @@ export interface MealPlanWithRecipes extends MealPlan {
 export interface AIGeneratedMealPlan {
   recipes: Array<{
     name: string
+    mealType?: string
     ingredients: Array<{
       item: string
       quantity: string
