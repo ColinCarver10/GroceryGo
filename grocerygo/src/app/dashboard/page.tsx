@@ -16,6 +16,11 @@ export default async function DashboardPage() {
   // Fetch dashboard data
   const dashboardData = await getUserDashboardData(user.id)
 
+  // Redirect to onboarding if user hasn't completed questionnaire
+  if (!dashboardData.surveyResponse) {
+    redirect('/onboarding')
+  }
+
   // Pass data to client component
   return (
     <DashboardClient 

@@ -55,8 +55,21 @@ export async function login(formData: FormData) {
     await ensureUserExists(supabase, authData.user.id, authData.user.email || data.email)
   }
 
+  // Check if user has completed the questionnaire
+  const { data: userData } = await supabase
+    .from('users')
+    .select('survey_response')
+    .eq('user_id', authData.user.id)
+    .single()
+
   revalidatePath('/', 'layout')
-  redirect('/')
+  
+  // Redirect based on questionnaire completion
+  if (userData?.survey_response) {
+    redirect('/dashboard')
+  } else {
+    redirect('/onboarding')
+  }
 }
 
 export async function signup(formData: FormData) {
@@ -81,5 +94,6 @@ export async function signup(formData: FormData) {
   }
 
   revalidatePath('/', 'layout')
-  redirect('/')
+  // New users should complete the questionnaire
+  redirect('/onboarding')
 }
