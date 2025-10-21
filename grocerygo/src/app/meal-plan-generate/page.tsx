@@ -310,7 +310,7 @@ export default function MealPlanGeneratePage() {
                             [day.full]: { 
                               breakfast: false, 
                               lunch: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].includes(day.full), 
-                              dinner: true 
+                              dinner: false 
                             }
                           }), {})
                         )

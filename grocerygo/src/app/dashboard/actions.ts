@@ -74,3 +74,49 @@ export async function invalidateDashboardCache() {
   revalidateTag('dashboard')
 }
 
+// Update individual survey response
+export async function updateSurveyResponse(questionId: string, answer: string | string[]) {
+  const supabase = await createClient()
+  
+  // Get current user
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  
+  if (authError || !user) {
+    return { success: false, error: 'Not authenticated' }
+  }
+
+  // Get current survey response
+  const { data: userData, error: fetchError } = await supabase
+    .from('users')
+    .select('survey_response')
+    .eq('user_id', user.id)
+    .single()
+
+  if (fetchError) {
+    console.error('Error fetching current survey:', fetchError)
+    return { success: false, error: 'Failed to fetch current preferences' }
+  }
+
+  // Update the specific question
+  const updatedSurvey = {
+    ...(userData.survey_response || {}),
+    [questionId]: answer
+  }
+
+  // Save back to database
+  const { error: updateError } = await supabase
+    .from('users')
+    .update({ survey_response: updatedSurvey })
+    .eq('user_id', user.id)
+
+  if (updateError) {
+    console.error('Error updating survey response:', updateError)
+    return { success: false, error: 'Failed to update preference' }
+  }
+
+  // Invalidate cache
+  invalidateDashboardCache()
+
+  return { success: true }
+}
+
