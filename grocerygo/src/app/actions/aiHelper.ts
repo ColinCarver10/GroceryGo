@@ -45,7 +45,6 @@ export async function callOpenAI<T>(
         },
       ],
       temperature: 0.7,
-      max_tokens: 4000,
     })
 
     const response = completion.choices[0]?.message?.content || ''
