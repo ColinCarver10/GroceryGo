@@ -1,12 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { login, signup } from '@/app/login/actions'
 import { createClient } from '@/utils/supabase/client'
 import Link from 'next/link'
 
-export default function LoginPage() {
+function LoginContent() {
   const [showToast, setShowToast] = useState(false)
   const [toastMessage, setToastMessage] = useState('')
   const [isLoggedIn, setIsLoggedIn] = useState(false)
@@ -173,5 +173,23 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="gg-bg-page min-h-screen">
+        <div className="gg-container">
+          <div className="flex min-h-screen flex-col items-center justify-center py-12">
+            <div className="text-center">
+              <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-[var(--gg-primary)] border-r-transparent"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    }>
+      <LoginContent />
+    </Suspense>
   )
 }
