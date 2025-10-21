@@ -51,23 +51,43 @@ export const replaceRecipePrompt = (
   mealType: string,
   existingIngredients: string[],
   recipeToReplace: string
-) => `You are an expert meal planner generating a single replacement recipe.
+) => {
+  // Extract favored and excluded ingredients
+  const favoredIngredients = surveyData.favored_ingredients || []
+  const excludedIngredients = surveyData.excluded_ingredients || []
+  
+  let ingredientPreferencesSection = ''
+  if (favoredIngredients.length > 0 || excludedIngredients.length > 0) {
+    ingredientPreferencesSection = '\n### Ingredient Preferences:\n'
+    
+    if (favoredIngredients.length > 0) {
+      ingredientPreferencesSection += `**Favored Ingredients (prioritize using these):** ${favoredIngredients.join(', ')}\n`
+    }
+    
+    if (excludedIngredients.length > 0) {
+      ingredientPreferencesSection += `**Excluded Ingredients (NEVER use these):** ${excludedIngredients.join(', ')}\n`
+    }
+  }
+  
+  return `You are an expert meal planner generating a single replacement recipe.
 
 ### Context:
 The user wants to replace the recipe "${recipeToReplace}" with a new ${mealType} recipe.
 
 ### User Preferences:
 ${JSON.stringify(surveyData, null, 2)}
-
+${ingredientPreferencesSection}
 ### Existing Ingredients in Meal Plan:
 ${existingIngredients.join(', ')}
 
 ### Requirements:
 1. Generate EXACTLY 1 ${mealType} recipe
 2. Follow all dietary restrictions and preferences from the user data
-3. Try to reuse ingredients from the existing meal plan when possible
-4. Match the user's skill level and time constraints
-5. Different from "${recipeToReplace}" - don't generate similar recipes
+3. NEVER use any excluded ingredients
+4. Prioritize using favored ingredients when appropriate
+5. Try to reuse ingredients from the existing meal plan when possible
+6. Match the user's skill level and time constraints
+7. Different from "${recipeToReplace}" - don't generate similar recipes
 
 ### Measurement Units:
 ${MEASUREMENT_UNITS_PROMPT}
@@ -90,6 +110,7 @@ ${MEASUREMENT_UNITS_PROMPT}
 }
 
 Note: additional_grocery_items should only include NEW ingredients not in the existing list.`;
+};
 
 export const bulkAdjustmentPrompt = (
   surveyData: Record<string, any>,
@@ -120,11 +141,28 @@ export const bulkAdjustmentPrompt = (
     adjustmentInstructions.push('- Focus on pantry staples')
   }
 
+  // Extract favored and excluded ingredients
+  const favoredIngredients = surveyData.favored_ingredients || []
+  const excludedIngredients = surveyData.excluded_ingredients || []
+  
+  let ingredientPreferencesSection = ''
+  if (favoredIngredients.length > 0 || excludedIngredients.length > 0) {
+    ingredientPreferencesSection = '\n### Ingredient Preferences:\n'
+    
+    if (favoredIngredients.length > 0) {
+      ingredientPreferencesSection += `**Favored Ingredients (prioritize using these):** ${favoredIngredients.join(', ')}\n`
+    }
+    
+    if (excludedIngredients.length > 0) {
+      ingredientPreferencesSection += `**Excluded Ingredients (NEVER use these):** ${excludedIngredients.join(', ')}\n`
+    }
+  }
+
   return `You are an expert meal planner regenerating a complete meal plan with specific optimizations.
 
 ### User Preferences:
 ${JSON.stringify(surveyData, null, 2)}
-
+${ingredientPreferencesSection}
 ### Special Optimizations to Apply:
 ${adjustmentInstructions.join('\n')}
 
@@ -134,8 +172,10 @@ ${adjustmentInstructions.join('\n')}
    - ${mealBreakdown.lunch} lunch meals
    - ${mealBreakdown.dinner} dinner meals
 2. Follow all dietary restrictions from user preferences
-3. Apply ALL optimization constraints listed above
-4. Label each recipe with appropriate meal_type
+3. NEVER use any excluded ingredients
+4. Prioritize using favored ingredients when appropriate
+5. Apply ALL optimization constraints listed above
+6. Label each recipe with appropriate meal_type
 
 ### Measurement Units:
 ${MEASUREMENT_UNITS_PROMPT}

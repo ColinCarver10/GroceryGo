@@ -74,26 +74,31 @@ Use the provided user input (below) to generate a detailed meal plan.
    - DO NOT include ingredients from question 6 (Dietary Restrictions) or question 7 (Allergies).
    - If none listed, no restrictions apply.
 
-3. **User priorities (Question 11)** - Follow ranked priorities:
+3. **Favored and Excluded Ingredients**:
+   - **Favored Ingredients**: Prioritize using ingredients from the favored_ingredients list when creating recipes. Try to incorporate these ingredients whenever appropriate for the meal type and flavor profile.
+   - **Excluded Ingredients**: NEVER use any ingredients from the excluded_ingredients list. These are ingredients the user dislikes or wants to avoid.
+   - If no favored or excluded ingredients are specified, no special preferences apply.
+
+4. **User priorities (Question 11)** - Follow ranked priorities:
    - **Nutrition #1**: Use whole, fresh ingredients. Include protein in every recipe (chicken, fish, eggs, tofu, legumes, yogurt).
    - **Cost efficiency #1**: Reuse ingredients. Limit unique items (under 20 for "$50-100" budget).
    - **Time saving #1**: Use pre-made/pre-cut items (rotisserie chicken, salad kits).
 
-4. **Budget (Question 3)**: "$50-100" = under 20 unique items; "$101-200" = under 30 items; "$200+" = flexible but reuse encouraged.
+5. **Budget (Question 3)**: "$50-100" = under 20 unique items; "$101-200" = under 30 items; "$200+" = flexible but reuse encouraged.
 
-5. **Skill level (Question 4)**: Beginner = simple; Intermediate = moderate; Advanced = complex techniques OK.
+6. **Skill level (Question 4)**: Beginner = simple; Intermediate = moderate; Advanced = complex techniques OK.
 
-6. **Time (Question 5)**: "Quick (15-30 min)" = fast recipes; "Standard (30-45 min)" = moderate; "Extended (45+ min)" = complex OK.
+7. **Time (Question 5)**: "Quick (15-30 min)" = fast recipes; "Standard (30-45 min)" = moderate; "Extended (45+ min)" = complex OK.
 
-7. **Flavors (Question 8)**: Incorporate requested flavor profiles.
+8. **Flavors (Question 8)**: Incorporate requested flavor profiles.
 
-8. **Goals (Question 9)**:
+9. **Goals (Question 9)**:
    - "Eat healthier": Include protein in every recipe.
    - "Learn new recipes": Introduce 1-2 new techniques.
    - "Save money": Reuse ingredients maximally.
    - "Reduce waste": Use ingredients fully across recipes.
 
-9. **Measurement Units**:
+10. **Measurement Units**:
 ${MEASUREMENT_UNITS_PROMPT}
 
 ---

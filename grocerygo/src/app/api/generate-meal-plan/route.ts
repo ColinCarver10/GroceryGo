@@ -58,11 +58,30 @@ export async function POST(request: NextRequest) {
 
     // Build the prompt
     const surveyData = userData.survey_response
+    
+    // Extract favored and excluded ingredients from survey response
+    const favoredIngredients = surveyData.favored_ingredients || []
+    const excludedIngredients = surveyData.excluded_ingredients || []
+    
+    // Build ingredient preferences section
+    let ingredientPreferencesSection = ''
+    if (favoredIngredients.length > 0 || excludedIngredients.length > 0) {
+      ingredientPreferencesSection = '\n\n### Ingredient Preferences:\n'
+      
+      if (favoredIngredients.length > 0) {
+        ingredientPreferencesSection += `**Favored Ingredients (prioritize using these):** ${favoredIngredients.join(', ')}\n`
+      }
+      
+      if (excludedIngredients.length > 0) {
+        ingredientPreferencesSection += `**Excluded Ingredients (NEVER use these):** ${excludedIngredients.join(', ')}\n`
+      }
+    }
+    
     const enhancedPrompt = `${mealPlanFromSurveyPrompt}
 
 ### User Input:
 ${JSON.stringify(surveyData, null, 2)}
-
+${ingredientPreferencesSection}
 ---
 
 ## 🎯 GENERATION REQUIREMENTS (MANDATORY)
