@@ -61,9 +61,15 @@ export default function GeneratingView({
   
   // Use ref to track the actual count to prevent flickering
   const recipeCountRef = useRef(0)
+  // Track if generation has started to prevent double execution in Strict Mode
+  const hasStartedGenerationRef = useRef(false)
 
   useEffect(() => {
-    generateMealPlan()
+    // Only run once, even in Strict Mode
+    if (!hasStartedGenerationRef.current) {
+      hasStartedGenerationRef.current = true
+      generateMealPlan()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -76,104 +82,107 @@ export default function GeneratingView({
         jsonContent = jsonMatch[1]
       }
 
-      // Try to extract the recipes array
-      const recipesMatch = jsonContent.match(/"recipes"\s*:\s*\[([\s\S]*)/);
-      if (!recipesMatch) return;
-
-      let recipesContent = recipesMatch[1];
+      // Try to extract recipes from breakfast, lunch, and dinner arrays
+      const allRecipeObjects: string[] = []
       
-      // Count how many complete recipe objects we have
-      // A recipe is complete when it has: }, after the steps array closes
-      let depth = 0;
-      let inString = false;
-      let escapeNext = false;
-      let recipeObjects: string[] = [];
-      let currentObj = '';
-      let inRecipeObject = false;
-      
-      for (let i = 0; i < recipesContent.length; i++) {
-        const char = recipesContent[i];
+      // Extract each meal type array
+      for (const mealType of ['breakfast', 'lunch', 'dinner']) {
+        const arrayMatch = jsonContent.match(new RegExp(`"${mealType}"\\s*:\\s*\\[([\\s\\S]*?)(?:\\]|$)`))
+        if (!arrayMatch) continue
         
-        if (escapeNext) {
-          escapeNext = false;
-          currentObj += char;
-          continue;
-        }
+        let recipesContent = arrayMatch[1]
         
-        if (char === '\\') {
-          escapeNext = true;
-          currentObj += char;
-          continue;
-        }
+        // Parse recipe objects from this array
+        let depth = 0
+        let inString = false
+        let escapeNext = false
+        let currentObj = ''
+        let inRecipeObject = false
         
-        if (char === '"') {
-          inString = !inString;
-          currentObj += char;
-          continue;
-        }
-        
-        if (inString) {
-          currentObj += char;
-          continue;
-        }
-        
-        if (char === '{') {
-          depth++;
-          if (depth === 1) {
-            inRecipeObject = true;
-            currentObj = '{';
-          } else {
-            currentObj += char;
+        for (let i = 0; i < recipesContent.length; i++) {
+          const char = recipesContent[i]
+          
+          if (escapeNext) {
+            escapeNext = false
+            currentObj += char
+            continue
           }
-        } else if (char === '}') {
-          currentObj += char;
-          depth--;
-          if (depth === 0 && inRecipeObject) {
-            // Complete recipe object
-            recipeObjects.push(currentObj);
-            currentObj = '';
-            inRecipeObject = false;
+          
+          if (char === '\\') {
+            escapeNext = true
+            currentObj += char
+            continue
           }
-        } else if (inRecipeObject) {
-          currentObj += char;
+          
+          if (char === '"') {
+            inString = !inString
+            currentObj += char
+            continue
+          }
+          
+          if (inString) {
+            currentObj += char
+            continue
+          }
+          
+          if (char === '{') {
+            depth++
+            if (depth === 1) {
+              inRecipeObject = true
+              currentObj = '{'
+            } else {
+              currentObj += char
+            }
+          } else if (char === '}') {
+            currentObj += char
+            depth--
+            if (depth === 0 && inRecipeObject) {
+              // Complete recipe object
+              allRecipeObjects.push(currentObj)
+              currentObj = ''
+              inRecipeObject = false
+            }
+          } else if (inRecipeObject) {
+            currentObj += char
+          }
         }
       }
       
       // Parse complete recipe objects - ONLY parse new ones beyond current index
-      if (recipeObjects.length > recipeCountRef.current) {
+      if (allRecipeObjects.length > recipeCountRef.current) {
         // Only parse the NEW recipes we haven't seen yet
-        const newRecipeObjects = recipeObjects.slice(recipeCountRef.current);
-        const newParsedRecipes: RecipeData[] = [];
+        const newRecipeObjects = allRecipeObjects.slice(recipeCountRef.current)
+        const newParsedRecipes: RecipeData[] = []
         
         for (const recipeStr of newRecipeObjects) {
           try {
-            const recipe = JSON.parse(recipeStr);
+            const recipe = JSON.parse(recipeStr)
             if (recipe.name && recipe.ingredients && recipe.steps) {
-              newParsedRecipes.push(recipe);
+              newParsedRecipes.push(recipe)
             }
           } catch (e) {
             // Skip malformed recipes - this is expected during streaming
-            break; // Stop parsing if we hit an incomplete recipe
+            break // Stop parsing if we hit an incomplete recipe
           }
         }
         
         if (newParsedRecipes.length > 0) {
           // Add ONLY the new recipes, don't touch existing ones
-          const startIndex = recipeCountRef.current;
+          const startIndex = recipeCountRef.current
           setRecipes(prev => {
-            const newRecipes = [...prev];
+            const newRecipes = [...prev]
             for (let i = 0; i < newParsedRecipes.length; i++) {
-              const index = startIndex + i;
+              const index = startIndex + i
               if (index < totalMeals && newRecipes[index] === null) {
-                newRecipes[index] = newParsedRecipes[i];
+                newRecipes[index] = newParsedRecipes[i]
               }
             }
-            return newRecipes;
-          });
+            return newRecipes
+          })
           
           // Update ref first, then state (prevents flickering)
-          recipeCountRef.current = startIndex + newParsedRecipes.length;
-          setCurrentRecipeIndex(recipeCountRef.current);
+          recipeCountRef.current = startIndex + newParsedRecipes.length
+          setCurrentRecipeIndex(recipeCountRef.current)
         }
       }
     } catch (e) {
@@ -183,7 +192,7 @@ export default function GeneratingView({
 
   const generateMealPlan = async () => {
     try {
-      // Extract meal selection from survey snapshot
+      // TODO: HAVE THIS MATCH THE EXACT MEAL TYPES FROM THE SURVEY
       const mealSelection = surveySnapshot?.meal_selection || {
         breakfast: Math.floor(totalMeals / 3),
         lunch: Math.floor(totalMeals / 3),
@@ -253,10 +262,22 @@ export default function GeneratingView({
       
       const aiResponse = JSON.parse(jsonStr.trim())
 
-      if (aiResponse.recipes && Array.isArray(aiResponse.recipes)) {
-        // Set all recipes at once
-        setRecipes(aiResponse.recipes)
-        setCurrentRecipeIndex(aiResponse.recipes.length)
+      // Merge breakfast, lunch, and dinner arrays into single recipes array
+      const allRecipes: RecipeData[] = []
+      
+      if (aiResponse.breakfast && Array.isArray(aiResponse.breakfast)) {
+        allRecipes.push(...aiResponse.breakfast)
+      }
+      if (aiResponse.lunch && Array.isArray(aiResponse.lunch)) {
+        allRecipes.push(...aiResponse.lunch)
+      }
+      if (aiResponse.dinner && Array.isArray(aiResponse.dinner)) {
+        allRecipes.push(...aiResponse.dinner)
+      }
+
+      if (allRecipes.length > 0) {
+        setRecipes(allRecipes)
+        setCurrentRecipeIndex(allRecipes.length)
       }
 
       if (aiResponse.grocery_list && Array.isArray(aiResponse.grocery_list)) {
@@ -264,7 +285,7 @@ export default function GeneratingView({
       }
 
       // Auto-save after parsing
-      await saveRecipes(aiResponse.recipes, aiResponse.grocery_list)
+      await saveRecipes(allRecipes, aiResponse.grocery_list)
     } catch (err) {
       console.error('Parse error:', err)
       console.error('Buffer content:', buffer)

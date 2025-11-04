@@ -229,17 +229,27 @@ export interface MealPlanWithRecipes extends MealPlan {
   grocery_items: GroceryItem[]
 }
 
-// AI Response format (matches your prompts.ts output)
-export interface AIGeneratedMealPlan {
-  recipes: Array<{
-    name: string
-    mealType?: string
-    ingredients: Array<{
-      item: string
-      quantity: string
-    }>
-    steps: string[]
+// Recipe type for AI responses
+interface AIRecipe {
+  name: string
+  mealType?: string
+  ingredients: Array<{
+    item: string
+    quantity: string
   }>
+  steps: string[]
+  description?: string
+  prep_time_minutes?: number
+  cook_time_minutes?: number
+  servings?: number
+  difficulty?: 'beginner' | 'intermediate' | 'advanced'
+}
+
+// AI Response format (matches schema with separate meal type arrays)
+export interface AIGeneratedMealPlan {
+  breakfast: AIRecipe[]
+  lunch: AIRecipe[]
+  dinner: AIRecipe[]
   grocery_list: Array<{
     item: string
     quantity: string
