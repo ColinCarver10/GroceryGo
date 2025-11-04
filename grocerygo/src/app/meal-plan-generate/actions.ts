@@ -71,7 +71,7 @@ export async function generateMealPlanFromPreferences(
         total_meals: totalMeals,
         survey_snapshot: extendedSnapshot,
         generation_method: 'ai-generated',
-        ai_model: 'gpt-5'
+        ai_model: 'gpt-4o'
       })
       .select()
       .single()

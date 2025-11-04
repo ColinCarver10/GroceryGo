@@ -4,13 +4,18 @@ import { createClient } from '@/utils/supabase/server'
 import { revalidateTag } from 'next/cache'
 import type { GroceryItem, RecipeInsert, GroceryItemInsert, AIGeneratedMealPlan } from '@/types/database'
 import type { ShoppingListData, InstacartResponse, LineItem } from '@/types/instacart'
-import { callOpenAI } from '@/app/actions/aiHelper'
+import { callOpenAI, callOpenAIStructured } from '@/app/actions/aiHelper'
 import { trackMealPlanAction } from '@/app/actions/feedbackHelper'
 import { 
   replaceRecipePrompt, 
   bulkAdjustmentPrompt, 
   simplifyRecipePrompt 
 } from './prompts'
+import { 
+  ReplaceRecipeSchema, 
+  SimplifyRecipeSchema, 
+  createMealPlanSchema 
+} from '@/app/schemas/mealPlanSchemas'
 
 const INSTACART_API_URL = 'https://connect.dev.instacart.tools/idp/v1/products/products_link'
 const INSTACART_API_KEY = process.env.INSTACART_API_KEY
@@ -143,7 +148,7 @@ export async function replaceRecipe(
     // Get existing ingredients to maximize reuse
     const existingIngredients = mealPlan.grocery_items.map((item: GroceryItem) => item.item_name)
 
-    // Call AI to generate replacement recipe
+    // Call AI to generate replacement recipe with structured output
     const prompt = replaceRecipePrompt(
       mealPlan.survey_snapshot || {},
       mealType,
@@ -151,14 +156,11 @@ export async function replaceRecipe(
       oldRecipe.name
     )
 
-    const result = await callOpenAI(
-      'You are an expert meal planner for GroceryGo. Generate a single replacement recipe in JSON format following all guidelines.',
+    const result = await callOpenAIStructured(
+      'You are an expert meal planner for GroceryGo. Generate a single replacement recipe following all guidelines.',
       prompt,
-      (response) => {
-        const jsonMatch = response.match(/```json\n?([\s\S]*?)\n?```/) || response.match(/```\n?([\s\S]*?)\n?```/)
-        const jsonStr = jsonMatch ? jsonMatch[1] : response
-        return JSON.parse(jsonStr)
-      }
+      ReplaceRecipeSchema,
+      'replace_recipe_response'
     )
 
     if (!result.success || !result.data) {
@@ -271,14 +273,18 @@ export async function regenerateWithAdjustments(
       mealBreakdown
     )
 
-    const result = await callOpenAI<AIGeneratedMealPlan>(
-      'You are an expert meal planner for GroceryGo. Generate a complete meal plan with optimizations in JSON format.',
+    // Create dynamic schema with exact recipe counts
+    const mealPlanSchema = createMealPlanSchema(
+      mealBreakdown.breakfast,
+      mealBreakdown.lunch,
+      mealBreakdown.dinner
+    )
+
+    const result = await callOpenAIStructured(
+      'You are an expert meal planner for GroceryGo. Generate a complete meal plan with optimizations.',
       prompt,
-      (response) => {
-        const jsonMatch = response.match(/```json\n?([\s\S]*?)\n?```/) || response.match(/```\n?([\s\S]*?)\n?```/)
-        const jsonStr = jsonMatch ? jsonMatch[1] : response
-        return JSON.parse(jsonStr)
-      }
+      mealPlanSchema,
+      'meal_plan_response'
     )
 
     if (!result.success || !result.data) {
@@ -286,6 +292,13 @@ export async function regenerateWithAdjustments(
     }
 
     const aiMealPlan = result.data
+
+    // Merge breakfast, lunch, and dinner arrays into single recipes array
+    const allRecipes = [
+      ...(aiMealPlan.breakfast || []),
+      ...(aiMealPlan.lunch || []),
+      ...(aiMealPlan.dinner || [])
+    ]
 
     // Delete existing recipes and grocery items
     await supabase
@@ -300,7 +313,7 @@ export async function regenerateWithAdjustments(
 
     // Create new recipes
     const recipeIds: string[] = []
-    for (const aiRecipe of aiMealPlan.recipes) {
+    for (const aiRecipe of allRecipes) {
       const { data: newRecipe } = await supabase
         .from('recipes')
         .insert({
@@ -535,21 +548,18 @@ export async function simplifyRecipe(
       return { success: false, error: 'Recipe not found' }
     }
 
-    // Call AI to simplify
+    // Call AI to simplify with structured output
     const prompt = simplifyRecipePrompt(
       recipe.name,
       recipe.ingredients,
       recipe.steps
     )
 
-    const result = await callOpenAI(
-      'You are a culinary expert helping busy people simplify recipes. Provide simplified versions in JSON format.',
+    const result = await callOpenAIStructured(
+      'You are a culinary expert helping busy people simplify recipes.',
       prompt,
-      (response) => {
-        const jsonMatch = response.match(/```json\n?([\s\S]*?)\n?```/) || response.match(/```\n?([\s\S]*?)\n?```/)
-        const jsonStr = jsonMatch ? jsonMatch[1] : response
-        return JSON.parse(jsonStr)
-      }
+      SimplifyRecipeSchema,
+      'simplify_recipe_response'
     )
 
     if (!result.success || !result.data) {

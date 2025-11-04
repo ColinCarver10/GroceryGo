@@ -65,61 +65,51 @@ Use the provided user input (below) to generate a detailed meal plan.
 }
 
 ### Your task:
-1. **Number of recipes** (CRITICAL):  
-   Generate the EXACT number of recipes specified in special instructions below.
-   Distribute precisely by meal type (breakfast, lunch, dinner) as specified.
-   COUNT before outputting. If count is wrong, your response will be rejected.
+1. **Recipe Generation**:  
+   Generate recipes distributed by meal type (Breakfast, Lunch, Dinner) as specified by the schema.
 
 2. **Dietary restrictions and allergies**:  
    - DO NOT include ingredients from question 6 (Dietary Restrictions) or question 7 (Allergies).
    - If none listed, no restrictions apply.
 
-3. **User priorities (Question 11)** - Follow ranked priorities:
-   - **Nutrition #1**: Use whole, fresh ingredients. Include protein in every recipe (chicken, fish, eggs, tofu, legumes, yogurt).
+3. **Favored and Excluded Ingredients**:
+   - **Favored Ingredients**: Prioritize using ingredients from the favored_ingredients list when creating recipes. Try to incorporate these ingredients whenever appropriate for the meal type and flavor profile.
+   - **Excluded Ingredients**: NEVER use any ingredients from the excluded_ingredients list. These are ingredients the user dislikes or wants to avoid.
+   - If no favored or excluded ingredients are specified, no special preferences apply.
+
+4. **Protein Requirements**:
+   - If "Nutrition" is ranked #1 in priorities (Question 11) OR "Eat healthier" is in goals (Question 9):
+     EVERY recipe MUST include a good quality protein source. Examples:
+     * Animal proteins: chicken, turkey, beef, pork, fish, seafood, eggs, Greek yogurt, cottage cheese
+     * Plant proteins: tofu, tempeh, legumes (beans, lentils, chickpeas), quinoa, nuts, seeds
+     * Minimum 15-20g protein per serving for main meals
+   - For breakfast: eggs, Greek yogurt, cottage cheese, protein powder, nut butters
+   - For lunch/dinner: include a substantial protein as the main component
+
+5. **User priorities (Question 11)** - Follow ranked priorities:
+   - **Nutrition #1**: Use whole, fresh ingredients. MANDATORY: Include quality protein in every recipe (see Protein Requirements above).
    - **Cost efficiency #1**: Reuse ingredients. Limit unique items (under 20 for "$50-100" budget).
    - **Time saving #1**: Use pre-made/pre-cut items (rotisserie chicken, salad kits).
 
-4. **Budget (Question 3)**: "$50-100" = under 20 unique items; "$101-200" = under 30 items; "$200+" = flexible but reuse encouraged.
+6. **Budget (Question 3)**: "$50-100" = under 20 unique items; "$101-200" = under 30 items; "$200+" = flexible but reuse encouraged.
 
-5. **Skill level (Question 4)**: Beginner = simple; Intermediate = moderate; Advanced = complex techniques OK.
+7. **Skill level (Question 4)**: Beginner = simple; Intermediate = moderate; Advanced = complex techniques OK.
 
-6. **Time (Question 5)**: "Quick (15-30 min)" = fast recipes; "Standard (30-45 min)" = moderate; "Extended (45+ min)" = complex OK.
+8. **Time (Question 5)**: "Quick (15-30 min)" = fast recipes; "Standard (30-45 min)" = moderate; "Extended (45+ min)" = complex OK.
 
-7. **Flavors (Question 8)**: Incorporate requested flavor profiles.
+9. **Flavors (Question 8)**: Incorporate requested flavor profiles.
 
-8. **Goals (Question 9)**:
-   - "Eat healthier": Include protein in every recipe.
+10. **Goals (Question 9)**:
+   - "Eat healthier": MANDATORY: Include quality protein in every recipe (see Protein Requirements above).
    - "Learn new recipes": Introduce 1-2 new techniques.
    - "Save money": Reuse ingredients maximally.
    - "Reduce waste": Use ingredients fully across recipes.
 
-9. **Measurement Units**:
+11. **Measurement Units**:
 ${MEASUREMENT_UNITS_PROMPT}
 
 ---
-Only output the JSON object, no other text or explanation.
-### **Output Format:**
 
-json
-{
-  "recipes": [
-    {
-      "name": "Recipe Name",
-      "mealType": "Breakfast | Lunch | Dinner",
-      "ingredients": [
-        { "item": "Ingredient Name", "quantity": "Amount + Unit" }
-      ],
-      "steps": [
-        "Step 1",
-        "Step 2"
-      ]
-    }
-  ],
-  "grocery_list": [
-    { "item": "Ingredient Name", "quantity": "Total Amount + Unit" }
-  ]
-}
-
-**Important**: Every recipe MUST include a "mealType" field indicating the type of meal (Breakfast, Lunch, or Dinner).`;
+**Output Format**: The schema will define the exact structure required. Ensure each recipe includes the correct "mealType" field (Breakfast, Lunch, or Dinner).`;
 
 export { MEASUREMENT_UNITS_PROMPT, mealPlanFromSurveyPrompt };

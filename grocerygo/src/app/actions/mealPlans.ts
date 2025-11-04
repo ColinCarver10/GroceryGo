@@ -28,6 +28,11 @@ export async function createMealPlanFromAI(
   const supabase = await createClient()
 
   try {
+    // Calculate total meals from all arrays
+    const totalMeals = (aiResponse.breakfast?.length || 0) + 
+                      (aiResponse.lunch?.length || 0) + 
+                      (aiResponse.dinner?.length || 0)
+
     // 1. Create the meal plan record
     const { data: mealPlan, error: mealPlanError } = await supabase
       .from('meal_plans')
@@ -35,10 +40,10 @@ export async function createMealPlanFromAI(
         user_id: userId,
         week_of: weekOf,
         status: 'pending',
-        total_meals: aiResponse.recipes.length,
+        total_meals: totalMeals,
         survey_snapshot: surveySnapshot,
         generation_method: 'ai-generated',
-        ai_model: 'gpt-5'
+        ai_model: 'gpt-4o'
       } as MealPlanInsert)
       .select()
       .single()
@@ -52,7 +57,14 @@ export async function createMealPlanFromAI(
     const recipeIds: string[] = []
     const recipeErrors: string[] = []
     
-    for (const aiRecipe of aiResponse.recipes) {
+    // Merge breakfast, lunch, and dinner arrays into single recipes array
+    const allRecipes = [
+      ...(aiResponse.breakfast || []),
+      ...(aiResponse.lunch || []),
+      ...(aiResponse.dinner || [])
+    ]
+    
+    for (const aiRecipe of allRecipes) {
       // Create new recipe for this meal plan
       const { data: newRecipe, error: recipeError } = await supabase
         .from('recipes')
