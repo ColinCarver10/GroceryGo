@@ -491,6 +491,42 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
                             )}
                           </div>
                           
+                          {/* Meal Prep Batch Indicator */}
+                          {mpr.notes?.includes('Meal prep batch') && (
+                            <div className="mb-3">
+                              <span className="inline-flex items-center gap-1 px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-semibold">
+                                🔄 {mpr.notes}
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Show which other days use this recipe */}
+                          {(() => {
+                            const otherDays = mealPlan.meal_plan_recipes
+                              .filter(other => 
+                                other.recipe_id === recipe.id && 
+                                other.id !== mpr.id &&
+                                other.meal_type === mpr.meal_type
+                              )
+                              .map(other => {
+                                if (!other.planned_for_date) return null
+                                const date = new Date(other.planned_for_date + 'T00:00:00')
+                                return date.toLocaleDateString('en-US', { weekday: 'short' })
+                              })
+                              .filter(Boolean)
+                            
+                            if (otherDays.length > 0) {
+                              return (
+                                <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded-lg">
+                                  <p className="text-xs text-blue-900">
+                                    <span className="font-semibold">Also served on:</span> {otherDays.join(', ')}
+                                  </p>
+                                </div>
+                              )
+                            }
+                            return null
+                          })()}
+                          
                           {/* Recipe Info */}
                           <div className="mb-4 flex flex-wrap gap-3 text-sm text-gray-600">
                             {recipe.prep_time_minutes && (
