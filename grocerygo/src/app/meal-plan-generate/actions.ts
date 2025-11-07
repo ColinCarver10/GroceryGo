@@ -8,9 +8,15 @@ interface MealSelection {
   dinner: number
 }
 
+interface MealScheduleEntry {
+  day: string
+  mealType: 'breakfast' | 'lunch' | 'dinner'
+}
+
 export async function generateMealPlanFromPreferences(
   weekOf: string,
-  mealSelection: MealSelection
+  mealSelection: MealSelection,
+  mealSchedule?: MealScheduleEntry[]
 ) {
   try {
     // Get authenticated user
@@ -56,10 +62,11 @@ export async function generateMealPlanFromPreferences(
     const totalMeals = mealSelection.breakfast + mealSelection.lunch + mealSelection.dinner
 
     // Create meal plan record with 'generating' status
-    // Include meal selection in the survey snapshot for reference
+    // Include meal selection and schedule in the survey snapshot for reference
     const extendedSnapshot = {
       ...userData.survey_response,
-      meal_selection: mealSelection
+      meal_selection: mealSelection,
+      meal_schedule: mealSchedule || []
     }
 
     const { data: mealPlan, error: mealPlanError } = await supabase
@@ -100,7 +107,8 @@ export async function generateMealPlanFromPreferences(
 export async function replaceExistingMealPlan(
   existingPlanId: string,
   weekOf: string,
-  mealSelection: MealSelection
+  mealSelection: MealSelection,
+  mealSchedule?: MealScheduleEntry[]
 ) {
   try {
     // Get authenticated user
@@ -136,7 +144,7 @@ export async function replaceExistingMealPlan(
     }
 
     // Now call the generate function to create the new meal plan
-    const result = await generateMealPlanFromPreferences(weekOf, mealSelection)
+    const result = await generateMealPlanFromPreferences(weekOf, mealSelection, mealSchedule)
     
     // Add replaced flag if successful
     if (result.success) {

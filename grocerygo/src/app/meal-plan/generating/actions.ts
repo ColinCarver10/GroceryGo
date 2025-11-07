@@ -3,6 +3,7 @@
 import { createClient } from '@/utils/supabase/server'
 import { revalidateTag } from 'next/cache'
 import type { RecipeInsert, GroceryItemInsert } from '@/types/database'
+import { getDateForMealIndex, getDateForScheduledMeal } from '@/utils/mealPlanDates'
 
 interface SavedRecipe {
   name: string
@@ -107,12 +108,22 @@ export async function saveGeneratedRecipes(
       }
     }
 
-    // Link recipes to meal plan
-    const mealPlanRecipes = recipeIds.map((recipeId, index) => ({
-      meal_plan_id: mealPlanId,
-      recipe_id: recipeId,
-      planned_for_date: getDateForMealIndex(mealPlan.week_of, index)
-    }))
+    // Link recipes to meal plan with dates from schedule
+    const mealSchedule = mealPlan.survey_snapshot?.meal_schedule || []
+    
+    const mealPlanRecipes = recipeIds.map((recipeId, index) => {
+      // Use the schedule if available, otherwise fall back to old method
+      const scheduleEntry = mealSchedule[index]
+      
+      return {
+        meal_plan_id: mealPlanId,
+        recipe_id: recipeId,
+        planned_for_date: scheduleEntry 
+          ? getDateForScheduledMeal(mealPlan.week_of, scheduleEntry.day)
+          : getDateForMealIndex(mealPlan.week_of, index),
+        meal_type: scheduleEntry?.mealType || recipes[index].mealType?.toLowerCase()
+      }
+    })
 
     const { error: linkError } = await supabase
       .from('meal_plan_recipes')
@@ -170,14 +181,6 @@ export async function saveGeneratedRecipes(
 }
 
 // Helper functions
-function getDateForMealIndex(weekOf: string, index: number): string {
-  const startDate = new Date(weekOf)
-  const dayOffset = index % 7
-  const mealDate = new Date(startDate)
-  mealDate.setDate(startDate.getDate() + dayOffset)
-  return mealDate.toISOString().split('T')[0]
-}
-
 function parseQuantity(quantityStr: string): number | undefined {
   const match = quantityStr.match(/^([\d.]+)/)
   return match ? parseFloat(match[1]) : undefined

@@ -199,6 +199,8 @@ export default function GeneratingView({
         dinner: totalMeals - (2 * Math.floor(totalMeals / 3))
       }
 
+      const mealSchedule = surveySnapshot?.meal_schedule || []
+
       const response = await fetch('/api/generate-meal-plan', {
         method: 'POST',
         headers: {
@@ -207,6 +209,7 @@ export default function GeneratingView({
         body: JSON.stringify({
           weekOf,
           mealSelection,
+          mealSchedule,
           mealPlanId
         }),
       })

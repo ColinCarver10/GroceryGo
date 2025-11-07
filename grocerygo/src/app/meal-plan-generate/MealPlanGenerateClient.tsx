@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { generateMealPlanFromPreferences, replaceExistingMealPlan } from '@/app/meal-plan-generate/actions'
+import { getNextWeekStart } from '@/utils/mealPlanDates'
 
 const daysOfWeek = [
   { short: 'Mon', full: 'Monday' },
@@ -90,6 +91,30 @@ export default function MealPlanGenerateClient() {
     return { breakfast, lunch, dinner, total: breakfast + lunch + dinner }
   }
 
+  const getMealSchedule = () => {
+    const schedule: Array<{
+      day: string
+      mealType: 'breakfast' | 'lunch' | 'dinner'
+    }> = []
+    
+    // Iterate through days in order to preserve the sequence
+    daysOfWeek.forEach((day) => {
+      const daySelections = selections[day.full]
+      
+      if (daySelections.breakfast) {
+        schedule.push({ day: day.full, mealType: 'breakfast' })
+      }
+      if (daySelections.lunch) {
+        schedule.push({ day: day.full, mealType: 'lunch' })
+      }
+      if (daySelections.dinner) {
+        schedule.push({ day: day.full, mealType: 'dinner' })
+      }
+    })
+    
+    return schedule
+  }
+
   const handleGenerate = async () => {
     const totals = getTotalMeals()
     
@@ -104,16 +129,20 @@ export default function MealPlanGenerateClient() {
 
     try {
       // Get next Monday as the week start
-      const today = new Date()
-      const nextMonday = new Date(today)
-      nextMonday.setDate(today.getDate() + ((1 + 7 - today.getDay()) % 7 || 7))
-      const weekOf = nextMonday.toISOString().split('T')[0]
+      // TODO: Make this configurable via user settings in the future
+      const weekOf = getNextWeekStart('Monday')
 
-      const result = await generateMealPlanFromPreferences(weekOf, {
-        breakfast: totals.breakfast,
-        lunch: totals.lunch,
-        dinner: totals.dinner
-      })
+      const mealSchedule = getMealSchedule()
+
+      const result = await generateMealPlanFromPreferences(
+        weekOf,
+        {
+          breakfast: totals.breakfast,
+          lunch: totals.lunch,
+          dinner: totals.dinner
+        },
+        mealSchedule
+      )
 
       // Check if there's a conflict (existing meal plan)
       if ((result as any).conflict) {
@@ -159,6 +188,8 @@ export default function MealPlanGenerateClient() {
     setShowReplaceDialog(false)
 
     try {
+      const mealSchedule = getMealSchedule()
+
       const result = await replaceExistingMealPlan(
         conflictData.existingPlanId,
         conflictData.weekOf,
@@ -166,7 +197,8 @@ export default function MealPlanGenerateClient() {
           breakfast: totals.breakfast,
           lunch: totals.lunch,
           dinner: totals.dinner
-        }
+        },
+        mealSchedule
       )
 
       if (result.error) {
