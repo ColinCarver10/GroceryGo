@@ -16,6 +16,7 @@ import {
   SimplifyRecipeSchema, 
   createMealPlanSchema 
 } from '@/app/schemas/mealPlanSchemas'
+import { getDateForMealIndex, getDateForScheduledMeal } from '@/utils/mealPlanDates'
 
 const INSTACART_API_URL = 'https://connect.dev.instacart.tools/idp/v1/products/products_link'
 const INSTACART_API_KEY = process.env.INSTACART_API_KEY
@@ -331,12 +332,22 @@ export async function regenerateWithAdjustments(
       }
     }
 
-    // Link recipes to meal plan
-    const mealPlanRecipes = recipeIds.map((recipeId, index) => ({
-      meal_plan_id: mealPlanId,
-      recipe_id: recipeId,
-      planned_for_date: getDateForMealIndex(mealPlan.week_of, index)
-    }))
+    // Link recipes to meal plan with dates from schedule
+    const mealSchedule = mealPlan.survey_snapshot?.meal_schedule || []
+    
+    const mealPlanRecipes = recipeIds.map((recipeId, index) => {
+      // Use the schedule if available, otherwise fall back to old method
+      const scheduleEntry = mealSchedule[index]
+      
+      return {
+        meal_plan_id: mealPlanId,
+        recipe_id: recipeId,
+        planned_for_date: scheduleEntry 
+          ? getDateForScheduledMeal(mealPlan.week_of, scheduleEntry.day)
+          : getDateForMealIndex(mealPlan.week_of, index),
+        meal_type: scheduleEntry?.mealType || allRecipes[index].mealType
+      }
+    })
 
     await supabase
       .from('meal_plan_recipes')
@@ -595,14 +606,6 @@ export async function simplifyRecipe(
 }
 
 // Helper functions
-function getDateForMealIndex(weekOf: string, index: number): string {
-  const startDate = new Date(weekOf)
-  const dayOffset = index % 7
-  const mealDate = new Date(startDate)
-  mealDate.setDate(startDate.getDate() + dayOffset)
-  return mealDate.toISOString().split('T')[0]
-}
-
 function parseQuantity(quantityStr: string): number | undefined {
   const match = quantityStr.match(/^([\d.]+)/)
   return match ? parseFloat(match[1]) : undefined
