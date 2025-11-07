@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import type { MealPlanWithRecipes, Recipe } from '@/types/database'
 import RecipeModal from '@/components/RecipeModal'
-import { updateSurveyResponse } from './actions'
+import Pagination from '@/components/Pagination'
+import { updateSurveyResponse, getPaginatedMealPlans } from './actions'
 
 interface DashboardClientProps {
   surveyResponse: Record<string, any> | null
@@ -15,6 +16,11 @@ interface DashboardClientProps {
     created_at: string
     recipe: Recipe
   }>
+  totalMealPlans: number
+  totalMealsPlanned: number
+  plansThisMonth: number
+  currentPage: number
+  pageSize: number
 }
 
 interface QuestionConfig {
@@ -161,13 +167,28 @@ const questionConfigs: Record<string, QuestionConfig> = {
   },
 }
 
-export default function DashboardClient({ surveyResponse, mealPlans, savedRecipes }: DashboardClientProps) {
+export default function DashboardClient({ 
+  surveyResponse, 
+  mealPlans: initialMealPlans, 
+  savedRecipes,
+  totalMealPlans: initialTotal,
+  totalMealsPlanned,
+  plansThisMonth,
+  currentPage: initialPage,
+  pageSize 
+}: DashboardClientProps) {
   const [showSurveyDropdown, setShowSurveyDropdown] = useState(false)
   const [showSavedRecipes, setShowSavedRecipes] = useState(false)
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null)
   const [editingQuestion, setEditingQuestion] = useState<string | null>(null)
   const [editValue, setEditValue] = useState<string | string[]>('')
   const [isSaving, setIsSaving] = useState(false)
+  
+  // Pagination state
+  const [mealPlans, setMealPlans] = useState(initialMealPlans)
+  const [totalMealPlans, setTotalMealPlans] = useState(initialTotal)
+  const [currentPage, setCurrentPage] = useState(initialPage)
+  const [isLoadingPage, setIsLoadingPage] = useState(false)
 
   // Restore preferences menu state from localStorage on mount
   useEffect(() => {
@@ -273,6 +294,24 @@ export default function DashboardClient({ surveyResponse, mealPlans, savedRecipe
     setEditValue(current.filter(i => i !== item))
   }
 
+  const handlePageChange = async (page: number) => {
+    setIsLoadingPage(true)
+    try {
+      const result = await getPaginatedMealPlans(page, pageSize)
+      if (result.success) {
+        setMealPlans(result.mealPlans)
+        setTotalMealPlans(result.totalMealPlans)
+        setCurrentPage(result.currentPage)
+        // Scroll to top of meal plans section
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+      }
+    } catch (error) {
+      console.error('Error loading page:', error)
+    } finally {
+      setIsLoadingPage(false)
+    }
+  }
+
   return (
     <div className="gg-bg-page min-h-screen">
       <div className="gg-container">
@@ -301,9 +340,15 @@ export default function DashboardClient({ surveyResponse, mealPlans, savedRecipe
               <div className="gg-card">
                 <h2 className="gg-heading-section mb-6">Previous Meal Plans</h2>
                 
-                {mealPlans.length > 0 ? (
-                  <div className="space-y-4">
-                    {mealPlans.map((plan) => (
+                {isLoadingPage ? (
+                  <div className="py-12 text-center">
+                    <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-4 border-gray-200 border-t-[var(--gg-primary)]"></div>
+                    <p className="text-gray-600">Loading meal plans...</p>
+                  </div>
+                ) : mealPlans.length > 0 ? (
+                  <>
+                    <div className="space-y-4">
+                      {mealPlans.map((plan) => (
                       <Link 
                         key={plan.id}
                         href={`/meal-plan/${plan.id}`}
@@ -359,7 +404,15 @@ export default function DashboardClient({ surveyResponse, mealPlans, savedRecipe
                         </div>
                       </Link>
                     ))}
-                  </div>
+                    </div>
+                    
+                    {/* Pagination */}
+                    <Pagination
+                      currentPage={currentPage}
+                      totalPages={Math.ceil(totalMealPlans / pageSize)}
+                      onPageChange={handlePageChange}
+                    />
+                  </>
                 ) : (
                   <div className="py-12 text-center">
                     <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gray-100">
@@ -753,13 +806,13 @@ export default function DashboardClient({ surveyResponse, mealPlans, savedRecipe
                   <div className="flex items-center justify-between">
                     <span className="gg-text-body text-sm">Total Meal Plans</span>
                     <span className="text-2xl font-bold text-[var(--gg-primary)]">
-                      {mealPlans.length}
+                      {totalMealPlans}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="gg-text-body text-sm">Total Meals Planned</span>
                     <span className="text-2xl font-bold text-[var(--gg-primary)]">
-                      {mealPlans.reduce((sum, plan) => sum + plan.total_meals, 0)}
+                      {totalMealsPlanned}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
@@ -771,12 +824,7 @@ export default function DashboardClient({ surveyResponse, mealPlans, savedRecipe
                   <div className="flex items-center justify-between">
                     <span className="gg-text-body text-sm">This Month</span>
                     <span className="text-2xl font-bold text-[var(--gg-primary)]">
-                      {mealPlans.filter(plan => {
-                        const planDate = new Date(plan.created_at)
-                        const now = new Date()
-                        return planDate.getMonth() === now.getMonth() && 
-                               planDate.getFullYear() === now.getFullYear()
-                      }).length}
+                      {plansThisMonth}
                     </span>
                   </div>
                 </div>
