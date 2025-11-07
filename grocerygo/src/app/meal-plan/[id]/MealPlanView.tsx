@@ -262,8 +262,11 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
   }
 
   const handleOrderInstacart = async () => {
-    if (mealPlan.grocery_items.length === 0) {
-      setInstacartError('No items to order')
+    // Filter out checked items - only send unchecked items to Instacart
+    const uncheckedItems = mealPlan.grocery_items.filter(item => !checkedItems.has(item.id))
+    
+    if (uncheckedItems.length === 0) {
+      setInstacartError('No unchecked items to order')
       return
     }
 
@@ -275,8 +278,8 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
       const mealPlanTitle = `Meal Plan for ${formatDate(mealPlan.week_of)}`
       
       const result = await createInstacartOrder(
+        uncheckedItems,
         mealPlan.id,
-        mealPlan.grocery_items,
         mealPlanTitle,
         mealPlanUrl
       )
@@ -662,7 +665,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
                 <div className="gg-card">
                   <button
                     onClick={handleOrderInstacart}
-                    disabled={isOrderingInstacart || mealPlan.grocery_items.length === 0}
+                    disabled={isOrderingInstacart || mealPlan.grocery_items.length === 0 || mealPlan.grocery_items.every(item => checkedItems.has(item.id))}
                     className="w-full gg-btn-primary flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isOrderingInstacart ? (
