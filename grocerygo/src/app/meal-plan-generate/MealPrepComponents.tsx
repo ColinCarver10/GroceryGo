@@ -233,12 +233,12 @@ interface MealPrepSummaryProps {
 
 export function MealPrepSummary({ mealPrepConfig }: MealPrepSummaryProps) {
   const getTotalRecipes = () => {
-    return Object.values(mealPrepConfig).reduce((sum, batches) => sum + batches.length, 0)
+    return Object.values(mealPrepConfig).reduce((sum: number, batches: MealPrepBatch[]) => sum + batches.length, 0)
   }
 
   const getTotalMealDays = () => {
     return Object.values(mealPrepConfig).reduce(
-      (sum, batches) => sum + batches.reduce((batchSum, batch) => batchSum + batch.days.length, 0),
+      (sum: number, batches: MealPrepBatch[]) => sum + batches.reduce((batchSum: number, batch: MealPrepBatch) => batchSum + batch.days.length, 0),
       0
     )
   }
