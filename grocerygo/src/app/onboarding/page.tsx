@@ -164,6 +164,34 @@ const sections: Section[] = [
       },
     ],
   },
+  {
+    title: "Meal Prep Habits",
+    questions: [
+      {
+        id: 12,
+        type: 'multiple-choice',
+        question: 'How often are you comfortable eating the same meal multiple times in a week?',
+        description: 'This helps us understand how many times to repeat the same meal throughout the week.',
+        options: [
+          'Prefer unique meals every time',
+          'Happy to repeat a meal once',
+          'Comfortable repeating meals multiple times'
+        ],
+      },
+      {
+        id: 13,
+        type: 'multiple-choice',
+        question: 'For weekday lunches, how many different recipes do you prefer to cook?',
+        description: 'We can reuse recipes across days if you like to batch cook.',
+        options: [
+          '1 recipe (cook once, eat all week)',
+          '2 recipes (each eaten a couple of times)',
+          '3 recipes (mix of repeats and variety)',
+          '5 recipes (a unique lunch each weekday)'
+        ],
+      },
+    ],
+  },
 ]
 
 export default function OnboardingPage() {

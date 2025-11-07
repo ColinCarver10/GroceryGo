@@ -13,6 +13,7 @@ interface GeneratingViewProps {
 }
 
 interface RecipeData {
+  id?: string
   name: string
   mealType?: string
   ingredients: Array<{
@@ -42,6 +43,33 @@ interface GroceryListItem {
   quantity: string
 }
 
+interface SelectedSlot {
+  day: string
+  mealType: string
+}
+
+interface ScheduleEntry {
+  slotLabel: string
+  day: string
+  mealType: string
+  recipeId: string
+  portionMultiplier: number
+}
+
+function getScheduledDay(weekOf: string, index: number) {
+  const startDate = new Date(weekOf)
+  if (Number.isNaN(startDate.getTime())) {
+    return 'Unscheduled'
+  }
+
+  const mealDate = new Date(startDate)
+  mealDate.setDate(startDate.getDate() + (index % 7))
+
+  return mealDate.toLocaleDateString('en-US', {
+    weekday: 'long'
+  })
+}
+
 export default function GeneratingView({
   mealPlanId,
   weekOf,
@@ -53,6 +81,7 @@ export default function GeneratingView({
     Array(totalMeals).fill(null)
   )
   const [groceryList, setGroceryList] = useState<GroceryListItem[]>([])
+  const [scheduleEntries, setScheduleEntries] = useState<ScheduleEntry[]>([])
   const [currentRecipeIndex, setCurrentRecipeIndex] = useState(0)
   const [isComplete, setIsComplete] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
@@ -190,6 +219,30 @@ export default function GeneratingView({
         dinner: totalMeals - (2 * Math.floor(totalMeals / 3))
       }
 
+      const distinctRecipeCounts = surveySnapshot?.distinct_recipe_counts || mealSelection
+
+      const selectedSlots: SelectedSlot[] =
+        surveySnapshot?.selected_slots ||
+        Array.from({ length: mealSelection.breakfast }, (_, idx) => ({
+          day: getScheduledDay(weekOf, idx),
+          mealType: 'breakfast'
+        }))
+          .concat(
+            Array.from({ length: mealSelection.lunch }, (_, idx) => ({
+              day: getScheduledDay(weekOf, mealSelection.breakfast + idx),
+              mealType: 'lunch'
+            }))
+          )
+          .concat(
+            Array.from({ length: mealSelection.dinner }, (_, idx) => ({
+              day: getScheduledDay(
+                weekOf,
+                mealSelection.breakfast + mealSelection.lunch + idx
+              ),
+              mealType: 'dinner'
+            }))
+          )
+
       const response = await fetch('/api/generate-meal-plan', {
         method: 'POST',
         headers: {
@@ -198,7 +251,9 @@ export default function GeneratingView({
         body: JSON.stringify({
           weekOf,
           mealSelection,
-          mealPlanId
+          mealPlanId,
+          distinctRecipeCounts,
+          selectedSlots
         }),
       })
 
@@ -253,6 +308,16 @@ export default function GeneratingView({
       
       const aiResponse = JSON.parse(jsonStr.trim())
 
+      if (!aiResponse.schedule || !Array.isArray(aiResponse.schedule)) {
+        setError('Meal plan generation did not include schedule details. Please try again.')
+        return
+      }
+
+      if (aiResponse.schedule.length !== totalMeals) {
+        setError(`Meal plan schedule mismatch. Expected ${totalMeals} slots, received ${aiResponse.schedule.length}.`)
+        return
+      }
+
       if (aiResponse.recipes && Array.isArray(aiResponse.recipes)) {
         // Set all recipes at once
         setRecipes(aiResponse.recipes)
@@ -263,8 +328,11 @@ export default function GeneratingView({
         setGroceryList(aiResponse.grocery_list)
       }
 
+      const parsedSchedule = aiResponse.schedule as ScheduleEntry[]
+      setScheduleEntries(parsedSchedule)
+
       // Auto-save after parsing
-      await saveRecipes(aiResponse.recipes, aiResponse.grocery_list)
+      await saveRecipes(aiResponse.recipes, aiResponse.grocery_list, parsedSchedule)
     } catch (err) {
       console.error('Parse error:', err)
       console.error('Buffer content:', buffer)
@@ -273,14 +341,19 @@ export default function GeneratingView({
     }
   }
 
-  const saveRecipes = async (recipesToSave: RecipeData[], groceryListToSave: GroceryListItem[]) => {
+  const saveRecipes = async (
+    recipesToSave: RecipeData[],
+    groceryListToSave: GroceryListItem[],
+    schedule: ScheduleEntry[]
+  ) => {
     setIsSaving(true)
     
     try {
       const result = await saveGeneratedRecipes(
         mealPlanId,
         recipesToSave,
-        groceryListToSave
+        groceryListToSave,
+        schedule
       )
 
       if (result.success) {

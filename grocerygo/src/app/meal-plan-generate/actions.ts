@@ -8,9 +8,16 @@ interface MealSelection {
   dinner: number
 }
 
+type MealSlot = {
+  day: string
+  mealType: 'breakfast' | 'lunch' | 'dinner'
+}
+
 export async function generateMealPlanFromPreferences(
   weekOf: string,
-  mealSelection: MealSelection
+  mealSelection: MealSelection,
+  distinctCounts: MealSelection,
+  selectedSlots: MealSlot[]
 ) {
   try {
     // Get authenticated user
@@ -59,7 +66,9 @@ export async function generateMealPlanFromPreferences(
     // Include meal selection in the survey snapshot for reference
     const extendedSnapshot = {
       ...userData.survey_response,
-      meal_selection: mealSelection
+      meal_selection: mealSelection,
+      distinct_recipe_counts: distinctCounts,
+      selected_slots: selectedSlots
     }
 
     const { data: mealPlan, error: mealPlanError } = await supabase
@@ -86,7 +95,9 @@ export async function generateMealPlanFromPreferences(
       success: true,
       mealPlanId: mealPlan.id,
       totalMeals,
-      mealSelection
+      mealSelection,
+      distinctRecipeCounts: distinctCounts,
+      selectedSlots
     }
 
   } catch (error: any) {
@@ -100,7 +111,9 @@ export async function generateMealPlanFromPreferences(
 export async function replaceExistingMealPlan(
   existingPlanId: string,
   weekOf: string,
-  mealSelection: MealSelection
+  mealSelection: MealSelection,
+  distinctCounts: MealSelection,
+  selectedSlots: MealSlot[]
 ) {
   try {
     // Get authenticated user
@@ -136,7 +149,7 @@ export async function replaceExistingMealPlan(
     }
 
     // Now call the generate function to create the new meal plan
-    const result = await generateMealPlanFromPreferences(weekOf, mealSelection)
+    const result = await generateMealPlanFromPreferences(weekOf, mealSelection, distinctCounts, selectedSlots)
     
     // Add replaced flag if successful
     if (result.success) {

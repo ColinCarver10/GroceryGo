@@ -13,10 +13,12 @@ interface MealSelection {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { weekOf, mealSelection, mealPlanId } = body as {
+    const { weekOf, mealSelection, mealPlanId, distinctRecipeCounts, selectedSlots } = body as {
       weekOf: string
       mealSelection: MealSelection
       mealPlanId: string
+      distinctRecipeCounts?: MealSelection
+      selectedSlots?: Array<{ day: string; mealType: string }>
     }
 
     // Get authenticated user
@@ -56,6 +58,46 @@ export async function POST(request: NextRequest) {
     // Calculate total meals
     const totalMeals = mealSelection.breakfast + mealSelection.lunch + mealSelection.dinner
 
+    // Determine distinct recipe counts (fallback to no-duplicate scenario)
+    const distinctCounts = distinctRecipeCounts
+      ?? (mealPlan.survey_snapshot?.distinct_recipe_counts as MealSelection | undefined)
+      ?? {
+        breakfast: mealSelection.breakfast,
+        lunch: mealSelection.lunch,
+        dinner: mealSelection.dinner
+      }
+
+    const slots = (selectedSlots?.length ? selectedSlots : mealPlan.survey_snapshot?.selected_slots) as Array<{
+      day: string
+      mealType: string
+    }> | undefined
+
+    const toTitleCase = (value: string) =>
+      value.charAt(0).toUpperCase() + value.slice(1).toLowerCase()
+
+    const resolvedSlots =
+      slots && slots.length > 0
+        ? slots.map((slot) => ({
+            day: slot.day,
+            mealType: toTitleCase(slot.mealType)
+          }))
+        : Array.from({ length: totalMeals }).map((_, index) => ({
+            day: 'Unscheduled',
+            mealType:
+              index < mealSelection.breakfast
+                ? 'Breakfast'
+                : index < mealSelection.breakfast + mealSelection.lunch
+                  ? 'Lunch'
+                  : 'Dinner'
+          }))
+
+    const slotListText = resolvedSlots
+      .map((slot, index) => {
+        const label = `${slot.day} ${slot.mealType}`
+        return `- Slot ${index + 1}: ${label}`
+      })
+      .join('\n')
+
     // Build the prompt
     const surveyData = userData.survey_response
     const enhancedPrompt = `${mealPlanFromSurveyPrompt}
@@ -69,24 +111,32 @@ ${JSON.stringify(surveyData, null, 2)}
 
 **Recipe Count:** You MUST generate exactly ${totalMeals} recipes total.
 
-**Breakdown:**
-- ${mealSelection.breakfast} recipes with mealType: "Breakfast"
-- ${mealSelection.lunch} recipes with mealType: "Lunch"
-- ${mealSelection.dinner} recipes with mealType: "Dinner"
+**Breakdown (total meal slots):**
+- ${mealSelection.breakfast} slots for "Breakfast"
+- ${mealSelection.lunch} slots for "Lunch"
+- ${mealSelection.dinner} slots for "Dinner"
+
+**Unique recipe targets (per mealType):**
+- Create exactly ${distinctCounts.breakfast} unique breakfast recipe(s)
+- Create exactly ${distinctCounts.lunch} unique lunch recipe(s)
+- Create exactly ${distinctCounts.dinner} unique dinner recipe(s)
 
 **Process:**
-1. Generate ${mealSelection.breakfast} breakfast recipes
-2. Generate ${mealSelection.lunch} lunch recipes  
-3. Generate ${mealSelection.dinner} dinner recipes
-4. VALIDATE: Count recipes in your "recipes" array
-   - Breakfasts: Must equal ${mealSelection.breakfast}
-   - Lunches: Must equal ${mealSelection.lunch}
-   - Dinners: Must equal ${mealSelection.dinner}
-   - Total: Must equal ${totalMeals}
-5. If count is incorrect, regenerate the meal plan
-6. Only output when validation passes
+1. Generate the unique recipes (IDs) per meal type.
+2. Each recipe\'s "servings" must equal the total number of schedule portions assigned to that recipe.
+3. Build the schedule array so that EVERY slot listed below is mapped to one of the recipe IDs:
 
-**Critical:** The "recipes" array must contain exactly ${totalMeals} recipe objects.`
+${slotListText}
+
+4. For duplicated recipes, reuse the same recipe ID and set \`portionMultiplier\` (integer >= 1) for each slot, typically 1 per person.
+5. VALIDATE before returning:
+   - Unique recipe counts per meal type match the targets above.
+   - Schedule length equals ${resolvedSlots.length} and covers every slot exactly once.
+   - Every schedule entry references a valid recipe ID.
+
+**Critical:** The "recipes" array must contain exactly ${
+      distinctCounts.breakfast + distinctCounts.lunch + distinctCounts.dinner
+    } unique recipe objects.`
 
     // Use AI SDK's streamText for proper streaming
     const result = streamText({

@@ -116,6 +116,8 @@ export interface MealPlanRecipe {
   planned_for_date?: string
   meal_type?: 'breakfast' | 'lunch' | 'dinner'
   notes?: string
+  portion_multiplier?: number
+  slot_label?: string
   recipe?: Recipe // For joins
 }
 
@@ -125,6 +127,8 @@ export interface MealPlanRecipeInsert {
   planned_for_date?: string
   meal_type?: 'breakfast' | 'lunch' | 'dinner'
   notes?: string
+  portion_multiplier?: number
+  slot_label?: string
 }
 
 // Grocery Item types
@@ -232,6 +236,7 @@ export interface MealPlanWithRecipes extends MealPlan {
 // AI Response format (matches your prompts.ts output)
 export interface AIGeneratedMealPlan {
   recipes: Array<{
+    id: string
     name: string
     mealType?: string
     ingredients: Array<{
@@ -239,6 +244,14 @@ export interface AIGeneratedMealPlan {
       quantity: string
     }>
     steps: string[]
+    servings?: number
+  }>
+  schedule: Array<{
+    slotLabel: string
+    day: string
+    mealType: string
+    recipeId: string
+    portionMultiplier: number
   }>
   grocery_list: Array<{
     item: string

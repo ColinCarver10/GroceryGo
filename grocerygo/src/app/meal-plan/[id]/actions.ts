@@ -300,6 +300,7 @@ export async function regenerateWithAdjustments(
 
     // Create new recipes
     const recipeIds: string[] = []
+    const recipeIdMap: Record<string, string> = {}
     for (const aiRecipe of aiMealPlan.recipes) {
       const { data: newRecipe } = await supabase
         .from('recipes')
@@ -315,15 +316,51 @@ export async function regenerateWithAdjustments(
 
       if (newRecipe) {
         recipeIds.push(newRecipe.id)
+        if ((aiRecipe as any).id) {
+          recipeIdMap[(aiRecipe as any).id] = newRecipe.id
+        }
       }
     }
 
-    // Link recipes to meal plan
-    const mealPlanRecipes = recipeIds.map((recipeId, index) => ({
-      meal_plan_id: mealPlanId,
-      recipe_id: recipeId,
-      planned_for_date: getDateForMealIndex(mealPlan.week_of, index)
-    }))
+    const scheduleEntries = aiMealPlan.schedule && Array.isArray(aiMealPlan.schedule)
+      ? aiMealPlan.schedule
+      : []
+
+    const mealPlanRecipes = scheduleEntries.length > 0
+      ? scheduleEntries.reduce<{
+          inserts: {
+            meal_plan_id: string
+            recipe_id: string
+            planned_for_date?: string
+            meal_type?: 'breakfast' | 'lunch' | 'dinner'
+            portion_multiplier?: number
+            slot_label?: string
+          }[]
+          missingRecipeRefs: string[]
+        }>((acc, entry, index) => {
+          const linkedRecipeId = recipeIdMap[entry.recipeId]
+          if (!linkedRecipeId) {
+            acc.missingRecipeRefs.push(entry.recipeId)
+            return acc
+          }
+
+          const mealType = entry.mealType?.toLowerCase() as 'breakfast' | 'lunch' | 'dinner' | undefined
+          acc.inserts.push({
+            meal_plan_id: mealPlanId,
+            recipe_id: linkedRecipeId,
+            planned_for_date: getDateForDayName(mealPlan.week_of, entry.day),
+            meal_type: mealType,
+            portion_multiplier: entry.portionMultiplier || 1,
+            slot_label: entry.slotLabel || `${entry.day} ${entry.mealType}`
+          })
+          return acc
+        }, { inserts: [], missingRecipeRefs: [] }).inserts
+      : recipeIds.map((recipeId, index) => ({
+          meal_plan_id: mealPlanId,
+          recipe_id: recipeId,
+          planned_for_date: getDateForMealIndex(mealPlan.week_of, index),
+          portion_multiplier: 1
+        }))
 
     await supabase
       .from('meal_plan_recipes')
@@ -359,7 +396,10 @@ export async function regenerateWithAdjustments(
 
     await supabase
       .from('meal_plans')
-      .update({ survey_snapshot: updatedSnapshot })
+      .update({
+        survey_snapshot: updatedSnapshot,
+        total_meals: scheduleEntries.length > 0 ? scheduleEntries.length : recipeIds.length
+      })
       .eq('id', mealPlanId)
 
     // Track action for feedback
@@ -590,6 +630,40 @@ function getDateForMealIndex(weekOf: string, index: number): string {
   const dayOffset = index % 7
   const mealDate = new Date(startDate)
   mealDate.setDate(startDate.getDate() + dayOffset)
+  return mealDate.toISOString().split('T')[0]
+}
+
+function getDateForDayName(weekOf: string, dayName?: string): string | undefined {
+  if (!dayName) return undefined
+
+  const normalizedDay = dayName.trim().toLowerCase()
+  const dayMap: Record<string, number> = {
+    sunday: 0,
+    monday: 1,
+    tuesday: 2,
+    wednesday: 3,
+    thursday: 4,
+    friday: 5,
+    saturday: 6
+  }
+
+  const targetOffset = dayMap[normalizedDay]
+
+  if (targetOffset === undefined) {
+    return undefined
+  }
+
+  const startDate = new Date(weekOf)
+  if (Number.isNaN(startDate.getTime())) {
+    return undefined
+  }
+
+  const startDayIndex = dayMap[startDate.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase()] ?? 1
+  const offset = targetOffset - startDayIndex
+
+  const mealDate = new Date(startDate)
+  mealDate.setDate(startDate.getDate() + offset)
+
   return mealDate.toISOString().split('T')[0]
 }
 
