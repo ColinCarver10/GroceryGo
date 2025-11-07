@@ -20,8 +20,10 @@ import { getDateForMealIndex, getDateForScheduledMeal } from '@/utils/mealPlanDa
 
 const INSTACART_API_URL = 'https://connect.dev.instacart.tools/idp/v1/products/products_link'
 const INSTACART_API_KEY = process.env.INSTACART_API_KEY
+const INSTACART_LINK_EXPIRATION_DAYS = 1 // Instacart links expire after 1 day (24 hours)
 
 export async function createInstacartOrder(
+  mealPlanId: string,
   groceryItems: GroceryItem[],
   mealPlanTitle: string,
   mealPlanUrl: string
@@ -29,6 +31,34 @@ export async function createInstacartOrder(
   try {
     if (!INSTACART_API_KEY) {
       throw new Error('Instacart API key is not configured')
+    }
+
+    const supabase = await createClient()
+
+    // Check for cached link
+    const { data: mealPlan, error: fetchError } = await supabase
+      .from('meal_plans')
+      .select('instacart_link, instacart_link_expires_at')
+      .eq('id', mealPlanId)
+      .single()
+
+    if (fetchError) {
+      console.error('Error fetching meal plan for cache check:', fetchError)
+      // Continue to generate new link even if cache check fails
+    }
+
+    // If we have a cached link and it hasn't expired, return it
+    if (mealPlan?.instacart_link && mealPlan?.instacart_link_expires_at) {
+      const expiresAt = new Date(mealPlan.instacart_link_expires_at)
+      const now = new Date()
+      
+      // Check if link is still valid (with 1 hour buffer for safety)
+      if (expiresAt.getTime() > now.getTime() + (60 * 60 * 1000)) {
+        return {
+          success: true,
+          link: mealPlan.instacart_link
+        }
+      }
     }
 
     // Convert grocery items to Instacart line items
@@ -58,7 +88,7 @@ export async function createInstacartOrder(
     const shoppingListData: ShoppingListData = {
       title: mealPlanTitle,
       link_type: 'shopping_list',
-      expires_in: 1, // 1 day (Instacart expects days, not seconds)
+      expires_in: INSTACART_LINK_EXPIRATION_DAYS,
       instructions: [
         'These ingredients are for your weekly meal plan from GroceryGo',
         'Feel free to adjust quantities based on your preferences'
@@ -92,6 +122,24 @@ export async function createInstacartOrder(
     }
 
     const data: InstacartResponse = await response.json()
+    
+    // Cache the link in the database
+    const expiresAt = data.expires_at 
+      ? new Date(data.expires_at)
+      : new Date(Date.now() + INSTACART_LINK_EXPIRATION_DAYS * 24 * 60 * 60 * 1000) // Default to configured expiration time
+
+    const { error: updateError } = await supabase
+      .from('meal_plans')
+      .update({
+        instacart_link: data.products_link_url,
+        instacart_link_expires_at: expiresAt.toISOString()
+      })
+      .eq('id', mealPlanId)
+
+    if (updateError) {
+      console.error('Error caching Instacart link:', updateError)
+      // Don't fail the request if caching fails - still return the link
+    }
     
     return {
       success: true,

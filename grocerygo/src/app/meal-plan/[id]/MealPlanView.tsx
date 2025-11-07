@@ -279,6 +279,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
       
       const result = await createInstacartOrder(
         uncheckedItems,
+        mealPlan.id,
         mealPlanTitle,
         mealPlanUrl
       )
