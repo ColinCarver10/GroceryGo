@@ -23,8 +23,8 @@ const INSTACART_API_KEY = process.env.INSTACART_API_KEY
 const INSTACART_LINK_EXPIRATION_DAYS = 1 // Instacart links expire after 1 day (24 hours)
 
 export async function createInstacartOrder(
-  mealPlanId: string,
   groceryItems: GroceryItem[],
+  mealPlanId: string,
   mealPlanTitle: string,
   mealPlanUrl: string
 ): Promise<{ success: boolean; link?: string; error?: string }> {
