@@ -27,6 +27,11 @@ export default async function DashboardPage() {
       surveyResponse={dashboardData.surveyResponse}
       mealPlans={dashboardData.mealPlans}
       savedRecipes={dashboardData.savedRecipes}
+      totalMealPlans={dashboardData.totalMealPlans}
+      totalMealsPlanned={dashboardData.totalMealsPlanned}
+      plansThisMonth={dashboardData.plansThisMonth}
+      currentPage={dashboardData.currentPage}
+      pageSize={dashboardData.pageSize}
     />
   )
 }
