@@ -190,19 +190,10 @@ export default function DashboardClient({
   const [currentPage, setCurrentPage] = useState(initialPage)
   const [isLoadingPage, setIsLoadingPage] = useState(false)
 
-  // Restore preferences menu state from localStorage on mount
-  useEffect(() => {
-    const savedState = localStorage.getItem('preferencesMenuOpen')
-    if (savedState === 'true') {
-      setShowSurveyDropdown(true)
-    }
-  }, [])
-
   // Toggle preferences dropdown and persist state
   const toggleSurveyDropdown = () => {
     const newState = !showSurveyDropdown
     setShowSurveyDropdown(newState)
-    localStorage.setItem('preferencesMenuOpen', String(newState))
   }
 
   const formatSurveyValue = (value: string | string[]) => {
@@ -251,7 +242,6 @@ export default function DashboardClient({
         setEditingQuestion(null)
         setEditValue('')
         // Force a page refresh to get updated data
-        window.location.reload()
       } else {
         alert(result.error || 'Failed to update preference')
       }
