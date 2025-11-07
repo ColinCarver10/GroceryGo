@@ -56,6 +56,7 @@ Server-side action that handles the API call to Instacart:
 #### Function: `createInstacartOrder`
 
 **Parameters:**
+- `mealPlanId: string` - ID of the meal plan (used for caching)
 - `groceryItems: GroceryItem[]` - Array of grocery items from the meal plan
 - `mealPlanTitle: string` - Title for the shopping list (displayed in Instacart)
 - `mealPlanUrl: string` - URL to link back to the meal plan
@@ -67,13 +68,20 @@ Promise<{ success: boolean; link?: string; error?: string }>
 
 **Process:**
 1. Validates that INSTACART_API_KEY is configured
-2. Converts GroceryItem objects to Instacart LineItem format
-3. Creates a ShoppingListData payload with:
-   - Title and instructions
-   - Line items with quantities and units
-   - Partner linkback URL
-   - 24-hour expiration
-4. Makes POST request to Instacart API
+2. **Checks database for cached Instacart link:**
+   - If a valid cached link exists (not expired), returns it immediately
+   - Uses 1-hour buffer before expiration for safety
+3. If no valid cache, generates new link:
+   - Converts GroceryItem objects to Instacart LineItem format
+   - Creates a ShoppingListData payload with:
+     - Title and instructions
+     - Line items with quantities and units
+     - Partner linkback URL
+     - 24-hour expiration
+   - Makes POST request to Instacart API
+4. **Caches the new link in database:**
+   - Stores link URL in `meal_plans.instacart_link`
+   - Stores expiration time in `meal_plans.instacart_link_expires_at`
 5. Returns success with link or error message
 
 **Environment Variables Required:**
@@ -212,6 +220,43 @@ INSTACART_API_KEY=your_instacart_api_key_here
 
 Shopping links expire after 24 hours (86400 seconds). This is configured in the `expires_in` field of the request.
 
+## Link Caching
+
+To improve performance and reduce unnecessary API calls, Instacart links are cached per meal plan:
+
+### Database Schema
+
+```sql
+ALTER TABLE meal_plans
+ADD COLUMN instacart_link TEXT,
+ADD COLUMN instacart_link_expires_at TIMESTAMP WITH TIME ZONE;
+```
+
+### Caching Behavior
+
+1. **First Request:** When a user clicks "Order from Instacart" for the first time:
+   - API call is made to Instacart
+   - Link is saved to `meal_plans.instacart_link`
+   - Expiration is saved to `meal_plans.instacart_link_expires_at`
+   - Link opens in new tab
+
+2. **Subsequent Requests:** When the same meal plan's link is requested again:
+   - Checks if cached link exists and hasn't expired (with 1-hour buffer)
+   - If valid, returns cached link immediately (no API call)
+   - If expired, generates new link and updates cache
+
+3. **Expiration Handling:**
+   - Links expire 24 hours after creation (Instacart default)
+   - System checks expiration with 1-hour safety buffer
+   - Expired links are automatically regenerated
+
+### Benefits
+
+- **Performance:** Instant link retrieval for repeat requests
+- **API Efficiency:** Reduces unnecessary calls to Instacart API
+- **User Experience:** Faster response times after first generation
+- **Cost Savings:** Minimizes API usage charges (if applicable)
+
 ## Future Enhancements
 
 1. **Dietary Filters** - Map dietary restrictions to health_filters
@@ -221,6 +266,7 @@ Shopping links expire after 24 hours (86400 seconds). This is configured in the 
 5. **Bulk Actions** - Allow ordering multiple meal plans at once
 6. **Price Comparison** - Show estimated Instacart prices vs meal plan estimates
 7. **Recurring Orders** - Auto-create orders for recurring meal plans
+8. **Cache Invalidation** - Clear cache when grocery list is modified
 
 ## Testing
 

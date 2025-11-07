@@ -22,6 +22,7 @@ const INSTACART_API_URL = 'https://connect.dev.instacart.tools/idp/v1/products/p
 const INSTACART_API_KEY = process.env.INSTACART_API_KEY
 
 export async function createInstacartOrder(
+  mealPlanId: string,
   groceryItems: GroceryItem[],
   mealPlanTitle: string,
   mealPlanUrl: string
@@ -30,6 +31,38 @@ export async function createInstacartOrder(
     if (!INSTACART_API_KEY) {
       throw new Error('Instacart API key is not configured')
     }
+
+    const supabase = await createClient()
+
+    // Check for cached link
+    const { data: mealPlan, error: fetchError } = await supabase
+      .from('meal_plans')
+      .select('instacart_link, instacart_link_expires_at')
+      .eq('id', mealPlanId)
+      .single()
+
+    if (fetchError) {
+      console.error('Error fetching meal plan for cache check:', fetchError)
+      // Continue to generate new link even if cache check fails
+    }
+
+    // If we have a cached link and it hasn't expired, return it
+    if (mealPlan?.instacart_link && mealPlan?.instacart_link_expires_at) {
+      const expiresAt = new Date(mealPlan.instacart_link_expires_at)
+      const now = new Date()
+      
+      // Check if link is still valid (with 1 hour buffer for safety)
+      if (expiresAt.getTime() > now.getTime() + (60 * 60 * 1000)) {
+        console.log('Using cached Instacart link for meal plan:', mealPlanId)
+        return {
+          success: true,
+          link: mealPlan.instacart_link
+        }
+      }
+    }
+
+    // No valid cached link - generate a new one
+    console.log('Generating new Instacart link for meal plan:', mealPlanId)
 
     // Convert grocery items to Instacart line items
     const lineItems: LineItem[] = groceryItems.map((item) => {
@@ -92,6 +125,24 @@ export async function createInstacartOrder(
     }
 
     const data: InstacartResponse = await response.json()
+    
+    // Cache the link in the database
+    const expiresAt = data.expires_at 
+      ? new Date(data.expires_at)
+      : new Date(Date.now() + 24 * 60 * 60 * 1000) // Default to 24 hours from now
+
+    const { error: updateError } = await supabase
+      .from('meal_plans')
+      .update({
+        instacart_link: data.products_link_url,
+        instacart_link_expires_at: expiresAt.toISOString()
+      })
+      .eq('id', mealPlanId)
+
+    if (updateError) {
+      console.error('Error caching Instacart link:', updateError)
+      // Don't fail the request if caching fails - still return the link
+    }
     
     return {
       success: true,
