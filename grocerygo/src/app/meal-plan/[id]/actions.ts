@@ -53,16 +53,12 @@ export async function createInstacartOrder(
       
       // Check if link is still valid (with 1 hour buffer for safety)
       if (expiresAt.getTime() > now.getTime() + (60 * 60 * 1000)) {
-        console.log('Using cached Instacart link for meal plan:', mealPlanId)
         return {
           success: true,
           link: mealPlan.instacart_link
         }
       }
     }
-
-    // No valid cached link - generate a new one
-    console.log('Generating new Instacart link for meal plan:', mealPlanId)
 
     // Convert grocery items to Instacart line items
     const lineItems: LineItem[] = groceryItems.map((item) => {
