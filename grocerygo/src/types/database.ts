@@ -93,6 +93,10 @@ export interface MealPlan {
   generation_method?: 'ai-generated' | 'template' | 'manual'
   template_id?: string
   ai_model?: string
+  
+  // Instacart caching fields
+  instacart_link?: string
+  instacart_link_expires_at?: string
 }
 
 export interface MealPlanInsert {
@@ -106,6 +110,10 @@ export interface MealPlanInsert {
   generation_method?: 'ai-generated' | 'template' | 'manual'
   template_id?: string
   ai_model?: string
+  
+  // Instacart caching fields (optional on insert)
+  instacart_link?: string
+  instacart_link_expires_at?: string
 }
 
 // Meal Plan Recipe junction
