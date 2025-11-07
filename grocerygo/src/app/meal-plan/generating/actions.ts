@@ -110,20 +110,52 @@ export async function saveGeneratedRecipes(
 
     // Link recipes to meal plan with dates from schedule
     const mealSchedule = mealPlan.survey_snapshot?.meal_schedule || []
+    const mealPrepConfig = mealPlan.survey_snapshot?.meal_prep_config
     
-    const mealPlanRecipes = recipeIds.map((recipeId, index) => {
-      // Use the schedule if available, otherwise fall back to old method
-      const scheduleEntry = mealSchedule[index]
+    let mealPlanRecipes: any[] = []
+
+    // Check if meal prep mode is enabled
+    if (mealPrepConfig) {
+      // Meal prep mode: one recipe per batch, used for multiple days
+      let recipeIndex = 0
       
-      return {
-        meal_plan_id: mealPlanId,
-        recipe_id: recipeId,
-        planned_for_date: scheduleEntry 
-          ? getDateForScheduledMeal(mealPlan.week_of, scheduleEntry.day)
-          : getDateForMealIndex(mealPlan.week_of, index),
-        meal_type: scheduleEntry?.mealType || recipes[index].mealType?.toLowerCase()
+      for (const mealType of ['breakfast', 'lunch', 'dinner']) {
+        const batches = mealPrepConfig[mealType] || []
+        
+        for (const batch of batches) {
+          const recipeId = recipeIds[recipeIndex]
+          const batchLetter = String.fromCharCode(65 + batches.indexOf(batch))
+          
+          // Create a meal_plan_recipe entry for each day in the batch
+          for (const day of batch.days) {
+            mealPlanRecipes.push({
+              meal_plan_id: mealPlanId,
+              recipe_id: recipeId,
+              planned_for_date: getDateForScheduledMeal(mealPlan.week_of, day),
+              meal_type: mealType,
+              notes: `Meal prep batch ${batchLetter}`
+            })
+          }
+          
+          recipeIndex++
+        }
       }
-    })
+    } else {
+      // Regular mode: one recipe per meal slot
+      mealPlanRecipes = recipeIds.map((recipeId, index) => {
+        // Use the schedule if available, otherwise fall back to old method
+        const scheduleEntry = mealSchedule[index]
+        
+        return {
+          meal_plan_id: mealPlanId,
+          recipe_id: recipeId,
+          planned_for_date: scheduleEntry 
+            ? getDateForScheduledMeal(mealPlan.week_of, scheduleEntry.day)
+            : getDateForMealIndex(mealPlan.week_of, index),
+          meal_type: scheduleEntry?.mealType || recipes[index].mealType?.toLowerCase()
+        }
+      })
+    }
 
     const { error: linkError } = await supabase
       .from('meal_plan_recipes')
