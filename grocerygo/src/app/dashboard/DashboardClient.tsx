@@ -5,6 +5,7 @@ import Link from 'next/link'
 import type { MealPlanWithRecipes, Recipe } from '@/types/database'
 import RecipeModal from '@/components/RecipeModal'
 import { updateSurveyResponse } from './actions'
+import { questions, questionLabels } from '@/app/schemas/userPreferenceQuestions'
 
 interface DashboardClientProps {
   surveyResponse: Record<string, any> | null
@@ -17,149 +18,8 @@ interface DashboardClientProps {
   }>
 }
 
-interface QuestionConfig {
-  label: string
-  type: 'multiple-choice' | 'multiple-select' | 'ranking' | 'removable-list'
-  options: string[]
-  maxSelections?: number
-}
-
-const questionLabels: Record<string, string> = {
-  '1': 'Age Range',
-  '2': 'Household Size',
-  '3': 'Weekly Budget',
-  '4': 'Cooking Skill Level',
-  '5': 'Prep Time Available',
-  '6': 'Dietary Restrictions',
-  '7': 'Allergies/Intolerances',
-  '8': 'Flavor Preferences',
-  '9': 'Meal Planning Goals',
-  '10': 'Preferred Delivery Days',
-  '11': 'Priority Rankings',
-  'favored_ingredients': 'Favored Ingredients',
-  'excluded_ingredients': 'Excluded Ingredients',
-}
-
-const questionConfigs: Record<string, QuestionConfig> = {
-  '1': {
-    label: 'Age Range',
-    type: 'multiple-choice',
-    options: ['18-24', '25-34', '35-44', '45-54', '55-64', '65+'],
-  },
-  '2': {
-    label: 'Household Size',
-    type: 'multiple-choice',
-    options: ['Just me', '2 people', '3-4 people', '5+ people'],
-  },
-  '3': {
-    label: 'Weekly Budget',
-    type: 'multiple-choice',
-    options: ['$50-100', '$101-200', '$201-300', '$301+'],
-  },
-  '4': {
-    label: 'Cooking Skill Level',
-    type: 'multiple-choice',
-    options: [
-      'Beginner (Basic cooking skills)',
-      'Intermediate (Comfortable with most recipes)',
-      'Advanced (Confident with complex techniques)'
-    ],
-  },
-  '5': {
-    label: 'Prep Time Available',
-    type: 'multiple-choice',
-    options: [
-      'Quick (15-30 minutes)',
-      'Standard (30-45 minutes)',
-      'Extended (45+ minutes)'
-    ],
-  },
-  '6': {
-    label: 'Dietary Restrictions',
-    type: 'multiple-select',
-    options: [
-      'No restrictions',
-      'Vegetarian',
-      'Vegan',
-      'Gluten-free',
-      'Dairy-free',
-      'Keto/Low-carb',
-      'Paleo',
-      'Other'
-    ],
-  },
-  '7': {
-    label: 'Allergies/Intolerances',
-    type: 'multiple-select',
-    options: [
-      'None',
-      'Nuts',
-      'Shellfish',
-      'Eggs',
-      'Soy',
-      'Wheat',
-      'Other'
-    ],
-  },
-  '8': {
-    label: 'Flavor Preferences',
-    type: 'multiple-select',
-    options: [
-      'Spicy',
-      'Sweet',
-      'Savory',
-      'Tangy/Acidic',
-      'Mild',
-      'Umami/Rich'
-    ],
-    maxSelections: 3,
-  },
-  '9': {
-    label: 'Meal Planning Goals',
-    type: 'multiple-select',
-    options: [
-      'Save time on meal planning',
-      'Eat healthier',
-      'Learn new recipes',
-      'Save money on groceries',
-      'Reduce food waste',
-      'Other',
-    ],
-  },
-  '10': {
-    label: 'Preferred Delivery Days',
-    type: 'multiple-select',
-    options: [
-      'Monday',
-      'Tuesday',
-      'Wednesday',
-      'Thursday',
-      'Friday',
-      'Saturday',
-      'Sunday'
-    ],
-    maxSelections: 2,
-  },
-  '11': {
-    label: 'Priority Rankings',
-    type: 'ranking',
-    options: [
-      'Cost efficiency',
-      'Time saving',
-      'Nutrition'
-    ],
-  },
-  'favored_ingredients': {
-    label: 'Favored Ingredients',
-    type: 'removable-list',
-    options: [], // Dynamic - comes from user's saved data
-  },
-  'excluded_ingredients': {
-    label: 'Excluded Ingredients',
-    type: 'removable-list',
-    options: [], // Dynamic - comes from user's saved data
-  },
-}
+// Map questions to the config format expected by the dashboard
+const questionConfigs = questions
 
 export default function DashboardClient({ surveyResponse, mealPlans, savedRecipes }: DashboardClientProps) {
   const [showSurveyDropdown, setShowSurveyDropdown] = useState(false)
