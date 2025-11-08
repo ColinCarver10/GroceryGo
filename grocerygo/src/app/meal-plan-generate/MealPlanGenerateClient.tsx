@@ -5,12 +5,6 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { generateMealPlanFromPreferences, replaceExistingMealPlan } from '@/app/meal-plan-generate/actions'
 import { getNextWeekStart } from '@/utils/mealPlanDates'
-import { 
-  MealPrepInterface, 
-  MealPrepSummary,
-  type MealSelections,
-  type MealPrepConfig
-} from './MealPrepComponents'
 
 const daysOfWeek = [
   { short: 'Mon', full: 'Monday' },
@@ -23,6 +17,14 @@ const daysOfWeek = [
 ]
 
 type MealType = 'breakfast' | 'lunch' | 'dinner'
+
+interface MealSelections {
+  [key: string]: {
+    breakfast: boolean
+    lunch: boolean
+    dinner: boolean
+  }
+}
 
 export default function MealPlanGenerateClient() {
   const router = useRouter()
@@ -42,14 +44,6 @@ export default function MealPlanGenerateClient() {
       [day.full]: { breakfast: true, lunch: true, dinner: true }
     }), {})
   )
-
-  // Meal prep mode state
-  const [mealPrepMode, setMealPrepMode] = useState(true)
-  const [mealPrepConfig, setMealPrepConfig] = useState<MealPrepConfig>({
-    breakfast: [],
-    lunch: [],
-    dinner: []
-  })
 
   const toggleMeal = (day: string, mealType: MealType) => {
     setSelections(prev => ({
@@ -121,28 +115,10 @@ export default function MealPlanGenerateClient() {
     return schedule
   }
 
-  const getUniqueRecipesNeeded = () => {
-    if (!mealPrepMode) {
-      return getTotalMeals()
-    }
-    
-    const breakfast = mealPrepConfig.breakfast.length
-    const lunch = mealPrepConfig.lunch.length
-    const dinner = mealPrepConfig.dinner.length
-    
-    return { breakfast, lunch, dinner, total: breakfast + lunch + dinner }
-  }
-
   const handleGenerate = async () => {
     const totals = getTotalMeals()
-    const uniqueRecipes = getUniqueRecipesNeeded()
     
-    if (mealPrepMode && uniqueRecipes.total === 0) {
-      setError('Please create at least one meal prep batch to generate')
-      return
-    }
-    
-    if (!mealPrepMode && totals.total === 0) {
+    if (totals.total === 0) {
       setError('Please select at least one meal to generate')
       return
     }
@@ -165,8 +141,7 @@ export default function MealPlanGenerateClient() {
           lunch: totals.lunch,
           dinner: totals.dinner
         },
-        mealSchedule,
-        mealPrepMode ? mealPrepConfig : undefined
+        mealSchedule
       )
 
       // Check if there's a conflict (existing meal plan)
@@ -223,8 +198,7 @@ export default function MealPlanGenerateClient() {
           lunch: totals.lunch,
           dinner: totals.dinner
         },
-        mealSchedule,
-        mealPrepMode ? mealPrepConfig : undefined
+        mealSchedule
       )
 
       if (result.error) {
@@ -255,7 +229,6 @@ export default function MealPlanGenerateClient() {
   }
 
   const totals = getTotalMeals()
-  const uniqueRecipes = getUniqueRecipesNeeded()
 
   return (
     <div className="gg-bg-page min-h-screen">
@@ -279,40 +252,12 @@ export default function MealPlanGenerateClient() {
             </p>
           </div>
 
-          {/* Meal Prep Mode Toggle */}
-          <div className="mb-6 p-4 bg-gradient-to-r from-purple-50 to-blue-50 rounded-xl border-2 border-purple-200">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <span className="text-3xl">🔄</span>
-                <div>
-                  <h3 className="font-bold text-gray-900">Meal Prep Mode</h3>
-                  <p className="text-sm text-gray-600">
-                    Use the same recipe across multiple days to save time
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setMealPrepMode(!mealPrepMode)}
-                className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors ${
-                  mealPrepMode ? 'bg-[var(--gg-primary)]' : 'bg-gray-300'
-                }`}
-              >
-                <span
-                  className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform ${
-                    mealPrepMode ? 'translate-x-7' : 'translate-x-1'
-                  }`}
-                />
-              </button>
-            </div>
-          </div>
-
           <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
             
             {/* Main Content - Meal Selector */}
             <div className="lg:col-span-2">
-              {!mealPrepMode ? (
-                <div className="gg-card">
-                  <h2 className="gg-heading-section mb-6">Select Your Meals</h2>
+              <div className="gg-card">
+                <h2 className="gg-heading-section mb-6">Select Your Meals</h2>
 
                 {/* Meal Type Headers */}
                 <div className="flex items-center gap-4 mb-3 px-3">
@@ -424,14 +369,7 @@ export default function MealPlanGenerateClient() {
                     </button>
                   </div>
                 </div>
-                </div>
-              ) : (
-                <MealPrepInterface
-                  selections={selections}
-                  mealPrepConfig={mealPrepConfig}
-                  setMealPrepConfig={setMealPrepConfig}
-                />
-              )}
+              </div>
             </div>
 
             {/* Sidebar - Summary & Generate */}
@@ -439,57 +377,50 @@ export default function MealPlanGenerateClient() {
               
               {/* Summary Card */}
               <div className="gg-card">
-                <h2 className="gg-heading-section mb-6">
-                  {mealPrepMode ? 'Meal Prep Summary' : 'Meal Summary'}
-                </h2>
-                
-                {mealPrepMode ? (
-                  <MealPrepSummary mealPrepConfig={mealPrepConfig} />
-                ) : (
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between py-3 border-b border-gray-100">
-                      <div className="flex items-center gap-2">
-                        <span className="text-2xl">🍳</span>
-                        <span className="gg-text-body">Breakfasts</span>
-                      </div>
-                      <span className="text-2xl font-bold text-[var(--gg-primary)]">
-                        {totals.breakfast}
-                      </span>
+                <h2 className="gg-heading-section mb-6">Meal Summary</h2>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between py-3 border-b border-gray-100">
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl">🍳</span>
+                      <span className="gg-text-body">Breakfasts</span>
                     </div>
-                    <div className="flex items-center justify-between py-3 border-b border-gray-100">
-                      <div className="flex items-center gap-2">
-                        <span className="text-2xl">🥗</span>
-                        <span className="gg-text-body">Lunches</span>
-                      </div>
-                      <span className="text-2xl font-bold text-[var(--gg-primary)]">
-                        {totals.lunch}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between py-3 border-b border-gray-100">
-                      <div className="flex items-center gap-2">
-                        <span className="text-2xl">🍽️</span>
-                        <span className="gg-text-body">Dinners</span>
-                      </div>
-                      <span className="text-2xl font-bold text-[var(--gg-primary)]">
-                        {totals.dinner}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between py-3 bg-opacity-10 rounded-lg px-4">
-                      <span className="font-semibold text-gray-900 text-2xl">Total Meals</span>
-                      <span className="text-3xl font-bold text-[var(--gg-primary)]">
-                        {totals.total}
-                      </span>
-                    </div>
+                    <span className="text-2xl font-bold text-[var(--gg-primary)]">
+                      {totals.breakfast}
+                    </span>
                   </div>
-                )}
+                  <div className="flex items-center justify-between py-3 border-b border-gray-100">
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl">🥗</span>
+                      <span className="gg-text-body">Lunches</span>
+                    </div>
+                    <span className="text-2xl font-bold text-[var(--gg-primary)]">
+                      {totals.lunch}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between py-3 border-b border-gray-100">
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl">🍽️</span>
+                      <span className="gg-text-body">Dinners</span>
+                    </div>
+                    <span className="text-2xl font-bold text-[var(--gg-primary)]">
+                      {totals.dinner}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between py-3 bg-opacity-10 rounded-lg px-4">
+                    <span className="font-semibold text-gray-900 text-2xl">Total Meals</span>
+                    <span className="text-3xl font-bold text-[var(--gg-primary)]">
+                      {totals.total}
+                    </span>
+                  </div>
+                </div>
               </div>
 
               {/* Generate Button */}
               <button
                 onClick={handleGenerate}
-                disabled={loading || uniqueRecipes.total === 0}
+                disabled={loading || totals.total === 0}
                 className={`gg-btn-primary w-full flex items-center justify-center gap-2 ${
-                  (loading || uniqueRecipes.total === 0) ? 'opacity-50 cursor-not-allowed' : ''
+                  (loading || totals.total === 0) ? 'opacity-50 cursor-not-allowed' : ''
                 }`}
               >
                 {loading ? (

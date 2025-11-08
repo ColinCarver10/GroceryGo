@@ -13,22 +13,10 @@ interface MealScheduleEntry {
   mealType: 'breakfast' | 'lunch' | 'dinner'
 }
 
-interface MealPrepBatch {
-  days: string[]
-  mealType: 'breakfast' | 'lunch' | 'dinner'
-}
-
-interface MealPrepConfig {
-  breakfast: MealPrepBatch[]
-  lunch: MealPrepBatch[]
-  dinner: MealPrepBatch[]
-}
-
 export async function generateMealPlanFromPreferences(
   weekOf: string,
-  mealSelection?: MealSelection,
-  mealSchedule?: MealScheduleEntry[],
-  mealPrepConfig?: MealPrepConfig
+  mealSelection: MealSelection,
+  mealSchedule?: MealScheduleEntry[]
 ) {
   try {
     // Get authenticated user
@@ -70,38 +58,15 @@ export async function generateMealPlanFromPreferences(
       }
     }
 
-    // Calculate total meals and unique recipes
-    let totalMeals = 0
-    let uniqueRecipes: MealSelection = { breakfast: 0, lunch: 0, dinner: 0 }
-    
-    if (mealPrepConfig) {
-      // Meal prep mode: count total days across all batches
-      const breakfastDays = mealPrepConfig.breakfast.reduce((sum, batch) => sum + batch.days.length, 0)
-      const lunchDays = mealPrepConfig.lunch.reduce((sum, batch) => sum + batch.days.length, 0)
-      const dinnerDays = mealPrepConfig.dinner.reduce((sum, batch) => sum + batch.days.length, 0)
-      
-      totalMeals = breakfastDays + lunchDays + dinnerDays
-      
-      // Unique recipes = number of batches
-      uniqueRecipes = {
-        breakfast: mealPrepConfig.breakfast.length || 0,
-        lunch: mealPrepConfig.lunch.length || 0,
-        dinner: mealPrepConfig.dinner.length || 0
-      }
-    } else if (mealSelection) {
-      // Regular mode: total meals = unique recipes
-      totalMeals = mealSelection.breakfast + mealSelection.lunch + mealSelection.dinner
-      uniqueRecipes = mealSelection
-    }
+    // Calculate total meals
+    const totalMeals = mealSelection.breakfast + mealSelection.lunch + mealSelection.dinner
 
     // Create meal plan record with 'generating' status
     // Include meal selection and schedule in the survey snapshot for reference
     const extendedSnapshot = {
       ...userData.survey_response,
-      meal_selection: mealSelection || [],
-      meal_schedule: mealSchedule || [],
-      meal_prep_config: mealPrepConfig || null,
-      unique_recipes: uniqueRecipes
+      meal_selection: mealSelection,
+      meal_schedule: mealSchedule || []
     }
 
     const { data: mealPlan, error: mealPlanError } = await supabase
@@ -128,7 +93,7 @@ export async function generateMealPlanFromPreferences(
       success: true,
       mealPlanId: mealPlan.id,
       totalMeals,
-      uniqueRecipes
+      mealSelection
     }
 
   } catch (error: any) {
@@ -143,8 +108,7 @@ export async function replaceExistingMealPlan(
   existingPlanId: string,
   weekOf: string,
   mealSelection: MealSelection,
-  mealSchedule?: MealScheduleEntry[],
-  mealPrepConfig?: MealPrepConfig
+  mealSchedule?: MealScheduleEntry[]
 ) {
   try {
     // Get authenticated user
@@ -180,7 +144,7 @@ export async function replaceExistingMealPlan(
     }
 
     // Now call the generate function to create the new meal plan
-    const result = await generateMealPlanFromPreferences(weekOf, mealSelection, mealSchedule, mealPrepConfig)
+    const result = await generateMealPlanFromPreferences(weekOf, mealSelection, mealSchedule)
     
     // Add replaced flag if successful
     if (result.success) {

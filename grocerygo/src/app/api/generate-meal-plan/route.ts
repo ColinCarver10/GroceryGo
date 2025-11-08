@@ -77,43 +77,18 @@ export async function POST(request: NextRequest) {
         ingredientPreferencesSection += `**Excluded Ingredients (NEVER use these):** ${excludedIngredients.join(', ')}\n`
       }
     }
-
-    // Get meal prep config from survey snapshot
-    const mealPrepConfig = mealPlan.survey_snapshot?.meal_prep_config
-    const uniqueRecipes = mealPlan.survey_snapshot?.unique_recipes || mealSelection
-
-    // Build meal prep instructions
-    let mealPrepInstructions = ''
-    if (mealPrepConfig) {
-      mealPrepInstructions = '\n\n### MEAL PREP MODE:\n'
-      mealPrepInstructions += 'The user wants to meal prep. Generate recipes with larger portion sizes:\n\n'
-      
-      Object.entries(mealPrepConfig).forEach(([mealType, batches]: [string, any]) => {
-        if (batches && batches.length > 0) {
-          mealPrepInstructions += `**${mealType.toUpperCase()}:**\n`
-          batches.forEach((batch: any, index: number) => {
-            const batchLetter = String.fromCharCode(65 + index)
-            mealPrepInstructions += `- Batch ${batchLetter}: 1 recipe for ${batch.days.length} days (${batch.days.join(', ')})\n`
-            mealPrepInstructions += `  Scale servings to: ${batch.days.length * 2} portions (or adjust based on typical serving size)\n`
-          })
-          mealPrepInstructions += '\n'
-        }
-      })
-    }
     
     const enhancedPrompt = `${mealPlanFromSurveyPrompt}
 
 ### User Input:
 ${JSON.stringify(surveyData, null, 2)}
-${ingredientPreferencesSection}
-${mealPrepInstructions}`
+${ingredientPreferencesSection}`
 
     // Create dynamic schema with exact recipe count validation
-    // Use uniqueRecipes if in meal prep mode, otherwise use mealSelection
     const mealPlanSchema = createMealPlanSchema(
-      uniqueRecipes.breakfast,
-      uniqueRecipes.lunch,
-      uniqueRecipes.dinner
+      mealSelection.breakfast,
+      mealSelection.lunch,
+      mealSelection.dinner
     )
 
     // Use AI SDK's streamObject with schema enforcement
