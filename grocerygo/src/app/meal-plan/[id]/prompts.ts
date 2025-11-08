@@ -1,3 +1,5 @@
+import type { SurveyResponse } from '@/types/database'
+
 const MEASUREMENT_UNITS_PROMPT = `
 When specifying ingredient quantities, use these standardized measurement units based on Instacart's API requirements:
 
@@ -47,7 +49,7 @@ Important Rules:
 `;
 
 export const replaceRecipePrompt = (
-  surveyData: Record<string, any>,
+  surveyData: SurveyResponse,
   mealType: string,
   existingIngredients: string[],
   recipeToReplace: string
@@ -92,7 +94,7 @@ ${MEASUREMENT_UNITS_PROMPT}
 Note: additional_grocery_items should only include NEW ingredients not in the existing list.`;
 
 export const bulkAdjustmentPrompt = (
-  surveyData: Record<string, any>,
+  surveyData: SurveyResponse,
   adjustments: {
     reduceTime?: boolean
     lowerBudget?: boolean

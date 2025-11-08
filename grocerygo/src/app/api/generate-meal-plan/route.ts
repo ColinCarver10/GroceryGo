@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/utils/supabase/server'
 import { streamText } from 'ai'
 import { openai } from '@ai-sdk/openai'
 import { mealPlanFromSurveyPrompt } from '@/app/meal-plan-generate/prompts'
+import {
+  createMealPlanContext,
+  fetchUserSurveyResponse,
+  getMealPlanForUser
+} from '@/services/mealPlanService'
 
 interface MealSelection {
   breakfast: number
@@ -13,42 +17,24 @@ interface MealSelection {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { weekOf, mealSelection, mealPlanId, distinctRecipeCounts, selectedSlots } = body as {
-      weekOf: string
+    const { mealSelection, mealPlanId, distinctRecipeCounts, selectedSlots } = body as {
       mealSelection: MealSelection
       mealPlanId: string
       distinctRecipeCounts?: MealSelection
       selectedSlots?: Array<{ day: string; mealType: string }>
     }
 
-    // Get authenticated user
-    const supabase = await createClient()
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    const context = await createMealPlanContext()
+    const mealPlan = await getMealPlanForUser(context, mealPlanId)
 
-    if (authError || !user) {
-      return NextResponse.json({ error: 'User not authenticated' }, { status: 401 })
-    }
-
-    // Verify meal plan belongs to user
-    const { data: mealPlan, error: mealPlanError } = await supabase
-      .from('meal_plans')
-      .select('*')
-      .eq('id', mealPlanId)
-      .eq('user_id', user.id)
-      .single()
-
-    if (mealPlanError || !mealPlan) {
+    if (!mealPlan) {
       return NextResponse.json({ error: 'Meal plan not found' }, { status: 404 })
     }
 
-    // Get user's survey responses
-    const { data: userData } = await supabase
-      .from('users')
-      .select('survey_response')
-      .eq('user_id', user.id)
-      .single()
+    const surveyData =
+      mealPlan.survey_snapshot || (await fetchUserSurveyResponse(context))
 
-    if (!userData?.survey_response) {
+    if (!surveyData) {
       return NextResponse.json(
         { error: 'Please complete the onboarding survey first' },
         { status: 400 }
@@ -99,7 +85,6 @@ export async function POST(request: NextRequest) {
       .join('\n')
 
     // Build the prompt
-    const surveyData = userData.survey_response
     const enhancedPrompt = `${mealPlanFromSurveyPrompt}
 
 ### User Input:
@@ -160,10 +145,10 @@ PROCESS:
     // Return the stream as a response
     return result.toTextStreamResponse()
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('API error:', error)
     return NextResponse.json(
-      { error: error?.message || 'Failed to generate meal plan' },
+      { error: error instanceof Error ? error.message : 'Failed to generate meal plan' },
       { status: 500 }
     )
   }

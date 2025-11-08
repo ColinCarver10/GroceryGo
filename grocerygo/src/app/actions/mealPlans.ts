@@ -8,7 +8,8 @@ import type {
   MealPlanRecipeInsert,
   GroceryItemInsert,
   AIGeneratedMealPlan,
-  MealPlanWithRecipes
+  MealPlanWithRecipes,
+  SurveyResponse
 } from '@/types/database'
 
 /**
@@ -23,7 +24,7 @@ export async function createMealPlanFromAI(
   userId: string,
   weekOf: string,
   aiResponse: AIGeneratedMealPlan,
-  surveySnapshot?: Record<string, any>
+  surveySnapshot?: SurveyResponse
 ) {
   const supabase = await createClient()
 
@@ -165,11 +166,13 @@ export async function createMealPlanFromAI(
       data: mealPlan
     }
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error in createMealPlanFromAI:', error)
     return {
       success: false,
-      error: `An unexpected error occurred: ${error?.message || error}`
+      error: `An unexpected error occurred: ${
+        error instanceof Error ? error.message : String(error)
+      }`
     }
   }
 }

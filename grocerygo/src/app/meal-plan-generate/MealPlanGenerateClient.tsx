@@ -3,7 +3,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { generateMealPlanFromPreferences, replaceExistingMealPlan } from '@/app/meal-plan-generate/actions'
+import {
+  generateMealPlanFromPreferences,
+  replaceExistingMealPlan,
+  type GenerateMealPlanResponse,
+  type GenerateMealPlanConflict,
+  type GenerateMealPlanError
+} from '@/app/meal-plan-generate/actions'
+import type { SurveyResponse } from '@/types/database'
 
 const daysOfWeek = [
   { short: 'Mon', full: 'Monday' },
@@ -32,7 +39,11 @@ interface DistinctCounts {
 }
 
 interface MealPlanGenerateClientProps {
-  surveyResponse: Record<string, any>
+  surveyResponse: SurveyResponse
+}
+
+function isErrorResponse(response: GenerateMealPlanResponse): response is GenerateMealPlanError {
+  return 'error' in response && !response.success
 }
 
 function parseLunchPreference(preference?: string, totalSlots?: number) {
@@ -79,10 +90,7 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
   const [showReplaceDialog, setShowReplaceDialog] = useState(false)
-  const [conflictData, setConflictData] = useState<{
-    existingPlanId: string
-    weekOf: string
-  } | null>(null)
+  const [conflictData, setConflictData] = useState<Pick<GenerateMealPlanConflict, 'existingPlanId' | 'weekOf'> | null>(null)
 
   // Initialize with all meals selected
   const [selections, setSelections] = useState<MealSelections>(
@@ -155,17 +163,24 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
     })
   }
 
-  const getTotalMeals = () => {
-    let breakfast = 0, lunch = 0, dinner = 0
-    Object.values(selections).forEach(day => {
-      if (day.breakfast) breakfast++
-      if (day.lunch) lunch++
-      if (day.dinner) dinner++
-    })
-    return { breakfast, lunch, dinner, total: breakfast + lunch + dinner }
-  }
+  const totals = useMemo(() => {
+    let breakfast = 0
+    let lunch = 0
+    let dinner = 0
 
-  const totals = useMemo(() => getTotalMeals(), [selections])
+    Object.values(selections).forEach(day => {
+      if (day.breakfast) breakfast += 1
+      if (day.lunch) lunch += 1
+      if (day.dinner) dinner += 1
+    })
+
+    return {
+      breakfast,
+      lunch,
+      dinner,
+      total: breakfast + lunch + dinner
+    }
+  }, [selections])
 
   const selectedSlots = useMemo(
     () =>
@@ -233,25 +248,24 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
       )
 
       // Check if there's a conflict (existing meal plan)
-      if ((result as any).conflict) {
+      if ('conflict' in result && result.conflict) {
         setConflictData({
-          existingPlanId: (result as any).existingPlanId,
-          weekOf: (result as any).weekOf
+          existingPlanId: result.existingPlanId,
+          weekOf: result.weekOf
         })
         setShowReplaceDialog(true)
         setLoading(false)
         return
       }
 
-      if (result.error) {
-        if (result.needsSurvey) {
-          setError(result.error)
+      if (isErrorResponse(result)) {
+        const { error: message, needsSurvey } = result
+        setError(message)
+        if (needsSurvey) {
           setTimeout(() => router.push('/onboarding'), 2000)
-        } else {
-          setError(result.error)
         }
         setLoading(false)
-      } else if (result.success && result.mealPlanId) {
+      } else if (result.success) {
         // Redirect to streaming generation page
         router.push(`/meal-plan/generating/${result.mealPlanId}`)
       } else {
@@ -286,15 +300,14 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
         selectedSlots
       )
 
-      if (result.error) {
-        if (result.needsSurvey) {
-          setError(result.error)
+      if (isErrorResponse(result)) {
+        const { error: message, needsSurvey } = result
+        setError(message)
+        if (needsSurvey) {
           setTimeout(() => router.push('/onboarding'), 2000)
-        } else {
-          setError(result.error)
         }
         setLoading(false)
-      } else if (result.success && result.mealPlanId) {
+      } else if (result.success) {
         // Redirect to streaming generation page
         router.push(`/meal-plan/generating/${result.mealPlanId}`)
       } else {

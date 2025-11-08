@@ -4,12 +4,27 @@ import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import RecipeCardSkeleton from '@/components/RecipeCardSkeleton'
 import { saveGeneratedRecipes } from '../actions'
+import type { SurveyResponse } from '@/types/database'
+
+type SurveySnapshotData = SurveyResponse & {
+  meal_selection?: {
+    breakfast: number
+    lunch: number
+    dinner: number
+  }
+  distinct_recipe_counts?: {
+    breakfast: number
+    lunch: number
+    dinner: number
+  }
+  selected_slots?: SelectedSlot[]
+}
 
 interface GeneratingViewProps {
   mealPlanId: string
   weekOf: string
   totalMeals: number
-  surveySnapshot?: Record<string, any>
+  surveySnapshot?: SurveySnapshotData
 }
 
 interface RecipeData {
@@ -80,13 +95,9 @@ export default function GeneratingView({
   const [recipes, setRecipes] = useState<(RecipeData | null)[]>(
     Array(totalMeals).fill(null)
   )
-  const [groceryList, setGroceryList] = useState<GroceryListItem[]>([])
-  const [scheduleEntries, setScheduleEntries] = useState<ScheduleEntry[]>([])
   const [currentRecipeIndex, setCurrentRecipeIndex] = useState(0)
-  const [isComplete, setIsComplete] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [streamBuffer, setStreamBuffer] = useState('')
   
   // Use ref to track the actual count to prevent flickering
   const recipeCountRef = useRef(0)
@@ -109,14 +120,14 @@ export default function GeneratingView({
       const recipesMatch = jsonContent.match(/"recipes"\s*:\s*\[([\s\S]*)/);
       if (!recipesMatch) return;
 
-      let recipesContent = recipesMatch[1];
+      const recipesContent = recipesMatch[1];
       
       // Count how many complete recipe objects we have
       // A recipe is complete when it has: }, after the steps array closes
       let depth = 0;
       let inString = false;
       let escapeNext = false;
-      let recipeObjects: string[] = [];
+      const recipeObjects: string[] = [];
       let currentObj = '';
       let inRecipeObject = false;
       
@@ -180,7 +191,7 @@ export default function GeneratingView({
             if (recipe.name && recipe.ingredients && recipe.steps) {
               newParsedRecipes.push(recipe);
             }
-          } catch (e) {
+          } catch {
             // Skip malformed recipes - this is expected during streaming
             break; // Stop parsing if we hit an incomplete recipe
           }
@@ -205,7 +216,7 @@ export default function GeneratingView({
           setCurrentRecipeIndex(recipeCountRef.current);
         }
       }
-    } catch (e) {
+    } catch {
       // Silently fail - this is expected during streaming
     }
   }
@@ -279,7 +290,6 @@ export default function GeneratingView({
         
         // AI SDK text stream is just plain text, not in a special format
         buffer += chunk
-        setStreamBuffer(buffer)
         
         // Try to parse partial JSON to show recipes as they complete
         tryParsePartialRecipes(buffer)
@@ -287,11 +297,10 @@ export default function GeneratingView({
 
       // Parse the complete response
       await parseCompleteResponse(buffer)
-      setIsComplete(true)
 
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Generation error:', err)
-      setError(err.message || 'Failed to generate meal plan')
+      setError(err instanceof Error ? err.message : 'Failed to generate meal plan')
     }
   }
 
@@ -306,9 +315,13 @@ export default function GeneratingView({
       const jsonMatch = buffer.match(/```json\n?([\s\S]*?)\n?```/) || buffer.match(/```\n?([\s\S]*?)\n?```/)
       const jsonStr = jsonMatch ? jsonMatch[1] : buffer
       
-      const aiResponse = JSON.parse(jsonStr.trim())
+      const aiResponse = JSON.parse(jsonStr.trim()) as {
+        recipes?: RecipeData[]
+        grocery_list?: GroceryListItem[]
+        schedule?: ScheduleEntry[]
+      }
 
-      if (!aiResponse.schedule || !Array.isArray(aiResponse.schedule)) {
+      if (!Array.isArray(aiResponse.schedule)) {
         setError('Meal plan generation did not include schedule details. Please try again.')
         return
       }
@@ -318,22 +331,18 @@ export default function GeneratingView({
         return
       }
 
-      if (aiResponse.recipes && Array.isArray(aiResponse.recipes)) {
-        // Set all recipes at once
+      if (Array.isArray(aiResponse.recipes)) {
         setRecipes(aiResponse.recipes)
         setCurrentRecipeIndex(aiResponse.recipes.length)
       }
 
-      if (aiResponse.grocery_list && Array.isArray(aiResponse.grocery_list)) {
-        setGroceryList(aiResponse.grocery_list)
-      }
-
-      const parsedSchedule = aiResponse.schedule as ScheduleEntry[]
-      setScheduleEntries(parsedSchedule)
+      const recipesToPersist = Array.isArray(aiResponse.recipes) ? aiResponse.recipes : []
+      const groceryListToPersist = Array.isArray(aiResponse.grocery_list) ? aiResponse.grocery_list : []
+      const parsedSchedule = aiResponse.schedule
 
       // Auto-save after parsing
-      await saveRecipes(aiResponse.recipes, aiResponse.grocery_list, parsedSchedule)
-    } catch (err) {
+      await saveRecipes(recipesToPersist, groceryListToPersist, parsedSchedule)
+    } catch (err: unknown) {
       console.error('Parse error:', err)
       console.error('Buffer content:', buffer)
       console.error('Buffer length:', buffer.length)
@@ -365,9 +374,9 @@ export default function GeneratingView({
         setError(result.error || 'Failed to save recipes')
         setIsSaving(false)
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Save error:', err)
-      setError(err.message || 'Failed to save recipes')
+      setError(err instanceof Error ? err.message : 'Failed to save recipes')
       setIsSaving(false)
     }
   }

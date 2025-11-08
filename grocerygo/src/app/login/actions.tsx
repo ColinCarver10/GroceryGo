@@ -6,7 +6,9 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/utils/supabase/server'
 import type { UserInsert } from '@/types/database'
 
-async function ensureUserExists(supabase: any, userId: string, email: string) {
+type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
+
+async function ensureUserExists(supabase: SupabaseServerClient, userId: string, email: string) {
   console.log('ensureUserExists', userId, email)
   // Check if user exists in users table
   const { data: existingUser, error: checkError } = await supabase

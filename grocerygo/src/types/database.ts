@@ -1,16 +1,20 @@
+type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue }
+
+export type SurveyResponse = Record<string, JsonValue>
+
 // User types
 export interface User {
   id: number
   created_at: string
   email: string
-  survey_response: Record<string, any> | null
+  survey_response: SurveyResponse | null
   user_id: string
 }
 
 export interface UserInsert {
   email: string
   user_id: string
-  survey_response?: Record<string, any> | null
+  survey_response?: SurveyResponse | null
 }
 
 // Recipe types
@@ -89,7 +93,7 @@ export interface MealPlan {
   total_meals: number
   total_budget?: number
   
-  survey_snapshot?: Record<string, any>
+  survey_snapshot?: SurveyResponse
   generation_method?: 'ai-generated' | 'template' | 'manual'
   template_id?: string
   ai_model?: string
@@ -102,7 +106,7 @@ export interface MealPlanInsert {
   total_meals: number
   total_budget?: number
   
-  survey_snapshot?: Record<string, any>
+  survey_snapshot?: SurveyResponse
   generation_method?: 'ai-generated' | 'template' | 'manual'
   template_id?: string
   ai_model?: string

@@ -2,11 +2,16 @@
 
 import { createClient } from '@/utils/supabase/server'
 import { revalidateTag } from 'next/cache'
-import type { GroceryItem, RecipeInsert, GroceryItemInsert, AIGeneratedMealPlan } from '@/types/database'
+import type {
+  GroceryItem,
+  RecipeInsert,
+  GroceryItemInsert,
+  AIGeneratedMealPlan
+} from '@/types/database'
 import type { ShoppingListData, InstacartResponse, LineItem } from '@/types/instacart'
 import { callOpenAI } from '@/app/actions/aiHelper'
 import { trackMealPlanAction } from '@/app/actions/feedbackHelper'
-import { 
+import {
   replaceRecipePrompt, 
   bulkAdjustmentPrompt, 
   simplifyRecipePrompt 
@@ -14,6 +19,33 @@ import {
 
 const INSTACART_API_URL = 'https://connect.dev.instacart.tools/idp/v1/products/products_link'
 const INSTACART_API_KEY = process.env.INSTACART_API_KEY
+
+type AdditionalGroceryItem = {
+  item: string
+  quantity: string
+}
+
+type ReplacementRecipePayload = {
+  recipe: {
+    name: string
+    ingredients: RecipeInsert['ingredients']
+    steps: string[]
+  }
+  additional_grocery_items?: AdditionalGroceryItem[]
+}
+
+type RecipeIngredient = {
+  item: string
+  quantity: string
+  unit?: string
+  [key: string]: unknown
+}
+
+type SimplifiedRecipe = {
+  name: string
+  ingredients: RecipeInsert['ingredients']
+  steps: string[]
+}
 
 export async function createInstacartOrder(
   groceryItems: GroceryItem[],
@@ -151,7 +183,7 @@ export async function replaceRecipe(
       oldRecipe.name
     )
 
-    const result = await callOpenAI(
+    const result = await callOpenAI<ReplacementRecipePayload>(
       'You are an expert meal planner for GroceryGo. Generate a single replacement recipe in JSON format following all guidelines.',
       prompt,
       (response) => {
@@ -193,7 +225,7 @@ export async function replaceRecipe(
 
     // Add new grocery items
     if (additional_grocery_items && additional_grocery_items.length > 0) {
-      const newGroceryItems: GroceryItemInsert[] = additional_grocery_items.map((item: any) => ({
+      const newGroceryItems: GroceryItemInsert[] = additional_grocery_items.map((item: AdditionalGroceryItem) => ({
         meal_plan_id: mealPlanId,
         item_name: item.item,
         quantity: parseQuantity(item.quantity),
@@ -316,8 +348,8 @@ export async function regenerateWithAdjustments(
 
       if (newRecipe) {
         recipeIds.push(newRecipe.id)
-        if ((aiRecipe as any).id) {
-          recipeIdMap[(aiRecipe as any).id] = newRecipe.id
+        if (aiRecipe.id) {
+          recipeIdMap[aiRecipe.id] = newRecipe.id
         }
       }
     }
@@ -337,7 +369,7 @@ export async function regenerateWithAdjustments(
             slot_label?: string
           }[]
           missingRecipeRefs: string[]
-        }>((acc, entry, index) => {
+        }>((acc, entry) => {
           const linkedRecipeId = recipeIdMap[entry.recipeId]
           if (!linkedRecipeId) {
             acc.missingRecipeRefs.push(entry.recipeId)
@@ -453,8 +485,9 @@ export async function scaleRecipeServings(
     }
 
     // Scale ingredients
-    const scaledIngredients = recipe.ingredients.map((ing: any) => {
-      const quantity = parseFloat(ing.quantity) || 1
+    const ingredients = (recipe.ingredients ?? []) as RecipeIngredient[]
+    const scaledIngredients = ingredients.map((ing) => {
+      const quantity = parseFloat(String(ing.quantity)) || 1
       const scaledQuantity = quantity * multiplier
       return {
         ...ing,
@@ -517,8 +550,9 @@ export async function swapIngredient(
     }
 
     // Update ingredients
-    const updatedIngredients = recipe.ingredients.map((ing: any) => {
-      if (ing.item.toLowerCase().includes(oldIngredient.toLowerCase())) {
+    const ingredients = (recipe.ingredients ?? []) as RecipeIngredient[]
+    const updatedIngredients = ingredients.map((ing) => {
+      if (ing.item?.toLowerCase().includes(oldIngredient.toLowerCase())) {
         return {
           ...ing,
           item: newIngredient
@@ -554,7 +588,7 @@ export async function swapIngredient(
 export async function simplifyRecipe(
   mealPlanId: string,
   recipeId: string
-): Promise<{ success: boolean; error?: string; simplifiedRecipe?: any }> {
+): Promise<{ success: boolean; error?: string; simplifiedRecipe?: SimplifiedRecipe }> {
   try {
     const supabase = await createClient()
 
@@ -582,7 +616,7 @@ export async function simplifyRecipe(
       recipe.steps
     )
 
-    const result = await callOpenAI(
+    const result = await callOpenAI<{ simplified_recipe: SimplifiedRecipe }>(
       'You are a culinary expert helping busy people simplify recipes. Provide simplified versions in JSON format.',
       prompt,
       (response) => {

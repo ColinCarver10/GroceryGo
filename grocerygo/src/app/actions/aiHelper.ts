@@ -84,22 +84,33 @@ export async function callOpenAI<T>(
       rawResponse: response
     }
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('OpenAI API error:', error)
 
-    if (error?.status === 401) {
+    const status = getErrorStatus(error)
+    if (status === 401) {
       return { success: false, error: 'Invalid OpenAI API key' }
     }
 
-    if (error?.status === 429) {
+    if (status === 429) {
       return { success: false, error: 'Rate limit exceeded. Please try again later.' }
     }
 
     return {
       success: false,
-      error: error?.message || 'Failed to call OpenAI API'
+      error: error instanceof Error ? error.message : 'Failed to call OpenAI API'
     }
   }
+}
+
+function getErrorStatus(error: unknown): number | undefined {
+  if (typeof error === 'object' && error !== null && 'status' in error) {
+    const statusValue = (error as { status?: unknown }).status
+    if (typeof statusValue === 'number') {
+      return statusValue
+    }
+  }
+  return undefined
 }
 
 

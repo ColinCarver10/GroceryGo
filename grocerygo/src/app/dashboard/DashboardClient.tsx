@@ -2,12 +2,12 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import type { MealPlanWithRecipes, Recipe } from '@/types/database'
+import type { MealPlanWithRecipes, Recipe, SurveyResponse } from '@/types/database'
 import RecipeModal from '@/components/RecipeModal'
 import { updateSurveyResponse } from './actions'
 
 interface DashboardClientProps {
-  surveyResponse: Record<string, any> | null
+  surveyResponse: SurveyResponse | null
   mealPlans: MealPlanWithRecipes[]
   savedRecipes: Array<{
     id: string
@@ -22,22 +22,6 @@ interface QuestionConfig {
   type: 'multiple-choice' | 'multiple-select' | 'ranking' | 'removable-list'
   options: string[]
   maxSelections?: number
-}
-
-const questionLabels: Record<string, string> = {
-  '1': 'Age Range',
-  '2': 'Household Size',
-  '3': 'Weekly Budget',
-  '4': 'Cooking Skill Level',
-  '5': 'Prep Time Available',
-  '6': 'Dietary Restrictions',
-  '7': 'Allergies/Intolerances',
-  '8': 'Flavor Preferences',
-  '9': 'Meal Planning Goals',
-  '10': 'Preferred Delivery Days',
-  '11': 'Priority Rankings',
-  'favored_ingredients': 'Favored Ingredients',
-  'excluded_ingredients': 'Excluded Ingredients',
 }
 
 const questionConfigs: Record<string, QuestionConfig> = {
