@@ -47,7 +47,7 @@ Important Rules:
 `;
 
 const mealPlanFromSurveyPrompt = `You are an expert meal planner generating personalized meal plans based on user preferences.  
-Use the provided user input (below) to generate a detailed meal plan.
+Use the provided user input (below) to generate a detailed meal plan that supports duplicating recipes across multiple meal slots.
 
 ### Input format example:
 {
@@ -110,6 +110,41 @@ ${MEASUREMENT_UNITS_PROMPT}
 
 ---
 
-**Output Format**: The schema will define the exact structure required. Ensure each recipe includes the correct "mealType" field (Breakfast, Lunch, or Dinner).`;
+**Output Format**:
+JSON object with keys "recipes", "schedule", and "grocery_list", for example:
+{
+  "recipes": [
+    {
+      "id": "recipe-1",
+      "name": "Recipe Name",
+      "mealType": "Breakfast | Lunch | Dinner",
+      "servings": 4,
+      "ingredients": [
+        { "item": "Ingredient Name", "quantity": "Amount + Unit" }
+      ],
+      "steps": [
+        "Step 1",
+        "Step 2"
+      ]
+    }
+  ],
+  "schedule": [
+    {
+      "slotLabel": "Monday Lunch",
+      "day": "Monday",
+      "mealType": "Lunch",
+      "recipeId": "recipe-1",
+      "portionMultiplier": 1
+    }
+  ],
+  "grocery_list": [
+    { "item": "Ingredient Name", "quantity": "Total Amount + Unit" }
+  ]
+}
+
+**Important**:
+- Every recipe MUST include an "id" that will be referenced by the schedule array.
+- The "schedule" array MUST contain an entry for every selected meal slot (day + mealType) and reference an existing recipe id.
+- Every recipe MUST include a "mealType" field indicating the type of meal (Breakfast, Lunch, or Dinner).`;
 
 export { MEASUREMENT_UNITS_PROMPT, mealPlanFromSurveyPrompt };

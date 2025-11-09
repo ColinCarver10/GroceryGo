@@ -1,16 +1,20 @@
+type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue }
+
+export type SurveyResponse = Record<string, JsonValue>
+
 // User types
 export interface User {
   id: number
   created_at: string
   email: string
-  survey_response: Record<string, any> | null
+  survey_response: SurveyResponse | null
   user_id: string
 }
 
 export interface UserInsert {
   email: string
   user_id: string
-  survey_response?: Record<string, any> | null
+  survey_response?: SurveyResponse | null
 }
 
 // Recipe types
@@ -89,7 +93,7 @@ export interface MealPlan {
   total_meals: number
   total_budget?: number
   
-  survey_snapshot?: Record<string, any>
+  survey_snapshot?: SurveyResponse
   generation_method?: 'ai-generated' | 'template' | 'manual'
   template_id?: string
   ai_model?: string
@@ -106,7 +110,7 @@ export interface MealPlanInsert {
   total_meals: number
   total_budget?: number
   
-  survey_snapshot?: Record<string, any>
+  survey_snapshot?: SurveyResponse
   generation_method?: 'ai-generated' | 'template' | 'manual'
   template_id?: string
   ai_model?: string
@@ -124,6 +128,8 @@ export interface MealPlanRecipe {
   planned_for_date?: string
   meal_type?: 'breakfast' | 'lunch' | 'dinner'
   notes?: string
+  portion_multiplier?: number
+  slot_label?: string
   recipe?: Recipe // For joins
 }
 
@@ -133,6 +139,8 @@ export interface MealPlanRecipeInsert {
   planned_for_date?: string
   meal_type?: 'breakfast' | 'lunch' | 'dinner'
   notes?: string
+  portion_multiplier?: number
+  slot_label?: string
 }
 
 // Grocery Item types
@@ -237,27 +245,26 @@ export interface MealPlanWithRecipes extends MealPlan {
   grocery_items: GroceryItem[]
 }
 
-// Recipe type for AI responses
-interface AIRecipe {
-  name: string
-  mealType?: string
-  ingredients: Array<{
-    item: string
-    quantity: string
-  }>
-  steps: string[]
-  description?: string
-  prep_time_minutes?: number
-  cook_time_minutes?: number
-  servings?: number
-  difficulty?: 'beginner' | 'intermediate' | 'advanced'
-}
-
 // AI Response format (matches schema with separate meal type arrays)
 export interface AIGeneratedMealPlan {
-  breakfast: AIRecipe[]
-  lunch: AIRecipe[]
-  dinner: AIRecipe[]
+  recipes: Array<{
+    id: string
+    name: string
+    mealType?: string
+    ingredients: Array<{
+      item: string
+      quantity: string
+    }>
+    steps: string[]
+    servings?: number
+  }>
+  schedule: Array<{
+    slotLabel: string
+    day: string
+    mealType: string
+    recipeId: string
+    portionMultiplier: number
+  }>
   grocery_list: Array<{
     item: string
     quantity: string

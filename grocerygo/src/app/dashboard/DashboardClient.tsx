@@ -1,15 +1,15 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
-import type { MealPlanWithRecipes, Recipe } from '@/types/database'
+import type { MealPlanWithRecipes, Recipe, SurveyResponse } from '@/types/database'
 import RecipeModal from '@/components/RecipeModal'
 import Pagination from '@/components/Pagination'
 import { updateSurveyResponse, getPaginatedMealPlans } from './actions'
-import { questions, questionLabels } from '@/app/schemas/userPreferenceQuestions'
+import { questions } from '@/app/schemas/userPreferenceQuestions'
 
 interface DashboardClientProps {
-  surveyResponse: Record<string, any> | null
+  surveyResponse: SurveyResponse | null
   mealPlans: MealPlanWithRecipes[]
   savedRecipes: Array<{
     id: string
