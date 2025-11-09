@@ -27,6 +27,23 @@ export async function createMealPlanFromAI(
   surveySnapshot?: SurveyResponse
 ) {
   const supabase = await createClient()
+  type GroupedResponse = AIGeneratedMealPlan & {
+    breakfast?: AIGeneratedMealPlan['recipes']
+    lunch?: AIGeneratedMealPlan['recipes']
+    dinner?: AIGeneratedMealPlan['recipes']
+  }
+
+  const groupedResponse = aiResponse as GroupedResponse
+  const allRecipes =
+    Array.isArray(aiResponse.recipes) && aiResponse.recipes.length > 0
+      ? aiResponse.recipes
+      : [
+          ...(groupedResponse.breakfast ?? []),
+          ...(groupedResponse.lunch ?? []),
+          ...(groupedResponse.dinner ?? [])
+        ]
+
+  const totalMeals = aiResponse.schedule?.length ?? allRecipes.length
 
   try {
     // 1. Create the meal plan record
@@ -36,7 +53,7 @@ export async function createMealPlanFromAI(
         user_id: userId,
         week_of: weekOf,
         status: 'pending',
-        total_meals: aiResponse.schedule?.length ?? aiResponse.recipes.length,
+        total_meals: totalMeals,
         survey_snapshot: surveySnapshot,
         generation_method: 'ai-generated',
         ai_model: 'gpt-5'
@@ -54,7 +71,7 @@ export async function createMealPlanFromAI(
     const recipeIdMap: Record<string, string> = {}
     const recipeErrors: string[] = []
     
-    for (const aiRecipe of aiResponse.recipes) {
+    for (const aiRecipe of allRecipes) {
       if (!aiRecipe.id) {
         recipeErrors.push(`${aiRecipe.name}: missing recipe id`)
         continue
