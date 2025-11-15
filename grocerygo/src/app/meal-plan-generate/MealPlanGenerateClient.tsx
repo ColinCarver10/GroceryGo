@@ -1,10 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { generateMealPlanFromPreferences, replaceExistingMealPlan } from '@/app/meal-plan-generate/actions'
+import {
+  generateMealPlanFromPreferences,
+  replaceExistingMealPlan,
+  type GenerateMealPlanResponse,
+  type GenerateMealPlanConflict,
+  type GenerateMealPlanError
+} from '@/app/meal-plan-generate/actions'
 import { getNextWeekStart } from '@/utils/mealPlanDates'
+import type { SurveyResponse } from '@/types/database'
 
 const daysOfWeek = [
   { short: 'Mon', full: 'Monday' },
@@ -26,16 +33,65 @@ interface MealSelections {
   }
 }
 
-export default function MealPlanGenerateClient() {
+interface DistinctCounts {
+  breakfast: number
+  lunch: number
+  dinner: number
+}
+
+interface MealPlanGenerateClientProps {
+  surveyResponse: SurveyResponse
+}
+
+function isErrorResponse(response: GenerateMealPlanResponse): response is GenerateMealPlanError {
+  return 'error' in response && !response.success
+}
+
+function parseLunchPreference(preference?: string, totalSlots?: number) {
+  if (!preference || !totalSlots || totalSlots === 0) return undefined
+
+  const numberMatch = preference.match(/\d+/)
+  if (!numberMatch) return undefined
+
+  const parsed = parseInt(numberMatch[0], 10)
+  if (Number.isNaN(parsed) || parsed <= 0) return undefined
+
+  return Math.min(parsed, totalSlots)
+}
+
+function deriveBaseDistinct(totalSlots: number, leftoverPreference?: string) {
+  if (totalSlots === 0) return 0
+
+  switch (leftoverPreference) {
+    case 'Prefer unique meals every time':
+      return totalSlots
+    case 'Happy to eat leftovers once more':
+      return Math.max(1, Math.ceil(totalSlots / 2))
+    case 'Comfortable repeating meals multiple times':
+      return Math.max(1, Math.ceil(totalSlots / 3))
+    default:
+      return Math.max(1, Math.ceil(totalSlots / 2))
+  }
+}
+
+function clampDistinctCounts(
+  counts: DistinctCounts,
+  totals: { breakfast: number; lunch: number; dinner: number }
+): DistinctCounts {
+  return {
+    breakfast: Math.min(Math.max(counts.breakfast, totals.breakfast === 0 ? 0 : 1), Math.max(totals.breakfast, 0)),
+    lunch: Math.min(Math.max(counts.lunch, totals.lunch === 0 ? 0 : 1), Math.max(totals.lunch, 0)),
+    dinner: Math.min(Math.max(counts.dinner, totals.dinner === 0 ? 0 : 1), Math.max(totals.dinner, 0))
+  }
+}
+
+export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGenerateClientProps) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
   const [showReplaceDialog, setShowReplaceDialog] = useState(false)
-  const [conflictData, setConflictData] = useState<{
-    existingPlanId: string
-    weekOf: string
-  } | null>(null)
+  const [conflictData, setConflictData] = useState<Pick<GenerateMealPlanConflict, 'existingPlanId' | 'weekOf'> | null>(null)
 
   // Initialize with all meals selected
   const [selections, setSelections] = useState<MealSelections>(
@@ -44,6 +100,33 @@ export default function MealPlanGenerateClient() {
       [day.full]: { breakfast: true, lunch: true, dinner: true }
     }), {})
   )
+
+  const leftoverPreference = surveyResponse?.['12'] ?? surveyResponse?.[12]
+  const lunchPreference = surveyResponse?.['13'] ?? surveyResponse?.[13]
+
+  const initialTotals = useMemo(
+    () => ({
+      breakfast: daysOfWeek.length,
+      lunch: daysOfWeek.length,
+      dinner: daysOfWeek.length
+    }),
+    []
+  )
+
+  const [distinctCounts, setDistinctCounts] = useState<DistinctCounts>(() => {
+    const baseCounts: DistinctCounts = {
+      breakfast: deriveBaseDistinct(initialTotals.breakfast, leftoverPreference),
+      lunch: deriveBaseDistinct(initialTotals.lunch, leftoverPreference),
+      dinner: deriveBaseDistinct(initialTotals.dinner, leftoverPreference)
+    }
+
+    const parsedLunch = parseLunchPreference(lunchPreference, initialTotals.lunch)
+    if (parsedLunch !== undefined) {
+      baseCounts.lunch = Math.max(1, parsedLunch)
+    }
+
+    return clampDistinctCounts(baseCounts, initialTotals)
+  })
 
   const toggleMeal = (day: string, mealType: MealType) => {
     setSelections(prev => ({
@@ -81,43 +164,63 @@ export default function MealPlanGenerateClient() {
     })
   }
 
-  const getTotalMeals = () => {
-    let breakfast = 0, lunch = 0, dinner = 0
-    Object.values(selections).forEach(day => {
-      if (day.breakfast) breakfast++
-      if (day.lunch) lunch++
-      if (day.dinner) dinner++
-    })
-    return { breakfast, lunch, dinner, total: breakfast + lunch + dinner }
-  }
+  const totals = useMemo(() => {
+    let breakfast = 0
+    let lunch = 0
+    let dinner = 0
 
-  const getMealSchedule = () => {
-    const schedule: Array<{
-      day: string
-      mealType: 'breakfast' | 'lunch' | 'dinner'
-    }> = []
-    
-    // Iterate through days in order to preserve the sequence
-    daysOfWeek.forEach((day) => {
-      const daySelections = selections[day.full]
-      
-      if (daySelections.breakfast) {
-        schedule.push({ day: day.full, mealType: 'breakfast' })
-      }
-      if (daySelections.lunch) {
-        schedule.push({ day: day.full, mealType: 'lunch' })
-      }
-      if (daySelections.dinner) {
-        schedule.push({ day: day.full, mealType: 'dinner' })
-      }
+    Object.values(selections).forEach(day => {
+      if (day.breakfast) breakfast += 1
+      if (day.lunch) lunch += 1
+      if (day.dinner) dinner += 1
     })
-    
-    return schedule
+
+    return {
+      breakfast,
+      lunch,
+      dinner,
+      total: breakfast + lunch + dinner
+    }
+  }, [selections])
+
+  const selectedSlots = useMemo(
+    () =>
+      daysOfWeek.flatMap((day) =>
+        (['breakfast', 'lunch', 'dinner'] as MealType[]).reduce<Array<{ day: string; mealType: MealType }>>(
+          (acc, mealType) => {
+            if (selections[day.full][mealType]) {
+              acc.push({ day: day.full, mealType })
+            }
+            return acc
+          },
+          []
+        )
+      ),
+    [selections]
+  )
+
+  useEffect(() => {
+    setDistinctCounts(prev =>
+      clampDistinctCounts(prev, {
+        breakfast: totals.breakfast,
+        lunch: totals.lunch,
+        dinner: totals.dinner
+      })
+    )
+  }, [totals.breakfast, totals.lunch, totals.dinner])
+
+  const updateDistinctCount = (mealType: MealType, value: number) => {
+    setDistinctCounts(prev => {
+      const updated = { ...prev, [mealType]: value }
+      return clampDistinctCounts(updated, {
+        breakfast: totals.breakfast,
+        lunch: totals.lunch,
+        dinner: totals.dinner
+      })
+    })
   }
 
   const handleGenerate = async () => {
-    const totals = getTotalMeals()
-    
     if (totals.total === 0) {
       setError('Please select at least one meal to generate')
       return
@@ -132,8 +235,6 @@ export default function MealPlanGenerateClient() {
       // TODO: Make this configurable via user settings in the future
       const weekOf = getNextWeekStart('Monday')
 
-      const mealSchedule = getMealSchedule()
-
       const result = await generateMealPlanFromPreferences(
         weekOf,
         {
@@ -141,29 +242,29 @@ export default function MealPlanGenerateClient() {
           lunch: totals.lunch,
           dinner: totals.dinner
         },
-        mealSchedule
+        distinctCounts,
+        selectedSlots
       )
 
       // Check if there's a conflict (existing meal plan)
-      if ((result as any).conflict) {
+      if ('conflict' in result && result.conflict) {
         setConflictData({
-          existingPlanId: (result as any).existingPlanId,
-          weekOf: (result as any).weekOf
+          existingPlanId: result.existingPlanId,
+          weekOf: result.weekOf
         })
         setShowReplaceDialog(true)
         setLoading(false)
         return
       }
 
-      if (result.error) {
-        if (result.needsSurvey) {
-          setError(result.error)
+      if (isErrorResponse(result)) {
+        const { error: message, needsSurvey } = result
+        setError(message)
+        if (needsSurvey) {
           setTimeout(() => router.push('/onboarding'), 2000)
-        } else {
-          setError(result.error)
         }
         setLoading(false)
-      } else if (result.success && result.mealPlanId) {
+      } else if (result.success) {
         // Redirect to streaming generation page
         router.push(`/meal-plan/generating/${result.mealPlanId}`)
       } else {
@@ -180,16 +281,12 @@ export default function MealPlanGenerateClient() {
   const handleReplace = async () => {
     if (!conflictData) return
 
-    const totals = getTotalMeals()
-    
     setLoading(true)
     setError('')
     setSuccess(false)
     setShowReplaceDialog(false)
 
     try {
-      const mealSchedule = getMealSchedule()
-
       const result = await replaceExistingMealPlan(
         conflictData.existingPlanId,
         conflictData.weekOf,
@@ -198,18 +295,18 @@ export default function MealPlanGenerateClient() {
           lunch: totals.lunch,
           dinner: totals.dinner
         },
-        mealSchedule
+        distinctCounts,
+        selectedSlots
       )
 
-      if (result.error) {
-        if (result.needsSurvey) {
-          setError(result.error)
+      if (isErrorResponse(result)) {
+        const { error: message, needsSurvey } = result
+        setError(message)
+        if (needsSurvey) {
           setTimeout(() => router.push('/onboarding'), 2000)
-        } else {
-          setError(result.error)
         }
         setLoading(false)
-      } else if (result.success && result.mealPlanId) {
+      } else if (result.success) {
         // Redirect to streaming generation page
         router.push(`/meal-plan/generating/${result.mealPlanId}`)
       } else {
@@ -227,8 +324,6 @@ export default function MealPlanGenerateClient() {
     setShowReplaceDialog(false)
     setConflictData(null)
   }
-
-  const totals = getTotalMeals()
 
   return (
     <div className="gg-bg-page min-h-screen">
@@ -412,6 +507,66 @@ export default function MealPlanGenerateClient() {
                       {totals.total}
                     </span>
                   </div>
+                </div>
+              </div>
+
+              {/* Distinct Recipe Controls */}
+              <div className="gg-card">
+                <h2 className="gg-heading-section mb-4">Unique Recipe Targets</h2>
+                <p className="text-sm text-gray-600 mb-4">
+                  Prefer to cook once and eat twice? Set the number of different recipes you want to cook for each meal type. We&apos;ll duplicate recipes across the selected slots when this number is lower.
+                </p>
+                <div className="space-y-4">
+                  {(['breakfast', 'lunch', 'dinner'] as MealType[]).map((mealType) => (
+                    <div key={mealType} className="flex flex-col gap-2 border border-gray-100 rounded-lg p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-lg">
+                            {mealType === 'breakfast' ? '🍳' : mealType === 'lunch' ? '🥗' : '🍽️'}
+                          </span>
+                          <span className="gg-text-body capitalize">{mealType}</span>
+                        </div>
+                        <span className="text-sm text-gray-500">
+                          {totals[mealType]} selected slot{totals[mealType] === 1 ? '' : 's'}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm text-gray-600 flex-1">
+                          Unique recipes
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => updateDistinctCount(mealType, distinctCounts[mealType] - 1)}
+                            disabled={distinctCounts[mealType] <= (totals[mealType] === 0 ? 0 : 1)}
+                            className="h-9 w-9 flex items-center justify-center rounded-full border border-gray-200 text-gray-600 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            −
+                          </button>
+                          <input
+                            type="number"
+                            min={totals[mealType] === 0 ? 0 : 1}
+                            max={Math.max(totals[mealType], totals[mealType] === 0 ? 0 : 1)}
+                            value={distinctCounts[mealType]}
+                            onChange={(event) => {
+                              const nextValue = parseInt(event.target.value, 10)
+                              if (Number.isNaN(nextValue)) return
+                              updateDistinctCount(mealType, nextValue)
+                            }}
+                            className="w-16 rounded-lg border border-gray-200 px-2 py-2 text-center text-sm focus:border-[var(--gg-primary)] focus:outline-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => updateDistinctCount(mealType, distinctCounts[mealType] + 1)}
+                            disabled={distinctCounts[mealType] >= totals[mealType]}
+                            className="h-9 w-9 flex items-center justify-center rounded-full border border-gray-200 text-gray-600 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
 

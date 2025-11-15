@@ -23,5 +23,5 @@ export default async function MealPlanGeneratePage() {
     redirect('/onboarding')
   }
 
-  return <MealPlanGenerateClient />
+  return <MealPlanGenerateClient surveyResponse={userData.survey_response} />
 }
