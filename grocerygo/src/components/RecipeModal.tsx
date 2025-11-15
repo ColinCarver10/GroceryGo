@@ -225,7 +225,7 @@ export default function RecipeModal({
                 </div>
               </div>
             )}
-
+            
             {/* Close Button */}
             <button
               onClick={onClose}

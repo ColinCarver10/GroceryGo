@@ -308,17 +308,29 @@ export default function GeneratingView({
         return
       }
 
+      const parsedSchedule = aiResponse.schedule as ScheduleEntry[]
       const parsedRecipes = Array.isArray(aiResponse.recipes) ? aiResponse.recipes : []
-      if (parsedRecipes.length === totalMeals) {
-        setRecipes(parsedRecipes)
-        setCurrentRecipeIndex(parsedRecipes.length)
+
+      if (!parsedRecipes.length) {
+        setError('Meal plan generation did not include any recipes. Please try again.')
+        return
       }
 
-      await saveRecipes(
-        parsedRecipes,
-        Array.isArray(aiResponse.grocery_list) ? aiResponse.grocery_list : [],
-        aiResponse.schedule
-      )
+      if (parsedRecipes.length < parsedSchedule.length) {
+        setError(
+          `Meal plan generation returned ${parsedRecipes.length} recipes but ${parsedSchedule.length} scheduled meals. Please try again.`
+        )
+        return
+      }
+
+      setRecipes(parsedRecipes)
+      setCurrentRecipeIndex(parsedRecipes.length)
+
+      const groceryListItems = Array.isArray(aiResponse.grocery_list) ? aiResponse.grocery_list : []
+      setGroceryList(groceryListItems)
+      setScheduleEntries(parsedSchedule)
+
+      await saveRecipes(parsedRecipes, groceryListItems, parsedSchedule)
     } catch (err) {
       console.error('Parse error:', err)
       console.error('Buffer content:', buffer)

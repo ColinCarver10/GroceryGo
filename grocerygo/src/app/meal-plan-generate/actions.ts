@@ -98,10 +98,7 @@ export async function replaceExistingMealPlan(
       selectedSlots
     )
 
-    if (result.success) {
-      return { ...result, replaced: true }
-    }
-
+    // 'replaced' is not a property of the response; just return the result as-is
     return result
   } catch (error: unknown) {
     console.error('Meal plan replacement error:', error)
@@ -149,14 +146,16 @@ async function internalGenerateMealPlan(
       selected_slots: selectedSlots
     }
 
-    const mealPlan = await insertGeneratingMealPlan(context, {
-      week_of: weekOf,
-      status: 'generating',
-      total_meals: totalMeals,
-      survey_snapshot: extendedSnapshot,
-      generation_method: 'ai-generated',
-      ai_model: 'gpt-5'
-    })
+    const mealPlan = await insertGeneratingMealPlan(context, 
+      {
+        week_of: weekOf,
+        status: 'generating',
+        total_meals: totalMeals,
+        survey_snapshot: extendedSnapshot,
+        generation_method: 'ai-generated',
+        ai_model: 'gpt-4o'
+      }
+    )
 
     return {
       success: true,
