@@ -193,6 +193,12 @@ Since the user has "Eat healthier" as a goal or "Nutrition" as their #1 priority
 - Minimum 15-20g protein per serving\n`
   }
 
+  /**
+   * NOTE FOR FUTURE IMPROVEMENTS:
+   *   1. Add a validation checklist in the prompt so GPT confirms both recipes & schedule sections were produced.
+   *   2. Consider switching regenerateWithAdjustments to callOpenAIStructured with a schema that requires schedule entries.
+   *   3. Extend server-side fallback/repair logic so downstream inserts always receive a complete schedule even if GPT skips it.
+   */
   return `You are an expert meal planner regenerating a complete meal plan with specific optimizations.
 
 ### User Preferences:
