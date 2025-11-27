@@ -5,20 +5,21 @@ import { redirect } from 'next/navigation'
 
 import { createClient } from '@/utils/supabase/server'
 import type { UserInsert } from '@/types/database'
+import type { PostgrestError } from '@supabase/supabase-js';
+
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
 
 async function ensureUserExists(supabase: SupabaseServerClient, userId: string, email: string) {
   console.log('ensureUserExists', userId, email)
   // Check if user exists in users table
-  const { data: existingUser, error: checkError } = await supabase
+  const { data: existingUser, error: checkError 
+  } : { data: { id: string } | null; error: PostgrestError | null } = await supabase
     .from('users')
     .select('id')
     .eq('user_id', userId)
     .single()
 
-  console.log('existingUser', existingUser)
-  console.log('checkError', checkError)
   // If user doesn't exist, create them
   // PGRST116 means no rows were found, which is expected for new users
   if (!existingUser || checkError?.code === 'PGRST116') {
@@ -26,7 +27,6 @@ async function ensureUserExists(supabase: SupabaseServerClient, userId: string, 
       user_id: userId,
       email: email,
     }
-    console.log('newUser', newUser)
     const { error: insertError } = await supabase
       .from('users')
       .insert(newUser)

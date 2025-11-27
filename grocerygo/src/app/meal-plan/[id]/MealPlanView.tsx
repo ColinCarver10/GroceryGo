@@ -280,7 +280,6 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
       
       const result = await createInstacartOrder(
         uncheckedItems,
-        mealPlan.id,
         mealPlanTitle,
         mealPlanUrl
       )
@@ -354,7 +353,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
     return a.recipe.name.localeCompare(b.recipe.name)
   })
 
-  const formatSlotLabel = (slot: typeof mealPlan.meal_plan_recipes[number]) => {
+  const formatSlotLabel = (slot: MealPlanRecipe) => {
     if (slot.slot_label) return slot.slot_label
     const day = slot.planned_for_date
       ? new Date(slot.planned_for_date + 'T00:00:00').toLocaleDateString('en-US', {

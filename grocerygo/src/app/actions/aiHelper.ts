@@ -2,6 +2,7 @@
 
 import OpenAI from 'openai'
 import type { z } from 'zod'
+import { zodToJsonSchema } from 'zod-to-json-schema'
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -19,7 +20,7 @@ interface AICallResult<T> {
  * For non-streaming calls (replace recipe, simplify, etc.)
  * This guarantees schema compliance and proper validation
  */
-export async function callOpenAIStructured<T extends z.ZodType>(
+export async function callOpenAIStructured<T extends z.ZodTypeAny>(
   systemPrompt: string,
   userPrompt: string,
   schema: T,
@@ -49,7 +50,7 @@ export async function callOpenAIStructured<T extends z.ZodType>(
         type: 'json_schema',
         json_schema: {
           name: schemaName,
-          schema: schema.toJSON(),
+          schema: zodToJsonSchema(schema as any, schemaName),
           strict: true
         }
       },
@@ -88,7 +89,7 @@ export async function callOpenAIStructured<T extends z.ZodType>(
 
     return {
       success: true,
-      data: validationResult.data as z.infer<T>
+      data: validationResult.data // TypeScript already knows this is z.infer<T>
     }
 
   } catch (error: unknown) {
@@ -220,6 +221,15 @@ function getErrorStatus(error: unknown): number | undefined {
     }
   }
   return undefined
+}
+
+function isOpenAIError(error: unknown): error is { message: string; status?: number } {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'message' in error &&
+    typeof (error as { message: unknown }).message === 'string'
+  )
 }
 
 

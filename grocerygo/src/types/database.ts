@@ -1,6 +1,6 @@
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue }
 
-export type SurveyResponse = Record<string, JsonValue>
+export type SurveyResponse = Record<string, string | string[]>
 
 // User types
 export interface User {

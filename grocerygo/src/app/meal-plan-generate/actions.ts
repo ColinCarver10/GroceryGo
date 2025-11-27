@@ -33,6 +33,7 @@ export type GenerateMealPlanSuccess = {
 }
 
 export type GenerateMealPlanConflict = {
+  success: false
   conflict: true
   existingPlanId: string
   weekOf: string

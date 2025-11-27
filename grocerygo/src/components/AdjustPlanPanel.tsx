@@ -6,7 +6,7 @@ interface AdjustPlanPanelProps {
   isOpen: boolean
   onClose: () => void
   onApplyAdjustments?: (adjustments: PlanAdjustments) => void
-  appliedAdjustments?: string[]
+  appliedAdjustments?: string[] | string
 }
 
 export interface PlanAdjustments {

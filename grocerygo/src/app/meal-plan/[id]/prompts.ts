@@ -55,8 +55,8 @@ export const replaceRecipePrompt = (
   recipeToReplace: string
 ) => {
   // Extract favored and excluded ingredients
-  const favoredIngredients = surveyData.favored_ingredients || []
-  const excludedIngredients = surveyData.excluded_ingredients || []
+  const favoredIngredients = surveyData.favored_ingredients as string[] || []
+  const excludedIngredients = surveyData.excluded_ingredients as string[] || []
   
   let ingredientPreferencesSection = ''
   if (favoredIngredients.length > 0 || excludedIngredients.length > 0) {
@@ -161,8 +161,8 @@ export const bulkAdjustmentPrompt = (
   }
 
   // Extract favored and excluded ingredients
-  const favoredIngredients = surveyData.favored_ingredients || []
-  const excludedIngredients = surveyData.excluded_ingredients || []
+  const favoredIngredients = surveyData.favored_ingredients as string[] || []
+  const excludedIngredients = surveyData.excluded_ingredients as string [] || []
   
   let ingredientPreferencesSection = ''
   if (favoredIngredients.length > 0 || excludedIngredients.length > 0) {

@@ -327,8 +327,8 @@ export default function GeneratingView({
       setCurrentRecipeIndex(parsedRecipes.length)
 
       const groceryListItems = Array.isArray(aiResponse.grocery_list) ? aiResponse.grocery_list : []
-      setGroceryList(groceryListItems)
-      setScheduleEntries(parsedSchedule)
+      // setGroceryList(groceryListItems)
+      // setScheduleEntries(parsedSchedule)
 
       await saveRecipes(parsedRecipes, groceryListItems, parsedSchedule)
     } catch (err) {

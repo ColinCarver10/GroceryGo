@@ -44,7 +44,7 @@ interface MealPlanGenerateClientProps {
 }
 
 function isErrorResponse(response: GenerateMealPlanResponse): response is GenerateMealPlanError {
-  return 'error' in response && !response.success
+  return 'error' in response
 }
 
 function parseLunchPreference(preference?: string, totalSlots?: number) {
@@ -101,8 +101,8 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
     }), {})
   )
 
-  const leftoverPreference = surveyResponse?.['12'] ?? surveyResponse?.[12]
-  const lunchPreference = surveyResponse?.['13'] ?? surveyResponse?.[13]
+  const leftoverPreference = surveyResponse?.['12'] as string ?? surveyResponse?.[12] as string
+  const lunchPreference = surveyResponse?.['13'] as string ?? surveyResponse?.[13] as string
 
   const initialTotals = useMemo(
     () => ({
