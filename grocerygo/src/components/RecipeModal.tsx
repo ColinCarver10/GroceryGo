@@ -1,9 +1,10 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import type { Ingredient, Recipe } from '@/types/database'
+import type { Recipe } from '@/types/database'
 import RecipeAdjustments from './RecipeAdjustments'
 import { askRecipeCookingQuestion } from '@/app/actions/recipeCookingAssistant'
+import { getIngredients, getRecipeSteps } from '@/utils/mealPlanUtils';
 
 interface RecipeModalProps {
   recipe: Recipe
@@ -53,35 +54,7 @@ export default function RecipeModal({
     })
   }
 
-  const getIngredients = (recipe: Recipe) => {
-    debugger
-    if (!recipe.ingredients) return [];
-    if (typeof recipe.ingredients === 'string') {
-      try {
-        let ingredients: string = recipe.ingredients; 
-        let json = JSON.parse(ingredients.replace(/'/g, '"'));
-        return json;
-      } catch (error){
-        return [];
-      }
-    }
-    return Array.isArray(recipe.ingredients) ? recipe.ingredients : [];
-  };
 
-  const getRecipeSteps = (recipe: Recipe) => {
-    debugger
-    if (!recipe.steps) return [];
-    if (typeof recipe.steps === 'string') {
-      try {
-        let steps: string = recipe.steps; 
-        let json = JSON.parse(steps.replace(/'/g, '"'));
-        return json;
-      } catch{
-        return [];
-      }
-    }
-    return Array.isArray(recipe.steps) ? recipe.steps : [];
-  };
 
   // State for cooking assistant
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])

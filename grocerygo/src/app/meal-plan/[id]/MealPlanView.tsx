@@ -8,6 +8,7 @@ import RecipeCardActions from '@/components/RecipeCardActions'
 import AdjustPlanPanel from '@/components/AdjustPlanPanel'
 import IngredientActions from '@/components/IngredientActions'
 import type { PlanAdjustments } from '@/components/AdjustPlanPanel'
+import { getIngredients, getRecipeSteps } from '@/utils/mealPlanUtils';
 import { 
   createInstacartOrder,
   replaceRecipe,
@@ -545,15 +546,15 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
                         <div className="mb-4">
                           <p className="mb-2 text-sm font-semibold text-gray-700">Ingredients:</p>
                           <ul className="space-y-1 text-sm text-gray-600">
-                            {/* {recipe.ingredients.slice(0, 3).map((ing: { item: string; quantity: string }, idx: number) => (
+                            {getIngredients(recipe).slice(0, 3).map((ing: string, idx: number) => (
                               <li key={idx} className="flex items-start gap-2">
                                 <span className="text-[var(--gg-primary)]">•</span>
-                                <span>{ing.quantity} {ing.item}</span>
+                                <span>{ing}</span>
                               </li>
-                            ))} */}
-                            {recipe.ingredients.length > 3 && (
+                            ))}
+                            {getIngredients(recipe).length > 3 && (
                               <li className="text-gray-400 text-xs">
-                                +{recipe.ingredients.length - 3} more...
+                                +{getIngredients(recipe).length - 3} more...
                               </li>
                             )}
                           </ul>
