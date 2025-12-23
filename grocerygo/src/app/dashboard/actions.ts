@@ -39,7 +39,7 @@ export async function getUserDashboardData(userId: string, page: number = 1, pag
       *,
       meal_plan_recipes (
         *,
-        recipe:recipes (*)
+        recipe:full_recipes_table (*)
       ),
       grocery_items (*)
     `)

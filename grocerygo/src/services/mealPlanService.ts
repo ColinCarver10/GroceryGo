@@ -1,5 +1,14 @@
 import { createClient } from '@/utils/supabase/server'
-import type { MealPlan, MealPlanInsert, MealPlanRecipeInsert, RecipeInsert, GroceryItemInsert } from '@/types/database'
+import type { MealPlan, MealPlanInsert, MealPlanRecipeInsert, RecipeInsert, GroceryItemInsert, MatchRecipeResult } from '@/types/database'
+import { 
+  embeddingPromptsSystemPrompt, 
+  embeddingPromptsUserPromptTemplate 
+} from '@/app/meal-plan-generate/prompts';
+import { generateText } from 'ai'
+import OpenAI from "openai";
+import { z } from 'zod';
+
+
 
 type SupabaseClient = Awaited<ReturnType<typeof createClient>>
 
@@ -23,12 +32,7 @@ export interface RecipeInput {
   dietary_tags?: string[]
   flavor_profile?: string[]
   estimated_cost?: number
-  nutrition_info?: {
-    calories?: number
-    protein?: number
-    carbs?: number
-    fat?: number
-  }
+  nutrition_info?: number[]
 }
 
 export interface GroceryItemInput {
@@ -161,55 +165,76 @@ export async function persistGeneratedMealPlan(
     throw new Error('No recipes provided to persist')
   }
 
-  const recipePayload: RecipeInsert[] = recipes.map<RecipeInsert>((recipe) => ({
-    name: recipe.name,
-    ingredients: recipe.ingredients,
-    steps: recipe.steps,
-    meal_type: recipe.mealType ?? undefined,
-    description: recipe.description,
-    prep_time_minutes: recipe.prep_time_minutes,
-    cook_time_minutes: recipe.cook_time_minutes,
-    servings: recipe.servings,
-    difficulty: recipe.difficulty,
-    cuisine_type: recipe.cuisine_type,
-    dietary_tags: recipe.dietary_tags,
-    flavor_profile: recipe.flavor_profile,
-    estimated_cost: recipe.estimated_cost,
-    nutrition_info: recipe.nutrition_info,
-    times_used: 1
-  }))
-
-  const {
-    data: insertedRecipes,
-    error: recipeError
-  } = await supabase.from('recipes').insert(recipePayload).select()
-
-  if (recipeError || !insertedRecipes?.length) {
+  // Validate that all recipes have IDs (from full_recipes_table)
+  const recipesWithoutIds = recipes.filter((r) => !r.id)
+  if (recipesWithoutIds.length > 0) {
     throw new Error(
-      recipeError?.message || 'Failed to create recipes for meal plan'
+      `All recipes must have IDs. Found ${recipesWithoutIds.length} recipe(s) without IDs.`
     )
   }
 
-  const typedInsertedRecipes = insertedRecipes as Array<{ id: string; name: string }>
-  const recipeIdMap = buildRecipeIdMap(recipes, typedInsertedRecipes)
+  // Fetch existing recipes by ID to verify they exist and get their current data
+  const recipeIds = recipes.map((r) => r.id!).filter(Boolean)
+  const { data: fetchedRecipes, error: fetchError } = await supabase
+    .from('full_recipes_table')
+    .select('recipe_id, name, times_used')
+    .in('recipe_id', recipeIds)
+
+  if (fetchError) {
+    throw new Error(
+      fetchError.message || 'Failed to fetch existing recipes'
+    )
+  }
+
+  if (!fetchedRecipes || fetchedRecipes.length === 0) {
+    throw new Error('No recipes found in database for the provided IDs')
+  }
+
+  const existingRecipes = fetchedRecipes as Array<{ recipe_id: string; name: string; times_used?: number }>
+  
+  // Verify all requested recipe IDs were found
+  const foundIds = new Set(fetchedRecipes.map((r) => r.recipe_id))
+
+  // Increment times_used for existing recipes
+  for (const recipe of existingRecipes) {
+    const currentTimesUsed = recipe.times_used ?? 0
+    const { error: updateError } = await supabase
+      .from('full_recipes_table')
+      .update({ times_used: currentTimesUsed + 1 })
+      .eq('recipe_id', recipe.recipe_id)
+
+    if (updateError) {
+      throw new Error(
+        updateError.message || `Failed to update times_used for recipe ${recipe.recipe_id}`
+      )
+    }
+  }
+
+  const typedInsertedRecipes = existingRecipes as Array<{ recipe_id: string; name: string }>
 
   const mealPlanRecipes: MealPlanRecipeInsert[] =
     schedule.length > 0
       ? schedule.reduce<MealPlanRecipeInsert[]>((acc, slot, index) => {
-          const linkedRecipeId = resolveRecipeId(recipeIdMap, slot)
-          if (!linkedRecipeId) {
-            console.warn(
-              `Schedule entry ${index} references missing recipe id ${slot.recipeId}`
-            )
-            return acc
+
+          // Ensure portion_multiplier is always a valid integer
+          let portionMultiplier = 1
+          if (slot.portionMultiplier !== undefined && slot.portionMultiplier !== null) {
+            const parsed = typeof slot.portionMultiplier === 'number' 
+              ? slot.portionMultiplier 
+              : parseInt(String(slot.portionMultiplier), 10)
+            
+            // Only use parsed value if it's a valid positive integer
+            if (!isNaN(parsed) && parsed > 0 && Number.isInteger(parsed)) {
+              portionMultiplier = parsed
+            }
           }
 
           acc.push({
             meal_plan_id: mealPlan.id,
-            recipe_id: linkedRecipeId,
+            recipe_id: parseInt(slot.recipeId),
             planned_for_date: getDateForDayName(mealPlan.week_of, slot.day),
             meal_type: normalizeMealType(slot.mealType),
-            portion_multiplier: slot.portionMultiplier || 1,
+            portion_multiplier: portionMultiplier,
             slot_label: slot.slotLabel || `${slot.day} ${slot.mealType}`
           })
 
@@ -217,7 +242,7 @@ export async function persistGeneratedMealPlan(
         }, [])
       : typedInsertedRecipes.map((recipe, index) => ({
           meal_plan_id: mealPlan.id,
-          recipe_id: recipe.id,
+          recipe_id: parseInt(recipe.recipe_id),
           planned_for_date: getDateForMealIndex(mealPlan.week_of, index),
           portion_multiplier: 1
         }))
@@ -256,7 +281,7 @@ export async function persistGeneratedMealPlan(
     .from('meal_plans')
     .update({
       status: 'pending',
-      total_meals: schedule.length > 0 ? schedule.length : insertedRecipes.length
+      total_meals: schedule.length > 0 ? schedule.length : typedInsertedRecipes.length
     })
     .eq('id', mealPlan.id)
 
@@ -267,52 +292,6 @@ export async function persistGeneratedMealPlan(
   }
 }
 
-function buildRecipeIdMap(
-  sourceRecipes: RecipeInput[],
-  insertedRecipes: Array<{ id: string; name: string }>
-) {
-  const map = new Map<string, string>()
-
-  insertedRecipes.forEach((inserted, index) => {
-    const source = sourceRecipes[index]
-    if (!source) {
-      return
-    }
-
-    const slug = toSlug(inserted.name)
-
-    map.set(slug, inserted.id)
-
-    if (source.mealType) {
-      map.set(`${source.mealType.toLowerCase()}-${slug}`, inserted.id)
-    }
-
-    if (source.id) {
-      map.set(source.id, inserted.id)
-    }
-  })
-
-  return map
-}
-
-function resolveRecipeId(map: Map<string, string>, slot: ScheduleInput) {
-  if (map.has(slot.recipeId)) {
-    return map.get(slot.recipeId)
-  }
-
-  const normalizedMealType = slot.mealType?.toLowerCase()
-  const slugKey = toSlug(slot.recipeId)
-
-  if (map.has(slugKey)) {
-    return map.get(slugKey)
-  }
-
-  if (normalizedMealType && map.has(`${normalizedMealType}-${slugKey}`)) {
-    return map.get(`${normalizedMealType}-${slugKey}`)
-  }
-
-  return undefined
-}
 
 function normalizeMealType(mealType?: string) {
   return mealType
@@ -378,11 +357,197 @@ function parseUnit(quantityStr: string): string | undefined {
   return match ? match[1].trim() : undefined
 }
 
-function toSlug(value: string) {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
+export async function fetchCandidateRecipesForMealType(
+  embedPrompt: string,
+  context: MealPlanContext, 
+  mealType: string, 
+  matchCount: number, 
+  maxMinutes?: number
+): Promise<string[]> {
+  const { supabase, user } = context;
+
+  try {
+    const embedding: Number[] = await generateEmbeddingFromPrompt(embedPrompt);
+
+    const { data, error } = await supabase.rpc('match_recipe_ids_with_history_exclusion', {
+      p_user_id: user.id,
+      p_query_embedding: embedding,
+      p_match_count: matchCount,
+      p_meal_type_filter: mealType ?? null,
+      p_max_minutes: maxMinutes ?? null,
+    })
+
+    if (error) throw error
+
+    const results = data as MatchRecipeResult[]
+    const recipeIds: string[] = (results ?? []).map(row => row.recipe_id)
+
+    return recipeIds;
+    
+  } catch(error){
+    console.error("An error occured while fetching the candidate recipes:", {error, mealType});
+    throw new Error(
+      'CRITICAL: Failed to generate candidate recipes. Meal plan generation aborted.',
+      { cause: error as Error }
+    )
+  }
+
 }
 
+export interface FullRecipeDetails {
+  recipe_id: string
+  name: string
+  nutrition?: {
+    calories?: number
+    protein?: number
+    carbs?: number
+    fat?: number
+  }
+  steps: string[]
+  description?: string
+  ingredients: Array<{ item: string; quantity: string }>
+  meal_type?: string
+}
 
+export async function fetchRecipeDetailsByIds(
+  context: MealPlanContext,
+  recipeIds: string[]
+): Promise<FullRecipeDetails[]> {
+  const { supabase } = context
+
+  if (!recipeIds || recipeIds.length === 0) {
+    return []
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('full_recipes_table')
+      .select('recipe_id, name, nutrition, steps, description, ingredients, meal_type')
+      .in('recipe_id', recipeIds)
+
+    if (error) {
+      throw error
+    }
+
+    return (data ?? []) as FullRecipeDetails[]
+  } catch (error) {
+    console.error("An error occurred while fetching recipe details:", { error, recipeIds })
+    throw new Error(
+      'CRITICAL: Failed to fetch recipe details. Meal plan generation aborted.',
+      { cause: error as Error }
+    )
+  }
+}
+
+async function generateEmbeddingFromPrompt(embedPrompt: string): Promise<Number[]> {
+  const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY
+  });
+
+  try {
+    const embeddingResponse = await openai.embeddings.create({
+      model: "text-embedding-3-small",
+      input: embedPrompt,
+    });
+
+    if (!embeddingResponse || !embeddingResponse.data) {
+      throw new Error('Embedding response returned empty');
+    }
+      
+    return embeddingResponse.data[0].embedding;
+  } catch (error) {
+    console.error("An error occured while generating the embedding:", {error, embedPrompt});
+    throw new Error(
+      'CRITICAL: Failed to generate embedding. Meal plan generation aborted.',
+      { cause: error as Error }
+    )
+  }
+}
+
+// Zod schema for embedding prompts response
+const EmbeddingPromptsSchema = z.object({
+  breakfast: z.string()
+    .min(8)
+    .max(200)
+    .describe('A concise 8-15 word phrase for breakfast recipe search'),
+  lunch: z.string()
+    .min(8)
+    .max(200)
+    .describe('A concise 8-15 word phrase for lunch recipe search'),
+  dinner: z.string()
+    .min(8)
+    .max(200)
+    .describe('A concise 8-15 word phrase for dinner recipe search')
+});
+
+export type EmbeddingPrompts = z.infer<typeof EmbeddingPromptsSchema>;
+
+/**
+ * Generates embedding prompts for breakfast, lunch, and dinner in a single LLM call.
+ */
+export async function getEmbedPrompts(surveyData: any): Promise<EmbeddingPrompts> {
+  const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY
+  });
+
+  const userPrompt = embeddingPromptsUserPromptTemplate(surveyData);
+
+  try {
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [
+        {
+          role: 'system',
+          content: embeddingPromptsSystemPrompt,
+        },
+        {
+          role: 'user',
+          content: userPrompt,
+        },
+      ],
+      temperature: 0.7,
+    });
+
+    const response = completion.choices[0]?.message?.content;
+
+    if (!response) {
+      throw new Error('No response generated from AI');
+    }
+
+    // Parse the JSON response
+    let parsedData: unknown;
+    try {
+      parsedData = JSON.parse(response);
+    } catch (parseError) {
+      throw new Error(`Failed to parse AI response as JSON: ${parseError instanceof Error ? parseError.message : 'Unknown error'}`);
+    }
+
+    // Basic validation that we got an object with the expected structure
+    if (typeof parsedData !== 'object' || parsedData === null) {
+      throw new Error('AI response is not a valid object');
+    }
+
+    const data = parsedData as { breakfast?: string; lunch?: string; dinner?: string };
+
+    if (!data.breakfast || !data.lunch || !data.dinner) {
+      throw new Error('AI response is missing required fields (breakfast, lunch, or dinner)');
+    }
+
+    // Validate that all prompts are non-empty
+    if (!data.breakfast.trim() || !data.lunch.trim() || !data.dinner.trim()) {
+      throw new Error('One or more embedding prompts are empty');
+    }
+
+    return {
+      breakfast: data.breakfast.trim(),
+      lunch: data.lunch.trim(),
+      dinner: data.dinner.trim()
+    };
+  } catch (error) {
+    console.error("An error occurred while generating the embed prompts:", {error, surveyData});
+    throw new Error(
+      'CRITICAL: Failed to generate embedding prompts. Meal plan generation aborted.',
+      { cause: error as Error }
+    );
+  }
+}

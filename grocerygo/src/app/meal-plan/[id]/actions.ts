@@ -152,7 +152,7 @@ export async function replaceRecipe(
     // Get meal plan with survey snapshot
     const { data: mealPlan } = await supabase
       .from('meal_plans')
-      .select('*, meal_plan_recipes(*, recipe:recipes(*)), grocery_items(*)')
+      .select('*, meal_plan_recipes(*, recipe:full_recipes_table(*)), grocery_items(*)')
       .eq('id', mealPlanId)
       .eq('user_id', user.id)
       .single()
@@ -163,7 +163,7 @@ export async function replaceRecipe(
 
     // Get the recipe being replaced
     const { data: oldRecipe } = await supabase
-      .from('recipes')
+      .from('full_recipes_table')
       .select('*')
       .eq('id', recipeId)
       .single()
@@ -201,7 +201,7 @@ export async function replaceRecipe(
 
     // Create new recipe in database
     const { data: newRecipe, error: recipeError } = await supabase
-      .from('recipes')
+      .from('full_recipes_table')
       .insert({
         name: newRecipeData.name,
         ingredients: newRecipeData.ingredients,
@@ -335,7 +335,7 @@ export async function regenerateWithAdjustments(
     const recipeIdMap: Record<string, string> = {}
     for (const aiRecipe of aiMealPlan.recipes) {
       const { data: newRecipe } = await supabase
-        .from('recipes')
+        .from('full_recipes_table')
         .insert({
           name: aiRecipe.name,
           ingredients: aiRecipe.ingredients,
@@ -475,7 +475,7 @@ export async function scaleRecipeServings(
 
     // Get recipe
     const { data: recipe } = await supabase
-      .from('recipes')
+      .from('full_recipes_table')
       .select('*')
       .eq('id', recipeId)
       .single()
@@ -497,7 +497,7 @@ export async function scaleRecipeServings(
 
     // Update recipe
     await supabase
-      .from('recipes')
+      .from('full_recipes_table')
       .update({
         ingredients: scaledIngredients,
         servings: (recipe.servings || 4) * multiplier
@@ -540,7 +540,7 @@ export async function swapIngredient(
 
     // Get recipe
     const { data: recipe } = await supabase
-      .from('recipes')
+      .from('full_recipes_table')
       .select('*')
       .eq('id', recipeId)
       .single()
@@ -562,7 +562,7 @@ export async function swapIngredient(
     })
 
     await supabase
-      .from('recipes')
+      .from('full_recipes_table')
       .update({ ingredients: updatedIngredients })
       .eq('id', recipeId)
 
@@ -600,7 +600,7 @@ export async function simplifyRecipe(
 
     // Get recipe
     const { data: recipe } = await supabase
-      .from('recipes')
+      .from('full_recipes_table')
       .select('*')
       .eq('id', recipeId)
       .single()
@@ -635,7 +635,7 @@ export async function simplifyRecipe(
     // Update recipe with simplified version
     const simplifiedIngredients = (simplified_recipe.ingredients ?? []) as RecipeIngredient[]
     await supabase
-      .from('recipes')
+      .from('full_recipes_table')
       .update({
         name: simplified_recipe.name,
         ingredients: simplifiedIngredients,
@@ -734,7 +734,7 @@ export async function saveCookingNote(
 
     // Get current recipe to append to cooking_notes
     const { data: recipe, error: fetchError } = await supabase
-      .from('recipes')
+      .from('full_recipes_table')
       .select('cooking_notes')
       .eq('id', recipeId)
       .single()
@@ -750,7 +750,7 @@ export async function saveCookingNote(
 
     // Update recipe with new notes
     const { error: updateError } = await supabase
-      .from('recipes')
+      .from('full_recipes_table')
       .update({ cooking_notes: updatedNotes })
       .eq('id', recipeId)
 

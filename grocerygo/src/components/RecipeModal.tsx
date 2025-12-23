@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import type { Recipe } from '@/types/database'
+import type { Ingredient, Recipe } from '@/types/database'
 import RecipeAdjustments from './RecipeAdjustments'
 import { askRecipeCookingQuestion } from '@/app/actions/recipeCookingAssistant'
 
@@ -29,6 +29,8 @@ interface ChatMessage {
   timestamp: Date
 }
 
+
+
 export default function RecipeModal({ 
   recipe, 
   isOpen, 
@@ -50,6 +52,36 @@ export default function RecipeModal({
       day: 'numeric'
     })
   }
+
+  const getIngredients = (recipe: Recipe) => {
+    debugger
+    if (!recipe.ingredients) return [];
+    if (typeof recipe.ingredients === 'string') {
+      try {
+        let ingredients: string = recipe.ingredients; 
+        let json = JSON.parse(ingredients.replace(/'/g, '"'));
+        return json;
+      } catch (error){
+        return [];
+      }
+    }
+    return Array.isArray(recipe.ingredients) ? recipe.ingredients : [];
+  };
+
+  const getRecipeSteps = (recipe: Recipe) => {
+    debugger
+    if (!recipe.steps) return [];
+    if (typeof recipe.steps === 'string') {
+      try {
+        let steps: string = recipe.steps; 
+        let json = JSON.parse(steps.replace(/'/g, '"'));
+        return json;
+      } catch{
+        return [];
+      }
+    }
+    return Array.isArray(recipe.steps) ? recipe.steps : [];
+  };
 
   // State for cooking assistant
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
@@ -251,7 +283,7 @@ export default function RecipeModal({
                   Ingredients
                 </h3>
                 <div className="space-y-3">
-                  {recipe.ingredients.map((ingredient, index) => (
+                  {getIngredients(recipe).map((ingredient: string, index: number) => (
                     <div 
                       key={index}
                       className="flex items-start gap-3 p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors"
@@ -261,10 +293,7 @@ export default function RecipeModal({
                       </div>
                       <div className="flex-1">
                         <p className="font-medium text-gray-900">
-                          {ingredient.item}
-                        </p>
-                        <p className="text-sm text-gray-600">
-                          {ingredient.quantity}
+                          {ingredient}
                         </p>
                       </div>
                     </div>
@@ -281,7 +310,7 @@ export default function RecipeModal({
                   Instructions
                 </h3>
                 <div className="space-y-4">
-                  {recipe.steps.map((step, index) => (
+                  {getRecipeSteps(recipe).map((step: string, index: number) => (
                     <div 
                       key={index}
                       className="flex items-start gap-4"

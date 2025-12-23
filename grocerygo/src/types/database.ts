@@ -17,6 +17,12 @@ export interface UserInsert {
   survey_response?: SurveyResponse | null
 }
 
+export interface Ingredient {
+  item: string
+  quantity: string
+  unit?: string
+}
+
 // Recipe types
 export interface Recipe {
   id: string
@@ -28,11 +34,7 @@ export interface Recipe {
   servings?: number
   difficulty?: 'beginner' | 'intermediate' | 'advanced'
   
-  ingredients: Array<{
-    item: string
-    quantity: string
-    unit?: string
-  }>
+  ingredients: Array<Ingredient>
   steps: string[]
   
   cuisine_type?: string[]
@@ -135,7 +137,7 @@ export interface MealPlanRecipe {
 
 export interface MealPlanRecipeInsert {
   meal_plan_id: string
-  recipe_id: string
+  recipe_id: number
   planned_for_date?: string
   meal_type?: 'breakfast' | 'lunch' | 'dinner'
   notes?: string
@@ -269,4 +271,9 @@ export interface AIGeneratedMealPlan {
     item: string
     quantity: string
   }>
+}
+
+export type MatchRecipeResult = {
+  recipe_id: string
+  similarity: number
 }

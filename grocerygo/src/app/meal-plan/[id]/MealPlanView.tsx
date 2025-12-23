@@ -465,7 +465,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
             <div className="space-y-8">
               {groupedRecipes.length > 0 ? (
                 <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-                  {groupedRecipes.map(({ recipe, slots }) => {
+                  {groupedRecipes.map(({ recipe, slots }, index) => {
                     const totalPortions = slots.reduce(
                       (sum, slot) => sum + (slot.portion_multiplier ?? 1),
                       0
@@ -482,7 +482,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
 
                     return (
                       <div
-                        key={recipe.id}
+                        key={`recipe-${index}`}
                         className="rounded-xl border-2 border-gray-200 bg-white p-6 transition-all hover:border-[var(--gg-primary)] hover:shadow-md flex flex-col"
                       >
                         <div className="flex items-start justify-between mb-4">
@@ -545,12 +545,12 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
                         <div className="mb-4">
                           <p className="mb-2 text-sm font-semibold text-gray-700">Ingredients:</p>
                           <ul className="space-y-1 text-sm text-gray-600">
-                            {recipe.ingredients.slice(0, 3).map((ing: { item: string; quantity: string }, idx: number) => (
+                            {/* {recipe.ingredients.slice(0, 3).map((ing: { item: string; quantity: string }, idx: number) => (
                               <li key={idx} className="flex items-start gap-2">
                                 <span className="text-[var(--gg-primary)]">•</span>
                                 <span>{ing.quantity} {ing.item}</span>
                               </li>
-                            ))}
+                            ))} */}
                             {recipe.ingredients.length > 3 && (
                               <li className="text-gray-400 text-xs">
                                 +{recipe.ingredients.length - 3} more...

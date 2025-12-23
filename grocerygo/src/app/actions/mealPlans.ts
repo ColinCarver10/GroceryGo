@@ -130,7 +130,7 @@ export async function createMealPlanFromAI(
 
         acc.push({
           meal_plan_id: mealPlan.id,
-          recipe_id: linkedRecipeId,
+          recipe_id: parseInt(linkedRecipeId),
           planned_for_date: plannedDate,
           meal_type: entry.mealType ? entry.mealType.toLowerCase() as 'breakfast' | 'lunch' | 'dinner' : undefined,
           portion_multiplier: entry.portionMultiplier || 1,
@@ -142,7 +142,7 @@ export async function createMealPlanFromAI(
     } else {
       mealPlanRecipes = recipeIds.map((recipeId, index) => ({
         meal_plan_id: mealPlan.id,
-        recipe_id: recipeId,
+        recipe_id: parseInt(recipeId),
         planned_for_date: getDateForMealIndex(weekOf, index),
         portion_multiplier: 1
       }))
@@ -207,7 +207,7 @@ export async function getUserMealPlans(userId: string): Promise<MealPlanWithReci
       *,
       meal_plan_recipes (
         *,
-        recipe:recipes (*)
+        recipe:full_recipes_table (*)
       ),
       grocery_items (*)
     `)
@@ -234,7 +234,7 @@ export async function getMealPlanById(mealPlanId: string, userId: string) {
       *,
       meal_plan_recipes (
         *,
-        recipe:recipes (*)
+        recipe:full_recipes_table (*)
       ),
       grocery_items (*)
     `)
