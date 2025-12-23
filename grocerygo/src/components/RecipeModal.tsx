@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import type { Recipe } from '@/types/database'
+import type { Ingredient, Recipe } from '@/types/database'
 import RecipeAdjustments from './RecipeAdjustments'
 import { askRecipeCookingQuestion } from '@/app/actions/recipeCookingAssistant'
 import { getIngredients, getRecipeSteps } from '@/utils/mealPlanUtils';
@@ -96,8 +96,8 @@ export default function RecipeModal({
     try {
       const result = await askRecipeCookingQuestion(
         recipe.name,
-        recipe.ingredients,
-        recipe.steps,
+        getIngredients(recipe),
+        getRecipeSteps(recipe),
         currentQuestion
       )
 
@@ -244,7 +244,7 @@ export default function RecipeModal({
           </div>
 
           {/* Content */}
-          <div className="px-8 py-6 pb-8 overflow-y-auto max-h-[calc(90vh-100px)]">
+          <div className="px-8 py-6 pb-8 overflow-y-auto max-h-[calc(90vh-200px)]">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               
               {/* Ingredients */}
@@ -256,7 +256,7 @@ export default function RecipeModal({
                   Ingredients
                 </h3>
                 <div className="space-y-3">
-                  {getIngredients(recipe).map((ingredient: string, index: number) => (
+                  {getIngredients(recipe).map((ingredient: Ingredient, index: number) => (
                     <div 
                       key={index}
                       className="flex items-start gap-3 p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors"
@@ -266,7 +266,7 @@ export default function RecipeModal({
                       </div>
                       <div className="flex-1">
                         <p className="font-medium text-gray-900">
-                          {ingredient}
+                          {ingredient.ingredient}
                         </p>
                       </div>
                     </div>

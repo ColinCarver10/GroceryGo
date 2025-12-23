@@ -1,5 +1,6 @@
 'use server'
 
+import { Ingredient } from '@/types/database'
 import { callOpenAI } from './aiHelper'
 
 /**
@@ -85,7 +86,7 @@ interface RecipeCookingAssistantResult {
  */
 export async function askRecipeCookingQuestion(
   recipeName: string,
-  ingredients: Array<{ item: string; quantity: string }>,
+  ingredients: Ingredient[],
   steps: string[],
   userQuestion: string
 ): Promise<RecipeCookingAssistantResult> {
@@ -139,7 +140,7 @@ If the question is not about cooking this recipe, use:
     const userPrompt = `Recipe: ${recipeName}
 
 Ingredients:
-${ingredients.map(ing => `- ${ing.quantity} ${ing.item}`).join('\n')}
+${ingredients.map(ing => `- ${ing.ingredient}`).join('\n')}
 
 Instructions:
 ${steps.map((step, idx) => `${idx + 1}. ${step}`).join('\n')}

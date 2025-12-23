@@ -1,15 +1,18 @@
+import { Ingredient } from '@/types/database';
 import type { Recipe } from '@/types/database'
-export const getIngredients = (recipe: Recipe): string[] => {
+export const getIngredients = (recipe: Recipe): Ingredient[] => {
     if (!recipe.ingredients) return [];
     if (typeof recipe.ingredients === 'string') {
         let ingredients: string = recipe.ingredients; 
-        return parseArrayFromString(ingredients);
+        let ingredientArray: Ingredient[] = parseArrayFromString(ingredients).map((i) => ({
+            ingredient: i,
+        }));
+        return ingredientArray;
     }
     return [];
 };
 
 export const getRecipeSteps = (recipe: Recipe): string[] => {
-    debugger
     if (!recipe.steps) return [];
     if (typeof recipe.steps === 'string') {
         const stepsString: string = recipe.steps;

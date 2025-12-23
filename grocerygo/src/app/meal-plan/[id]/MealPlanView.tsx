@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import type { MealPlanWithRecipes, Recipe, MealPlanRecipe } from '@/types/database'
+import type { MealPlanWithRecipes, Recipe, MealPlanRecipe, Ingredient } from '@/types/database'
 import RecipeModal from '@/components/RecipeModal'
 import RecipeCardActions from '@/components/RecipeCardActions'
 import AdjustPlanPanel from '@/components/AdjustPlanPanel'
@@ -546,10 +546,10 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
                         <div className="mb-4">
                           <p className="mb-2 text-sm font-semibold text-gray-700">Ingredients:</p>
                           <ul className="space-y-1 text-sm text-gray-600">
-                            {getIngredients(recipe).slice(0, 3).map((ing: string, idx: number) => (
+                            {getIngredients(recipe).slice(0, 3).map((ing: Ingredient, idx: number) => (
                               <li key={idx} className="flex items-start gap-2">
                                 <span className="text-[var(--gg-primary)]">•</span>
-                                <span>{ing}</span>
+                                <span>{ing.ingredient}</span>
                               </li>
                             ))}
                             {getIngredients(recipe).length > 3 && (

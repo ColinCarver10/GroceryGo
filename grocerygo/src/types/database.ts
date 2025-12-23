@@ -18,10 +18,15 @@ export interface UserInsert {
 }
 
 export interface Ingredient {
+  ingredient: string
+}
+
+export interface RecipeIngredient {
   item: string
   quantity: string
   unit?: string
 }
+
 
 // Recipe types
 export interface Recipe {
@@ -34,7 +39,7 @@ export interface Recipe {
   servings?: number
   difficulty?: 'beginner' | 'intermediate' | 'advanced'
   
-  ingredients: Array<Ingredient>
+  ingredients: Array<RecipeIngredient>
   steps: string[]
   
   cuisine_type?: string[]
