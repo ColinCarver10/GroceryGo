@@ -96,6 +96,15 @@ export default function GeneratingView({
 
   const recipeCountRef = useRef(0)
   const hasStartedGenerationRef = useRef(false)
+  const uniqueRecipeIdsRef = useRef<Set<string>>(new Set())
+
+  // Calculate total unique recipes expected
+  const distinctRecipeCounts = surveySnapshot?.distinct_recipe_counts || {
+    breakfast: Math.floor(totalMeals / 3),
+    lunch: Math.floor(totalMeals / 3),
+    dinner: totalMeals - 2 * Math.floor(totalMeals / 3)
+  }
+  const totalUniqueRecipes = distinctRecipeCounts.breakfast + distinctRecipeCounts.lunch + distinctRecipeCounts.dinner
 
   useEffect(() => {
     if (!hasStartedGenerationRef.current) {
@@ -188,6 +197,15 @@ export default function GeneratingView({
 
         if (newParsedRecipes.length > 0) {
           const startIndex = recipeCountRef.current
+          
+          // Track unique recipes by ID or name
+          newParsedRecipes.forEach((recipe) => {
+            const uniqueKey = recipe.id || recipe.name
+            if (uniqueKey && !uniqueRecipeIdsRef.current.has(uniqueKey)) {
+              uniqueRecipeIdsRef.current.add(uniqueKey)
+            }
+          })
+
           setRecipes((prev) => {
             const next = [...prev]
             newParsedRecipes.forEach((recipe, idx) => {
@@ -200,7 +218,8 @@ export default function GeneratingView({
           })
 
           recipeCountRef.current = startIndex + newParsedRecipes.length
-          setCurrentRecipeIndex(recipeCountRef.current)
+          // Update to show unique recipe count instead
+          setCurrentRecipeIndex(uniqueRecipeIdsRef.current.size)
         }
       }
     } catch {
@@ -316,15 +335,16 @@ export default function GeneratingView({
         return
       }
 
-      if (parsedRecipes.length < parsedSchedule.length) {
-        setError(
-          `Meal plan generation returned ${parsedRecipes.length} recipes but ${parsedSchedule.length} scheduled meals. Please try again.`
-        )
-        return
-      }
+      // Track unique recipes from final response
+      parsedRecipes.forEach((recipe) => {
+        const uniqueKey = recipe.id || recipe.name
+        if (uniqueKey && !uniqueRecipeIdsRef.current.has(uniqueKey)) {
+          uniqueRecipeIdsRef.current.add(uniqueKey)
+        }
+      })
 
       setRecipes(parsedRecipes)
-      setCurrentRecipeIndex(parsedRecipes.length)
+      setCurrentRecipeIndex(uniqueRecipeIdsRef.current.size)
 
       const groceryListItems = Array.isArray(aiResponse.grocery_list) ? aiResponse.grocery_list : []
       // setGroceryList(groceryListItems)
@@ -382,13 +402,13 @@ export default function GeneratingView({
           <p className="text-gray-600 mb-4">
             {isSaving
               ? 'Almost done! Finalizing your recipes and grocery list...'
-              : `Creating ${currentRecipeIndex} of ${totalMeals} recipes...`}
+              : `Creating ${currentRecipeIndex} of ${totalUniqueRecipes} unique recipes...`}
           </p>
 
           <div className="w-80 mx-auto bg-gray-200 rounded-full h-2.5 mb-4">
             <div
               className="bg-[var(--gg-primary)] h-2.5 rounded-full transition-all duration-300"
-              style={{ width: `${(currentRecipeIndex / totalMeals) * 100}%` }}
+              style={{ width: `${(currentRecipeIndex / totalUniqueRecipes) * 100}%` }}
             ></div>
           </div>
 
