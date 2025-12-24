@@ -57,7 +57,7 @@ function MealSlotCard({
   return (
     <div className="rounded-xl border-2 border-gray-200 bg-white p-3 sm:p-4 md:p-6 transition-all hover:border-[var(--gg-primary)] hover:shadow-md flex flex-col h-full">
       <div className="flex items-start justify-between mb-2 sm:mb-3 md:mb-4">
-        <h3 className="text-sm sm:text-base md:text-lg font-semibold text-gray-900 flex-1 pr-2 sm:pr-3">{recipe.name}</h3>
+        <h3 className="text-sm sm:text-base md:text-lg font-semibold text-gray-900 flex-1 pr-2 sm:pr-3 capitalize">{recipe.name}</h3>
         {primaryMealType && (
           <span className="inline-flex items-center justify-center gap-1 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full bg-[var(--gg-primary)] text-xs font-semibold text-white capitalize ml-1 sm:ml-2 flex-shrink-0">
             {primaryMealType}
