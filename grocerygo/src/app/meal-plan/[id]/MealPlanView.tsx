@@ -8,7 +8,7 @@ import RecipeCardActions from '@/components/RecipeCardActions'
 import AdjustPlanPanel from '@/components/AdjustPlanPanel'
 import IngredientActions from '@/components/IngredientActions'
 import type { PlanAdjustments } from '@/components/AdjustPlanPanel'
-import { getIngredients, getRecipeSteps } from '@/utils/mealPlanUtils';
+import { getIngredients, getRecipeSteps, organizeMealsByWeek } from '@/utils/mealPlanUtils';
 import { 
   createInstacartOrder,
   replaceRecipe,
@@ -24,6 +24,112 @@ import { useRouter } from 'next/navigation'
 interface MealPlanViewProps {
   mealPlan: MealPlanWithRecipes
   savedRecipeIds: string[]
+}
+
+interface MealSlotCardProps {
+  mealPlanRecipe: MealPlanRecipe & { recipe: Recipe }
+  favoriteRecipes: Set<string>
+  onRecipeClick: (recipe: Recipe, slots: MealPlanRecipe[]) => void
+  onReplace: (recipeId: string, mealType?: string | null) => Promise<void>
+  onToggleFavorite: (recipeId: string, isFavorite: boolean) => Promise<void>
+}
+
+function MealSlotCard({
+  mealPlanRecipe,
+  favoriteRecipes,
+  onRecipeClick,
+  onReplace,
+  onToggleFavorite
+}: MealSlotCardProps) {
+  const { recipe } = mealPlanRecipe
+  const isFavorite = favoriteRecipes.has(recipe.id)
+  const mealType = mealPlanRecipe.meal_type
+  const uniqueMealTypes = Array.from(
+    new Set(
+      [mealType || recipe.meal_type]
+        .flatMap(value => (Array.isArray(value) ? value : [value]))
+        .filter(Boolean)
+    )
+  )
+  const primaryMealType = uniqueMealTypes[0]
+  const ingredients = getIngredients(recipe)
+
+  return (
+    <div className="rounded-xl border-2 border-gray-200 bg-white p-3 sm:p-4 md:p-6 transition-all hover:border-[var(--gg-primary)] hover:shadow-md flex flex-col h-full">
+      <div className="flex items-start justify-between mb-2 sm:mb-3 md:mb-4">
+        <h3 className="text-sm sm:text-base md:text-lg font-semibold text-gray-900 flex-1 pr-2 sm:pr-3">{recipe.name}</h3>
+        {primaryMealType && (
+          <span className="inline-flex items-center justify-center gap-1 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full bg-[var(--gg-primary)] text-xs font-semibold text-white capitalize ml-1 sm:ml-2 flex-shrink-0">
+            {primaryMealType}
+          </span>
+        )}
+      </div>
+
+      <div className="mb-2 sm:mb-3 md:mb-4 flex flex-wrap gap-2 sm:gap-3 text-xs sm:text-sm text-gray-600">
+        {recipe.prep_time_minutes && (
+          <span className="flex items-center gap-1">
+            <svg className="h-3 w-3 sm:h-4 sm:w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            {recipe.prep_time_minutes}m
+          </span>
+        )}
+        {recipe.servings && (
+          <span className="flex items-center gap-1">
+            <svg className="h-3 w-3 sm:h-4 sm:w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+            </svg>
+            <span className="hidden sm:inline">{recipe.servings} servings cooked</span>
+            <span className="sm:hidden">{recipe.servings}</span>
+          </span>
+        )}
+        {(mealPlanRecipe.portion_multiplier ?? 1) > 1 && (
+          <span className="flex items-center gap-1">
+            <svg className="h-3 w-3 sm:h-4 sm:w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 12h14M5 16h14" />
+            </svg>
+            ×{mealPlanRecipe.portion_multiplier}
+          </span>
+        )}
+      </div>
+
+      <div className="mb-2 sm:mb-3 md:mb-4">
+        <p className="mb-1 sm:mb-2 text-xs sm:text-sm font-semibold text-gray-700">Ingredients:</p>
+        <ul className="space-y-0.5 sm:space-y-1 text-xs sm:text-sm text-gray-600">
+          {ingredients.slice(0, 3).map((ing: Ingredient, idx: number) => (
+            <li key={idx} className="flex items-start gap-1 sm:gap-2">
+              <span className="text-[var(--gg-primary)]">•</span>
+              <span className="line-clamp-1">{ing.ingredient}</span>
+            </li>
+          ))}
+          {ingredients.length > 3 && (
+            <li className="text-gray-400 text-xs">
+              +{ingredients.length - 3} more...
+            </li>
+          )}
+        </ul>
+      </div>
+
+      <div className="mt-auto">
+        <div className="mb-2 sm:mb-3">
+          <RecipeCardActions
+            recipeId={recipe.id}
+            recipeName={recipe.name}
+            isFavorite={isFavorite}
+            onReplace={(id) => onReplace(id, mealType)}
+            onToggleFavorite={onToggleFavorite}
+          />
+        </div>
+
+        <button
+          onClick={() => onRecipeClick(recipe, [mealPlanRecipe])}
+          className="gg-btn-outline w-full text-xs sm:text-sm py-1.5 sm:py-2"
+        >
+          View Full Recipe
+        </button>
+      </div>
+    </div>
+  )
 }
 
 export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewProps) {
@@ -327,32 +433,8 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
     )
   }
 
-  const recipeGroups = mealPlan.meal_plan_recipes.reduce((acc, mpr) => {
-    if (!mpr.recipe) return acc
-    const key = mpr.recipe_id
-    if (!acc.has(key)) {
-      acc.set(key, { recipe: mpr.recipe, slots: [] as typeof mealPlan.meal_plan_recipes })
-    }
-    acc.get(key)!.slots.push(mpr)
-    return acc
-  }, new Map<string, { recipe: Recipe; slots: typeof mealPlan.meal_plan_recipes }>())
-
-  const getEarliestSlotDate = (slots: typeof mealPlan.meal_plan_recipes) => {
-    const dates = slots
-      .map(slot => slot.planned_for_date ? new Date(slot.planned_for_date) : null)
-      .filter((date): date is Date => !!date && !Number.isNaN(date.getTime()))
-    if (dates.length === 0) return null
-    return dates.sort((a, b) => a.getTime() - b.getTime())[0]
-  }
-
-  const groupedRecipes = Array.from(recipeGroups.values()).sort((a, b) => {
-    const aDate = getEarliestSlotDate(a.slots)
-    const bDate = getEarliestSlotDate(b.slots)
-    if (aDate && bDate) return aDate.getTime() - bDate.getTime()
-    if (aDate) return -1
-    if (bDate) return 1
-    return a.recipe.name.localeCompare(b.recipe.name)
-  })
+  // Organize meals by week
+  const organizedWeek = organizeMealsByWeek(mealPlan)
 
   const formatSlotLabel = (slot: MealPlanRecipe) => {
     if (slot.slot_label) return slot.slot_label
@@ -365,22 +447,15 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
     return `${day} ${meal}`
   }
 
-  const formatSlotDate = (slot: typeof mealPlan.meal_plan_recipes[number]) => {
-    if (!slot.planned_for_date) return null
-    const date = new Date(slot.planned_for_date + 'T00:00:00')
-    if (Number.isNaN(date.getTime())) return null
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric'
-    })
-  }
-
   const plannedSlotSummaries = selectedRecipeSlots.map(slot => ({
     label: formatSlotLabel(slot),
     portionMultiplier: slot.portion_multiplier ?? 1,
     plannedDate: slot.planned_for_date ?? null,
     mealType: slot.meal_type ?? undefined
   }))
+
+  // Count unique recipes for tab label
+  const uniqueRecipeIds = new Set(mealPlan.meal_plan_recipes.map(mpr => mpr.recipe_id))
 
   return (
     <div className="gg-bg-page min-h-screen">
@@ -405,7 +480,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
                   Meal Plan for {formatDate(mealPlan.week_of)}
                 </h1>
                 <p className="gg-text-subtitle">
-                  {mealPlan.total_meals} meal slot{mealPlan.total_meals === 1 ? '' : 's'} • {groupedRecipes.length} unique recipe{groupedRecipes.length === 1 ? '' : 's'} • Created {new Date(mealPlan.created_at).toLocaleDateString()}
+                  {mealPlan.total_meals} meal slot{mealPlan.total_meals === 1 ? '' : 's'} • {uniqueRecipeIds.size} unique recipe{uniqueRecipeIds.size === 1 ? '' : 's'} • Created {new Date(mealPlan.created_at).toLocaleDateString()}
                 </p>
               </div>
               <div className="flex items-center gap-3">
@@ -440,7 +515,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
                   <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
                   </svg>
-                  Recipes ({groupedRecipes.length})
+                  Recipes ({uniqueRecipeIds.size})
                 </span>
               </button>
               <button
@@ -463,131 +538,233 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
 
           {/* Content */}
           {activeTab === 'recipes' ? (
-            <div className="space-y-8">
-              {groupedRecipes.length > 0 ? (
-                <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-                  {groupedRecipes.map(({ recipe, slots }, index) => {
-                    const totalPortions = slots.reduce(
-                      (sum, slot) => sum + (slot.portion_multiplier ?? 1),
-                      0
-                    )
-                    const uniqueMealTypes = Array.from(
-                      new Set(
-                        slots
-                          .map(slot => slot.meal_type || recipe.meal_type)
-                          .flatMap(value => (Array.isArray(value) ? value : [value]))
-                          .filter(Boolean)
-                      )
-                    )
-                    const primaryMealType = uniqueMealTypes[0]
+            <div className="space-y-6">
+              {/* Weekly Schedule Layout - Horizontal: Days as rows, Meals as columns */}
+              <div className="space-y-4">
+                {/* Header Row - Hidden on mobile */}
+                <div className="hidden lg:grid lg:grid-cols-3 gap-4">
+                  <div className="flex items-center gap-2 justify-center">
+                    <svg className="h-4 w-4 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                    </svg>
+                    <span className="font-semibold text-yellow-900 uppercase text-sm tracking-wider">Breakfast</span>
+                  </div>
+                  <div className="flex items-center gap-2 justify-center">
+                    <svg className="h-4 w-4 text-orange-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span className="font-semibold text-orange-900 uppercase text-sm tracking-wider">Lunch</span>
+                  </div>
+                  <div className="flex items-center gap-2 justify-center">
+                    <svg className="h-4 w-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                    </svg>
+                    <span className="font-semibold text-blue-900 uppercase text-sm tracking-wider">Dinner</span>
+                  </div>
+                </div>
 
-                    return (
-                      <div
-                        key={`recipe-${index}`}
-                        className="rounded-xl border-2 border-gray-200 bg-white p-6 transition-all hover:border-[var(--gg-primary)] hover:shadow-md flex flex-col"
-                      >
-                        <div className="flex items-start justify-between mb-4">
-                          <h3 className="gg-heading-card flex-1 pr-3">{recipe.name}</h3>
-                          {primaryMealType && (
-                            <span className="inline-flex items-center justify-center gap-1 px-2 py-1 rounded-full bg-[var(--gg-primary)] text-xs font-semibold text-white capitalize ml-2 flex-shrink-0">
-                              {primaryMealType}
-                            </span>
+                {/* Day Rows */}
+                {organizedWeek.days.map((day) => (
+                  <div
+                    key={day.date}
+                    className="space-y-3"
+                  >
+                    {/* Day Header - Horizontal title spanning all columns */}
+                    <div className="text-left">
+                      <h2 className="text-lg sm:text-xl font-semibold text-gray-900">{day.dayName}</h2>
+                      <p className="text-sm text-gray-600">{day.dateDisplay}</p>
+                    </div>
+
+                    {/* Mobile/Tablet: Stack vertically */}
+                    <div className="lg:hidden space-y-3">
+                      {/* Breakfast */}
+                      <div>
+                        <div className="flex items-center gap-2 mb-2 px-2">
+                          <svg className="h-4 w-4 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                          </svg>
+                          <h4 className="text-sm font-bold text-yellow-900 uppercase tracking-wider">Breakfast</h4>
+                        </div>
+                        <div className="bg-gradient-to-br from-yellow-50 to-yellow-100/50 border-2 border-yellow-200 rounded-lg p-4 h-full flex flex-col">
+                          {day.breakfast.length > 0 ? (
+                            <div className="space-y-3 flex-1">
+                              {day.breakfast.map((mpr) => (
+                                <MealSlotCard
+                                  key={mpr.id}
+                                  mealPlanRecipe={mpr}
+                                  favoriteRecipes={favoriteRecipes}
+                                  onRecipeClick={(recipe, slots) => {
+                                    setSelectedRecipe(recipe)
+                                    setSelectedRecipeSlots(slots)
+                                  }}
+                                  onReplace={handleReplaceRecipe}
+                                  onToggleFavorite={handleToggleFavorite}
+                                />
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-sm text-yellow-700/60 italic py-2 text-center">No breakfast planned</p>
                           )}
-                        </div>
-
-                        <div className="mb-4 flex flex-wrap gap-3 text-sm text-gray-600">
-                          {recipe.prep_time_minutes && (
-                            <span className="flex items-center gap-1">
-                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                              </svg>
-                              {recipe.prep_time_minutes}m
-                            </span>
-                          )}
-                          {recipe.servings && (
-                            <span className="flex items-center gap-1">
-                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                              </svg>
-                              {recipe.servings} servings cooked
-                            </span>
-                          )}
-                          <span className="flex items-center gap-1">
-                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 12h14M5 16h14" />
-                            </svg>
-                            {slots.length} meal slot{slots.length === 1 ? '' : 's'} • {totalPortions} portion{totalPortions === 1 ? '' : 's'}
-                          </span>
-                        </div>
-
-                        <div className="mb-4">
-                          <p className="mb-2 text-sm font-semibold text-gray-700">Planned slots:</p>
-                          <div className="flex flex-wrap gap-2">
-                            {slots.map((slot) => {
-                              const slotDate = formatSlotDate(slot)
-                              return (
-                                <div
-                                  key={slot.id}
-                                  className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs text-gray-700"
-                                >
-                                  <span className="font-medium">{formatSlotLabel(slot)}</span>
-                                  {slotDate && <span className="text-gray-400">({slotDate})</span>}
-                                  {(slot.portion_multiplier ?? 1) > 1 && (
-                                    <span className="inline-flex items-center gap-1 text-[var(--gg-primary)] font-semibold">
-                                      ×{slot.portion_multiplier}
-                                    </span>
-                                  )}
-                                </div>
-                              )
-                            })}
-                          </div>
-                        </div>
-
-                        <div className="mb-4">
-                          <p className="mb-2 text-sm font-semibold text-gray-700">Ingredients:</p>
-                          <ul className="space-y-1 text-sm text-gray-600">
-                            {getIngredients(recipe).slice(0, 3).map((ing: Ingredient, idx: number) => (
-                              <li key={idx} className="flex items-start gap-2">
-                                <span className="text-[var(--gg-primary)]">•</span>
-                                <span>{ing.ingredient}</span>
-                              </li>
-                            ))}
-                            {getIngredients(recipe).length > 3 && (
-                              <li className="text-gray-400 text-xs">
-                                +{getIngredients(recipe).length - 3} more...
-                              </li>
-                            )}
-                          </ul>
-                        </div>
-
-                        <div className="mt-auto">
-                          <div className="mb-3">
-                            <RecipeCardActions
-                              recipeId={recipe.id}
-                              recipeName={recipe.name}
-                              isFavorite={favoriteRecipes.has(recipe.id)}
-                              onReplace={(id) => handleReplaceRecipe(id, slots[0]?.meal_type || 'dinner')}
-                              onToggleFavorite={handleToggleFavorite}
-                            />
-                          </div>
-
-                          <button
-                            onClick={() => {
-                              setSelectedRecipe(recipe)
-                              setSelectedRecipeSlots(slots)
-                            }}
-                            className="gg-btn-outline w-full text-sm py-2"
-                          >
-                            View Full Recipe
-                          </button>
                         </div>
                       </div>
-                    )
-                  })}
-                </div>
-              ) : (
-                <div className="gg-card text-center py-12">
-                  <p className="gg-text-body text-gray-500">No recipes found for this meal plan.</p>
+
+                      {/* Lunch */}
+                      <div>
+                        <div className="flex items-center gap-2 mb-2 px-2">
+                          <svg className="h-4 w-4 text-orange-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <h4 className="text-sm font-bold text-orange-900 uppercase tracking-wider">Lunch</h4>
+                        </div>
+                        <div className="bg-gradient-to-br from-orange-50 to-orange-100/50 border-2 border-orange-200 rounded-lg p-4 h-full flex flex-col">
+                          {day.lunch.length > 0 ? (
+                            <div className="space-y-3 flex-1">
+                              {day.lunch.map((mpr) => (
+                                <MealSlotCard
+                                  key={mpr.id}
+                                  mealPlanRecipe={mpr}
+                                  favoriteRecipes={favoriteRecipes}
+                                  onRecipeClick={(recipe, slots) => {
+                                    setSelectedRecipe(recipe)
+                                    setSelectedRecipeSlots(slots)
+                                  }}
+                                  onReplace={handleReplaceRecipe}
+                                  onToggleFavorite={handleToggleFavorite}
+                                />
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-sm text-orange-700/60 italic py-2 text-center">No lunch planned</p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Dinner */}
+                      <div>
+                        <div className="flex items-center gap-2 mb-2 px-2">
+                          <svg className="h-4 w-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                          </svg>
+                          <h4 className="text-sm font-bold text-blue-900 uppercase tracking-wider">Dinner</h4>
+                        </div>
+                        <div className="bg-gradient-to-br from-blue-50 to-blue-100/50 border-2 border-blue-200 rounded-lg p-4">
+                          {day.dinner.length > 0 ? (
+                            <div className="space-y-3">
+                              {day.dinner.map((mpr) => (
+                                <MealSlotCard
+                                  key={mpr.id}
+                                  mealPlanRecipe={mpr}
+                                  favoriteRecipes={favoriteRecipes}
+                                  onRecipeClick={(recipe, slots) => {
+                                    setSelectedRecipe(recipe)
+                                    setSelectedRecipeSlots(slots)
+                                  }}
+                                  onReplace={handleReplaceRecipe}
+                                  onToggleFavorite={handleToggleFavorite}
+                                />
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-sm text-blue-700/60 italic py-2 text-center">No dinner planned</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Desktop: Horizontal grid */}
+                    <div className="hidden lg:grid lg:grid-cols-3 gap-4">
+                      {/* Breakfast Column */}
+                      <div className="bg-gradient-to-br from-yellow-50 to-yellow-100/50 border-2 border-yellow-200 rounded-lg p-4 min-h-[200px] flex flex-col">
+                        {day.breakfast.length > 0 ? (
+                          <div className="space-y-3 flex-1">
+                            {day.breakfast.map((mpr) => (
+                              <MealSlotCard
+                                key={mpr.id}
+                                mealPlanRecipe={mpr}
+                                favoriteRecipes={favoriteRecipes}
+                                onRecipeClick={(recipe, slots) => {
+                                  setSelectedRecipe(recipe)
+                                  setSelectedRecipeSlots(slots)
+                                }}
+                                onReplace={handleReplaceRecipe}
+                                onToggleFavorite={handleToggleFavorite}
+                              />
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-yellow-700/60 italic py-2 text-center">No breakfast planned</p>
+                        )}
+                      </div>
+
+                      {/* Lunch Column */}
+                      <div className="bg-gradient-to-br from-orange-50 to-orange-100/50 border-2 border-orange-200 rounded-lg p-4 min-h-[200px] flex flex-col">
+                        {day.lunch.length > 0 ? (
+                          <div className="space-y-3 flex-1">
+                            {day.lunch.map((mpr) => (
+                              <MealSlotCard
+                                key={mpr.id}
+                                mealPlanRecipe={mpr}
+                                favoriteRecipes={favoriteRecipes}
+                                onRecipeClick={(recipe, slots) => {
+                                  setSelectedRecipe(recipe)
+                                  setSelectedRecipeSlots(slots)
+                                }}
+                                onReplace={handleReplaceRecipe}
+                                onToggleFavorite={handleToggleFavorite}
+                              />
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-orange-700/60 italic py-2 text-center">No lunch planned</p>
+                        )}
+                      </div>
+
+                      {/* Dinner Column */}
+                      <div className="bg-gradient-to-br from-blue-50 to-blue-100/50 border-2 border-blue-200 rounded-lg p-4 min-h-[200px] flex flex-col">
+                        {day.dinner.length > 0 ? (
+                          <div className="space-y-3 flex-1">
+                            {day.dinner.map((mpr) => (
+                              <MealSlotCard
+                                key={mpr.id}
+                                mealPlanRecipe={mpr}
+                                favoriteRecipes={favoriteRecipes}
+                                onRecipeClick={(recipe, slots) => {
+                                  setSelectedRecipe(recipe)
+                                  setSelectedRecipeSlots(slots)
+                                }}
+                                onReplace={handleReplaceRecipe}
+                                onToggleFavorite={handleToggleFavorite}
+                              />
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-blue-700/60 italic py-2 text-center">No dinner planned</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Unscheduled Meals Section */}
+              {organizedWeek.unscheduled.length > 0 && (
+                <div className="gg-card border-2 border-gray-200">
+                  <h3 className="gg-heading-section mb-6">Unscheduled Meals</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {organizedWeek.unscheduled.map((mpr) => (
+                      <MealSlotCard
+                        key={mpr.id}
+                        mealPlanRecipe={mpr}
+                        favoriteRecipes={favoriteRecipes}
+                        onRecipeClick={(recipe, slots) => {
+                          setSelectedRecipe(recipe)
+                          setSelectedRecipeSlots(slots)
+                        }}
+                        onReplace={handleReplaceRecipe}
+                        onToggleFavorite={handleToggleFavorite}
+                      />
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
