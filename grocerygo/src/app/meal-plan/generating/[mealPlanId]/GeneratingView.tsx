@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import RecipeCardSkeleton from '@/components/RecipeCardSkeleton'
+import OptimizationModal from '@/components/OptimizationModal'
 import { saveGeneratedRecipes } from '../actions'
 import type { SurveyResponse } from '@/types/database'
 import { getIngredients } from '@/utils/mealPlanUtils'
@@ -136,10 +137,13 @@ export default function GeneratingView({
   const [currentRecipeIndex, setCurrentRecipeIndex] = useState(1)
   const [overallProgress, setOverallProgress] = useState(0)
   const [hasStartedStreaming, setHasStartedStreaming] = useState(false)
+  const [showOptimizationModal, setShowOptimizationModal] = useState(false)
+  const [currentStatusMessage, setCurrentStatusMessage] = useState(0)
 
   const recipeCountRef = useRef(0)
   const hasStartedGenerationRef = useRef(false)
   const hasFetchedCandidatesRef = useRef(false)
+  const hasShownOptimizationModalRef = useRef(false)
   const uniqueRecipeIdsRef = useRef<Set<string>>(new Set())
   const candidateToOptimizedMapRef = useRef<Map<string, string>>(new Map())
   const progressSimulatorRef = useRef<ReturnType<typeof createDecayProgressSimulator> | null>(null)
@@ -643,6 +647,34 @@ export default function GeneratingView({
     other: 'Other'
   }
 
+  // Dynamic status messages for optimization progress
+  const statusMessages = [
+    'Fine-tuning recipes...',
+    'Optimizing ingredients...',
+    'Calculating nutrition...',
+    'Personalizing your plan...',
+    'Adjusting portions...',
+    'Aligning with your goals...'
+  ]
+
+  // Rotate status messages every few seconds during optimization
+  useEffect(() => {
+    if (!isFetchingCandidates && candidateRecipes.length > 0 && !isSaving) {
+      const interval = setInterval(() => {
+        setCurrentStatusMessage((prev) => (prev + 1) % statusMessages.length)
+      }, 3000)
+      return () => clearInterval(interval)
+    }
+  }, [isFetchingCandidates, candidateRecipes.length, isSaving, statusMessages.length])
+
+  // Show optimization modal after candidates are fetched
+  useEffect(() => {
+    if (!isFetchingCandidates && candidateRecipes.length > 0 && !hasShownOptimizationModalRef.current && !hasStartedStreaming) {
+      hasShownOptimizationModalRef.current = true
+      setShowOptimizationModal(true)
+    }
+  }, [isFetchingCandidates, candidateRecipes.length, hasStartedStreaming])
+
   return (
     <div className="gg-bg-page min-h-screen relative">
       {/* Loading overlay - only show while fetching candidates */}
@@ -661,6 +693,12 @@ export default function GeneratingView({
           </div>
         </div>
       )}
+
+      {/* Optimization Modal */}
+      <OptimizationModal
+        isOpen={showOptimizationModal}
+        onClose={() => setShowOptimizationModal(false)}
+      />
 
       {/* Saving overlay */}
       {isSaving && (
@@ -686,7 +724,7 @@ export default function GeneratingView({
             <p className="gg-text-subtitle">Week of {new Date(weekOf).toLocaleDateString()}</p>
             {!isFetchingCandidates && candidateRecipes.length > 0 && (
               <p className="text-sm text-gray-600 mt-2">
-                Using AI to optimize {currentRecipeIndex} of {totalUniqueRecipes} unique recipes to align with your goals...
+                {statusMessages[currentStatusMessage]} ({currentRecipeIndex} of {totalUniqueRecipes} recipes optimized)
               </p>
             )}
           </div>
@@ -700,12 +738,19 @@ export default function GeneratingView({
           {/* Overall progress bar above cards */}
           {!isFetchingCandidates && !isSaving && (
             <div className="mb-6">
-              <p className="text-sm text-gray-600 mb-2">Optimizing your meal plan...</p>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm text-gray-600">{statusMessages[currentStatusMessage]}</p>
+                <p className="text-sm font-medium text-[var(--gg-primary)]">
+                  {currentRecipeIndex} / {totalUniqueRecipes}
+                </p>
+              </div>
               <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-[var(--gg-primary)] transition-all duration-300 ease-out"
+                  className="h-full bg-gradient-to-r from-[var(--gg-primary)] to-[var(--gg-primary)]/80 transition-all duration-500 ease-out relative"
                   style={{ width: `${overallProgress * 100}%` }}
-                />
+                >
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer" />
+                </div>
               </div>
             </div>
           )}
@@ -738,9 +783,17 @@ export default function GeneratingView({
                         return (
                           <div
                             key={candidate.recipe_id}
-                            className="transition-all duration-500 opacity-100 scale-100"
+                            className={`transition-all duration-500 opacity-100 ${
+                              optimizing 
+                                ? 'animate-pulse scale-[1.02]' 
+                                : 'scale-100'
+                            }`}
                           >
-                            <div className="rounded-xl border-2 border-gray-200 bg-white p-6 hover:border-[var(--gg-primary)] hover:shadow-md transition-all animate-in fade-in slide-in-from-bottom-4 duration-500 relative overflow-hidden">
+                            <div className={`rounded-xl border-2 bg-white p-6 hover:border-[var(--gg-primary)] hover:shadow-md transition-all animate-in fade-in slide-in-from-bottom-4 duration-500 relative overflow-hidden ${
+                              optimizing 
+                                ? 'border-[var(--gg-primary)]/50 shadow-sm' 
+                                : 'border-gray-200'
+                            }`}>
                               <div className="mb-2">
                                 <h3 className="gg-heading-card mb-2 capitalize truncate">{displayRecipe.name}</h3>
                               </div>
@@ -764,16 +817,23 @@ export default function GeneratingView({
 
                               {/* Bottom progress bar for optimization */}
                               {optimizing && (
-                                <div className="absolute bottom-0 left-0 right-0">
-                                  <div className="h-1 bg-gray-100">
-                                    <div className="h-full bg-[var(--gg-primary)] animate-pulse" style={{ width: '100%' }} />
+                                <div className="absolute bottom-0 left-0 right-0 animate-in slide-in-from-bottom duration-300">
+                                  <div className="h-1 bg-gray-100 relative overflow-hidden">
+                                    <div className="h-full bg-gradient-to-r from-[var(--gg-primary)] via-[var(--gg-primary)]/80 to-[var(--gg-primary)] animate-pulse relative" style={{ width: '100%' }}>
+                                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer" />
+                                    </div>
                                   </div>
                                   <div className="bg-white px-4 py-2 flex items-center gap-2 border-t border-gray-100">
                                     <div className="h-3 w-3 animate-spin rounded-full border-2 border-solid border-[var(--gg-primary)] border-r-transparent"></div>
-                                    <span className="text-xs font-medium text-[var(--gg-primary)]">
+                                    <span className="text-xs font-medium text-[var(--gg-primary)] animate-pulse">
                                       Optimizing with AI
                                     </span>
                                   </div>
+                                </div>
+                              )}
+                              {!optimizing && (
+                                <div className="absolute bottom-0 left-0 right-0 h-1 bg-green-100 opacity-0 animate-in fade-in duration-500">
+                                  <div className="h-full bg-green-500" style={{ width: '100%' }} />
                                 </div>
                               )}
                             </div>
@@ -803,9 +863,17 @@ export default function GeneratingView({
                         return (
                           <div
                             key={candidate.recipe_id}
-                            className="transition-all duration-500 opacity-100 scale-100"
+                            className={`transition-all duration-500 opacity-100 ${
+                              optimizing 
+                                ? 'animate-pulse scale-[1.02]' 
+                                : 'scale-100'
+                            }`}
                           >
-                            <div className="rounded-xl border-2 border-gray-200 bg-white p-6 hover:border-[var(--gg-primary)] hover:shadow-md transition-all animate-in fade-in slide-in-from-bottom-4 duration-500 relative overflow-hidden">
+                            <div className={`rounded-xl border-2 bg-white p-6 hover:border-[var(--gg-primary)] hover:shadow-md transition-all animate-in fade-in slide-in-from-bottom-4 duration-500 relative overflow-hidden ${
+                              optimizing 
+                                ? 'border-[var(--gg-primary)]/50 shadow-sm' 
+                                : 'border-gray-200'
+                            }`}>
                               <div className="mb-4">
                                 <h3 className="gg-heading-card mb-2 capitalize truncate">{displayRecipe.name}</h3>
                               </div>
@@ -829,16 +897,23 @@ export default function GeneratingView({
 
                               {/* Bottom progress bar for optimization */}
                               {optimizing && (
-                                <div className="absolute bottom-0 left-0 right-0">
-                                  <div className="h-1 bg-gray-100">
-                                    <div className="h-full bg-[var(--gg-primary)] animate-pulse" style={{ width: '100%' }} />
+                                <div className="absolute bottom-0 left-0 right-0 animate-in slide-in-from-bottom duration-300">
+                                  <div className="h-1 bg-gray-100 relative overflow-hidden">
+                                    <div className="h-full bg-gradient-to-r from-[var(--gg-primary)] via-[var(--gg-primary)]/80 to-[var(--gg-primary)] animate-pulse relative" style={{ width: '100%' }}>
+                                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer" />
+                                    </div>
                                   </div>
                                   <div className="bg-white px-4 py-2 flex items-center gap-2 border-t border-gray-100">
                                     <div className="h-3 w-3 animate-spin rounded-full border-2 border-solid border-[var(--gg-primary)] border-r-transparent"></div>
-                                    <span className="text-xs font-medium text-[var(--gg-primary)]">
+                                    <span className="text-xs font-medium text-[var(--gg-primary)] animate-pulse">
                                       Optimizing with AI
                                     </span>
                                   </div>
+                                </div>
+                              )}
+                              {!optimizing && (
+                                <div className="absolute bottom-0 left-0 right-0 h-1 bg-green-100 opacity-0 animate-in fade-in duration-500">
+                                  <div className="h-full bg-green-500" style={{ width: '100%' }} />
                                 </div>
                               )}
                             </div>
