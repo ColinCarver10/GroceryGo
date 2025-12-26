@@ -10,6 +10,7 @@ export interface MealSlotCardProps {
   onRecipeClick: (recipe: Recipe, slots: MealPlanRecipe[]) => void
   onReplace: (recipeId: string, mealType?: string | null) => Promise<void>
   onToggleFavorite: (recipeId: string, isFavorite: boolean) => Promise<void>
+  allMealPlanRecipes?: (MealPlanRecipe & { recipe: Recipe })[]
 }
 
 export default function MealSlotCard({
@@ -17,7 +18,8 @@ export default function MealSlotCard({
   favoriteRecipes,
   onRecipeClick,
   onReplace,
-  onToggleFavorite
+  onToggleFavorite,
+  allMealPlanRecipes
 }: MealSlotCardProps) {
   const { recipe } = mealPlanRecipe
   const isFavorite = favoriteRecipes.has(recipe.id)
@@ -31,6 +33,51 @@ export default function MealSlotCard({
   )
   const primaryMealType = uniqueMealTypes[0]
   const ingredients = getIngredients(recipe)
+
+  // Get all other days with the same recipe to show planned days
+  const getPlannedDays = () => {
+    if (!allMealPlanRecipes) return []
+    
+    const currentRecipeId = String(mealPlanRecipe.recipe_id)
+    const currentDate = mealPlanRecipe.planned_for_date
+    
+    // Count total occurrences of this recipe_id
+    const totalOccurrences = allMealPlanRecipes.filter(
+      mpr => String(mpr.recipe_id) === currentRecipeId
+    ).length
+    
+    // Only show if recipe is used more than once
+    if (totalOccurrences <= 1) return []
+    
+    // Get other slots with same recipe_id but different date
+    const otherSlots = allMealPlanRecipes.filter(
+      mpr => String(mpr.recipe_id) === currentRecipeId && 
+             mpr.planned_for_date !== currentDate &&
+             mpr.planned_for_date // must have a date
+    )
+    
+    if (otherSlots.length === 0) return []
+    
+    const dayMap = new Map<string, Date>()
+    otherSlots.forEach(slot => {
+      if (slot.planned_for_date) {
+        const date = new Date(slot.planned_for_date + 'T00:00:00')
+        if (!Number.isNaN(date.getTime())) {
+          const dayName = date.toLocaleDateString('en-US', { weekday: 'long' })
+          // Only use day name, no date
+          if (!dayMap.has(dayName) || date < dayMap.get(dayName)!) {
+            dayMap.set(dayName, date)
+          }
+        }
+      }
+    })
+    
+    return Array.from(dayMap.entries())
+      .sort((a, b) => a[1].getTime() - b[1].getTime())
+      .map(([label]) => label)
+  }
+
+  const plannedDays = getPlannedDays()
 
   return (
     <div className="rounded-xl border-2 border-gray-200 bg-white p-3 sm:p-4 md:p-6 transition-all hover:border-[var(--gg-primary)] hover:shadow-md flex flex-col h-full">
@@ -52,13 +99,13 @@ export default function MealSlotCard({
             {recipe.prep_time_minutes}m
           </span>
         )}
-        {recipe.servings && (
+        {plannedDays.length > 0 && (
           <span className="flex items-center gap-1">
             <svg className="h-3 w-3 sm:h-4 sm:w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
-            <span className="hidden sm:inline">{recipe.servings} servings cooked</span>
-            <span className="sm:hidden">{recipe.servings}</span>
+            <span className="hidden sm:inline">Also planned for {plannedDays.join(', ')}</span>
+            <span className="sm:hidden">Also: {plannedDays.length} day{plannedDays.length === 1 ? '' : 's'}</span>
           </span>
         )}
         {(mealPlanRecipe.portion_multiplier ?? 1) > 1 && (

@@ -34,6 +34,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
   const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set())
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null)
   const [selectedRecipeSlots, setSelectedRecipeSlots] = useState<MealPlanRecipe[]>([])
+  const [clickedSlotDate, setClickedSlotDate] = useState<string | null>(null)
   const [isOrderingInstacart, setIsOrderingInstacart] = useState(false)
   const [instacartError, setInstacartError] = useState<string | null>(null)
   
@@ -379,7 +380,18 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
 
   const handleRecipeClick = (recipe: Recipe, slots: MealPlanRecipe[]) => {
     setSelectedRecipe(recipe)
-    setSelectedRecipeSlots(slots)
+    // Store the clicked slot's date to exclude it from "Also planned for" display
+    const clickedDate = slots.length > 0 ? slots[0].planned_for_date ?? null : null
+    setClickedSlotDate(clickedDate)
+    // Find all meal plan recipes that use this same recipe
+    // Use recipe_id from the clicked slot (parent id) which will be the same across all slots for the same recipe
+    // Get recipe_id from the first slot passed in (the clicked slot)
+    const recipeId = slots.length > 0 ? String(slots[0].recipe_id) : String(recipe.id)
+    const allSlotsForRecipe = mealPlan.meal_plan_recipes.filter(
+      mpr => String(mpr.recipe_id) === recipeId
+    )
+    // Fallback to the slots passed in if filter finds nothing (shouldn't happen, but safety check)
+    setSelectedRecipeSlots(allSlotsForRecipe.length > 0 ? allSlotsForRecipe : slots)
   }
 
   const formatSlotLabel = (slot: MealPlanRecipe) => {
@@ -549,6 +561,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
                             onReplace={handleReplaceRecipe}
                             onToggleFavorite={handleToggleFavorite}
                             showMobileHeader={true}
+                            allMealPlanRecipes={mealPlan.meal_plan_recipes}
                           />
                           <MealColumn
                             mealType="lunch"
@@ -560,6 +573,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
                             onReplace={handleReplaceRecipe}
                             onToggleFavorite={handleToggleFavorite}
                             showMobileHeader={true}
+                            allMealPlanRecipes={mealPlan.meal_plan_recipes}
                           />
                           <MealColumn
                             mealType="dinner"
@@ -571,6 +585,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
                             onReplace={handleReplaceRecipe}
                             onToggleFavorite={handleToggleFavorite}
                             showMobileHeader={true}
+                            allMealPlanRecipes={mealPlan.meal_plan_recipes}
                           />
                         </div>
                       )}
@@ -589,6 +604,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
                             onToggleFavorite={handleToggleFavorite}
                             showMobileHeader={false}
                             minHeight="min-h-[200px]"
+                            allMealPlanRecipes={mealPlan.meal_plan_recipes}
                           />
                           <MealColumn
                             mealType="lunch"
@@ -601,6 +617,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
                             onToggleFavorite={handleToggleFavorite}
                             showMobileHeader={false}
                             minHeight="min-h-[200px]"
+                            allMealPlanRecipes={mealPlan.meal_plan_recipes}
                           />
                           <MealColumn
                             mealType="dinner"
@@ -613,6 +630,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
                             onToggleFavorite={handleToggleFavorite}
                             showMobileHeader={false}
                             minHeight="min-h-[200px]"
+                            allMealPlanRecipes={mealPlan.meal_plan_recipes}
                           />
                         </div>
                       )}
@@ -634,6 +652,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
                         onRecipeClick={handleRecipeClick}
                         onReplace={handleReplaceRecipe}
                         onToggleFavorite={handleToggleFavorite}
+                        allMealPlanRecipes={mealPlan.meal_plan_recipes}
                       />
                     ))}
                   </div>
@@ -807,8 +826,10 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
           onClose={() => {
             setSelectedRecipe(null)
             setSelectedRecipeSlots([])
+            setClickedSlotDate(null)
           }}
           plannedSlots={plannedSlotSummaries}
+          excludeDate={clickedSlotDate}
           onSaveCookingNote={handleSaveCookingNote}
           // onScaleServings={handleScaleServings} // COMMENTED OUT: Scale servings functionality
           // onSwapIngredient={handleSwapIngredient} // COMMENTED OUT: Swap ingredient functionality

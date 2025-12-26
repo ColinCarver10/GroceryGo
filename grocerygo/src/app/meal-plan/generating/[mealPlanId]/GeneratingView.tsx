@@ -170,6 +170,13 @@ export default function GeneratingView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isFetchingCandidates, candidateRecipes.length])
 
+  // Scroll to top after everything loads
+  useEffect(() => {
+    if (!isFetchingCandidates && candidateRecipes.length > 0) {
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+  }, [isFetchingCandidates, candidateRecipes.length])
+
   // Progress simulation using decay-based approach
   useEffect(() => {
     if (isFetchingCandidates) {

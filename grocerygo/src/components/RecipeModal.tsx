@@ -22,6 +22,7 @@ interface RecipeModalProps {
     plannedDate?: string | null
     mealType?: string
   }>
+  excludeDate?: string | null
 }
 
 interface ChatMessage {
@@ -40,7 +41,8 @@ export default function RecipeModal({
   onSwapIngredient,
   onSimplifySteps,
   onSaveCookingNote,
-  plannedSlots
+  plannedSlots,
+  excludeDate
 }: RecipeModalProps) {
   const totalPlannedPortions = plannedSlots?.reduce((sum, slot) => sum + slot.portionMultiplier, 0)
 
@@ -53,6 +55,35 @@ export default function RecipeModal({
       day: 'numeric'
     })
   }
+
+  // Extract unique days from planned slots
+  const getPlannedDays = () => {
+    // Only show if more than 1 slot (recipe is used more than once)
+    if (!plannedSlots || plannedSlots.length <= 1) return []
+    
+    const dayMap = new Map<string, Date>()
+    plannedSlots.forEach(slot => {
+      // Exclude the clicked slot's date
+      if (slot.plannedDate && slot.plannedDate !== excludeDate) {
+        const date = new Date(slot.plannedDate + 'T00:00:00')
+        if (!Number.isNaN(date.getTime())) {
+          const dayName = date.toLocaleDateString('en-US', { weekday: 'long' })
+          // Only use day name, no date
+          // Use the earliest date if the same day appears multiple times
+          if (!dayMap.has(dayName) || date < dayMap.get(dayName)!) {
+            dayMap.set(dayName, date)
+          }
+        }
+      }
+    })
+    
+    // Sort by date (chronologically)
+    return Array.from(dayMap.entries())
+      .sort((a, b) => a[1].getTime() - b[1].getTime())
+      .map(([label]) => label)
+  }
+
+  const plannedDays = getPlannedDays()
 
 
 
@@ -170,12 +201,12 @@ export default function RecipeModal({
                     <span className="font-medium">{recipe.prep_time_minutes} minutes</span>
                   </span>
                 )}
-                {recipe.servings && (
+                {plannedDays.length > 0 && (
                   <span className="flex items-center gap-2">
                     <svg className="h-5 w-5 text-[var(--gg-primary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                     </svg>
-                    <span className="font-medium">{recipe.servings} servings</span>
+                    <span className="font-medium">Also planned for {plannedDays.join(', ')}</span>
                   </span>
                 )}
                 {recipe.difficulty && (
@@ -188,48 +219,6 @@ export default function RecipeModal({
                 )}
               </div>
             </div>
-            
-            {plannedSlots && plannedSlots.length > 0 && (
-              <div className="mb-6 rounded-xl border border-green-100 bg-green-50 px-6 py-5">
-                <div className="flex items-center justify-between gap-3 flex-wrap">
-                  <div className="flex items-center gap-3">
-                    <svg className="h-5 w-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                    <div>
-                      <p className="font-semibold text-green-900 text-sm">
-                        Planned across {plannedSlots.length} meal slot{plannedSlots.length === 1 ? '' : 's'}
-                      </p>
-                      <p className="text-xs text-green-800">
-                        Cook once, enjoy {plannedSlots.length} times. Total portions planned: {totalPlannedPortions ?? recipe.servings ?? plannedSlots.length}.
-                      </p>
-                    </div>
-                  </div>
-                  {recipe.servings && (
-                    <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-green-700 border border-green-200">
-                      Base recipe makes {recipe.servings} serving{recipe.servings === 1 ? '' : 's'}
-                    </span>
-                  )}
-                </div>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {plannedSlots.map((slot, idx) => {
-                    const dateLabel = slot.plannedDate ? formatPlannedDate(slot.plannedDate) : null
-                    return (
-                      <span
-                        key={`${slot.label}-${idx}`}
-                        className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-xs text-green-800 border border-green-200 shadow-sm"
-                      >
-                        <span className="font-semibold">{slot.label}</span>
-                        {dateLabel && <span className="text-gray-400">{dateLabel}</span>}
-                        <span className="inline-flex items-center gap-1 text-green-600 font-semibold">
-                          ×{slot.portionMultiplier}
-                        </span>
-                      </span>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
             
             {/* Close Button */}
             <button

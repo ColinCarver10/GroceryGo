@@ -21,6 +21,7 @@ export interface MealColumnProps {
   onToggleFavorite: (recipeId: string, isFavorite: boolean) => Promise<void>
   showMobileHeader?: boolean
   minHeight?: string
+  allMealPlanRecipes?: (MealPlanRecipe & { recipe: Recipe })[]
 }
 
 export default function MealColumn({
@@ -33,7 +34,8 @@ export default function MealColumn({
   onReplace,
   onToggleFavorite,
   showMobileHeader = false,
-  minHeight = ''
+  minHeight = '',
+  allMealPlanRecipes
 }: MealColumnProps) {
   const mealTypeLabel = mealType.charAt(0).toUpperCase() + mealType.slice(1)
   
@@ -63,6 +65,7 @@ export default function MealColumn({
                 onRecipeClick={onRecipeClick}
                 onReplace={onReplace}
                 onToggleFavorite={onToggleFavorite}
+                allMealPlanRecipes={allMealPlanRecipes}
               />
             ))}
           </div>
