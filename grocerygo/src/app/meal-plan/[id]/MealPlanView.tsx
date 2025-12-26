@@ -9,7 +9,7 @@ import IngredientActions from '@/components/IngredientActions'
 import MealSlotCard from '@/components/MealSlotCard'
 import MealColumn, { mealTypeConfig } from '@/components/MealColumn'
 import type { PlanAdjustments } from '@/components/AdjustPlanPanel'
-import { getRecipeSteps, organizeMealsByWeek } from '@/utils/mealPlanUtils';
+import { getRecipeSteps, organizeMealsByWeek, type WeekDayMeals } from '@/utils/mealPlanUtils';
 import { 
   createInstacartOrder,
   replaceRecipe,
@@ -310,6 +310,50 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
     })
   }
 
+  const formatDateRange = (days: WeekDayMeals[]) => {
+    if (days.length === 0) return ''
+    
+    const firstDay = days[0]
+    const lastDay = days[days.length - 1]
+    
+    // Parse dates
+    const [firstYear, firstMonth, firstDayNum] = firstDay.date.split('-').map(Number)
+    const [lastYear, lastMonth, lastDayNum] = lastDay.date.split('-').map(Number)
+    
+    const firstDate = new Date(firstYear, firstMonth - 1, firstDayNum)
+    const lastDate = new Date(lastYear, lastMonth - 1, lastDayNum)
+    
+    // Format first date
+    const firstFormatted = firstDate.toLocaleDateString('en-US', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric'
+    })
+    
+    // Format last date
+    const lastFormatted = lastDate.toLocaleDateString('en-US', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric'
+    })
+    
+    // If same month and year, simplify: "December 20 - 26, 2025"
+    if (firstYear === lastYear && firstMonth === lastMonth) {
+      const firstDayOnly = firstDate.toLocaleDateString('en-US', {
+        month: 'long',
+        day: 'numeric'
+      })
+      const lastDayOnly = lastDate.toLocaleDateString('en-US', {
+        day: 'numeric',
+        year: 'numeric'
+      })
+      return `${firstDayOnly} - ${lastDayOnly}`
+    }
+    
+    // Different months or years: "December 26, 2024 - January 1, 2025"
+    return `${firstFormatted} - ${lastFormatted}`
+  }
+
   const getStatusBadge = (status: string) => {
     const styles = {
       completed: 'bg-green-100 text-green-800',
@@ -377,7 +421,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
             <div className="flex items-start justify-between">
               <div>
                 <h1 className="gg-heading-page mb-2">
-                  Meal Plan for {formatDate(mealPlan.week_of)}
+                  Meal Plan for {formatDateRange(organizedWeek.days)}
                 </h1>
                 <p className="gg-text-subtitle">
                   {mealPlan.total_meals} meal slot{mealPlan.total_meals === 1 ? '' : 's'} • {uniqueRecipeIds.size} unique recipe{uniqueRecipeIds.size === 1 ? '' : 's'} • Created {new Date(mealPlan.created_at).toLocaleDateString()}

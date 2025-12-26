@@ -124,24 +124,23 @@ export interface OrganizedWeekMeals {
 
 /**
  * Organizes meal plan recipes by week, day, and meal type
- * Generates all 7 days of the week starting from mealPlan.week_of (Monday)
+ * Always shows all 7 days of the week, even if some have no recipes
  */
 export function organizeMealsByWeek(mealPlan: MealPlanWithRecipes): OrganizedWeekMeals {
-  const weekOf = new Date(mealPlan.week_of)
   const days: WeekDayMeals[] = []
   const unscheduled: (MealPlanRecipe & { recipe: Recipe })[] = []
 
-  // Generate all 7 days of the week (Monday to Sunday)
-  const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-  const dayNamesShort = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+  // Always generate all 7 days of the week from week_of
+  const [year, month, day] = mealPlan.week_of.split('-').map(Number)
+  const weekOf = new Date(year, month - 1, day)
   
   for (let i = 0; i < 7; i++) {
     const date = new Date(weekOf)
     date.setDate(weekOf.getDate() + i)
     
-    const dateStr = date.toISOString().split('T')[0] // YYYY-MM-DD
-    const dayName = dayNames[i]
-    const dayShort = dayNamesShort[i]
+    const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+    const dayName = date.toLocaleDateString('en-US', { weekday: 'long' })
+    const dayShort = date.toLocaleDateString('en-US', { weekday: 'short' })
     const dateDisplay = date.toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric'
@@ -171,8 +170,17 @@ export function organizeMealsByWeek(mealPlan: MealPlanWithRecipes): OrganizedWee
       return
     }
 
-    // Normalize date to YYYY-MM-DD format
-    const dateKey = new Date(plannedDate + 'T00:00:00').toISOString().split('T')[0]
+    // Normalize date to YYYY-MM-DD format without timezone conversion
+    let dateKey: string
+    if (typeof plannedDate === 'string' && /^\d{4}-\d{2}-\d{2}/.test(plannedDate)) {
+      // Already in YYYY-MM-DD format, just take the date part
+      dateKey = plannedDate.split('T')[0].split(' ')[0]
+    } else {
+      // Parse the date and format it
+      const [year, month, day] = plannedDate.split('T')[0].split('-').map(Number)
+      const parsedDate = new Date(year, month - 1, day)
+      dateKey = `${parsedDate.getFullYear()}-${String(parsedDate.getMonth() + 1).padStart(2, '0')}-${String(parsedDate.getDate()).padStart(2, '0')}`
+    }
     
     if (!recipesByDate.has(dateKey)) {
       recipesByDate.set(dateKey, [])

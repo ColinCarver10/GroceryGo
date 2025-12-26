@@ -11,6 +11,7 @@ import type {
   MealPlanWithRecipes,
   SurveyResponse
 } from '@/types/database'
+import { getDateForDayName } from '@/utils/mealPlanDates'
 
 /**
  * Create a complete meal plan from AI-generated data
@@ -387,40 +388,6 @@ function getDateForMealIndex(weekOf: string, index: number): string {
   return mealDate.toISOString().split('T')[0]
 }
 
-function getDateForDayName(weekOf: string, dayName?: string): string | undefined {
-  if (!dayName) return undefined
-
-  const normalizedDay = dayName.trim().toLowerCase()
-  const dayMap: Record<string, number> = {
-    sunday: 0,
-    monday: 1,
-    tuesday: 2,
-    wednesday: 3,
-    thursday: 4,
-    friday: 5,
-    saturday: 6
-  }
-
-  const targetOffset = dayMap[normalizedDay]
-
-  if (targetOffset === undefined) {
-    return undefined
-  }
-
-  const startDate = new Date(weekOf)
-  if (Number.isNaN(startDate.getTime())) {
-    return undefined
-  }
-
-  // Assume weekOf is the Monday of the week; adjust to target day
-  const startDayIndex = dayMap[startDate.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase()] ?? 1
-  const offset = targetOffset - startDayIndex
-
-  const mealDate = new Date(startDate)
-  mealDate.setDate(startDate.getDate() + offset)
-
-  return mealDate.toISOString().split('T')[0]
-}
 
 function parseQuantity(quantityStr: string): number | undefined {
   const match = quantityStr.match(/^([\d.]+)/)

@@ -10,7 +10,7 @@ import {
   type GenerateMealPlanConflict,
   type GenerateMealPlanError
 } from '@/app/meal-plan-generate/actions'
-import { getNextWeekStart } from '@/utils/mealPlanDates'
+import { getDateForScheduledMeal } from '@/utils/mealPlanDates'
 import type { SurveyResponse } from '@/types/database'
 
 const daysOfWeek = [
@@ -85,6 +85,51 @@ function clampDistinctCounts(
   }
 }
 
+function formatDateForDisplay(dateStr: string): string {
+  const date = new Date(dateStr + 'T00:00:00')
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric'
+  })
+}
+
+function getDaysForWeek(startDateStr: string): Array<{ dayName: string; dateStr: string; dateDisplay: string }> {
+  if (!startDateStr) return []
+  
+  const [year, month, day] = startDateStr.split('-').map(Number)
+  const startDate = new Date(year, month - 1, day)
+  const result: Array<{ dayName: string; dateStr: string; dateDisplay: string }> = []
+  
+  for (let i = 0; i < 7; i++) {
+    const currentDate = new Date(startDate)
+    currentDate.setDate(startDate.getDate() + i)
+    
+    const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(currentDate.getDate()).padStart(2, '0')}`
+    const dayName = currentDate.toLocaleDateString('en-US', { weekday: 'long' })
+    const dateDisplay = formatDateForDisplay(dateStr)
+    
+    result.push({ dayName, dateStr, dateDisplay })
+  }
+  
+  return result
+}
+
+function validateStartDate(dateStr: string): string {
+  if (!dateStr) {
+    return 'Please select a start date'
+  }
+  
+  const selectedDate = new Date(dateStr + 'T00:00:00')
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  
+  if (selectedDate < today) {
+    return 'Start date must be today or in the future'
+  }
+  
+  return ''
+}
+
 export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGenerateClientProps) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
@@ -92,14 +137,30 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
   const [success, setSuccess] = useState(false)
   const [showReplaceDialog, setShowReplaceDialog] = useState(false)
   const [conflictData, setConflictData] = useState<Pick<GenerateMealPlanConflict, 'existingPlanId' | 'weekOf'> | null>(null)
+  const [startDate, setStartDate] = useState<string>('')
+  const [dateError, setDateError] = useState('')
 
-  // Initialize with all meals selected
-  const [selections, setSelections] = useState<MealSelections>(
-    daysOfWeek.reduce((acc, day) => ({
-      ...acc,
-      [day.full]: { breakfast: true, lunch: true, dinner: true }
-    }), {})
-  )
+  // Calculate days for the week based on start date
+  const weekDays = useMemo(() => {
+    if (!startDate) return []
+    return getDaysForWeek(startDate)
+  }, [startDate])
+
+  // Initialize with all meals selected - will be updated when startDate changes
+  const [selections, setSelections] = useState<MealSelections>({})
+
+  // Update selections when startDate changes
+  useEffect(() => {
+    if (startDate && weekDays.length > 0) {
+      const newSelections: MealSelections = {}
+      weekDays.forEach(({ dayName }) => {
+        newSelections[dayName] = { breakfast: true, lunch: true, dinner: true }
+      })
+      setSelections(newSelections)
+    } else {
+      setSelections({})
+    }
+  }, [startDate, weekDays])
 
   const leftoverPreference = surveyResponse?.['12'] as string ?? surveyResponse?.[12] as string
   const lunchPreference = surveyResponse?.['13'] as string ?? surveyResponse?.[13] as string
@@ -151,17 +212,27 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
   }
 
   const toggleAllForMealType = (mealType: MealType) => {
-    const allSelected = daysOfWeek.every(day => selections[day.full][mealType])
+    if (weekDays.length === 0) return
+    const allSelected = weekDays.every(({ dayName }) => selections[dayName]?.[mealType])
     setSelections(prev => {
       const newSelections = { ...prev }
-      daysOfWeek.forEach(day => {
-        newSelections[day.full] = {
-          ...newSelections[day.full],
+      weekDays.forEach(({ dayName }) => {
+        if (!newSelections[dayName]) {
+          newSelections[dayName] = { breakfast: false, lunch: false, dinner: false }
+        }
+        newSelections[dayName] = {
+          ...newSelections[dayName],
           [mealType]: !allSelected
         }
       })
       return newSelections
     })
+  }
+
+  const handleDateChange = (dateStr: string) => {
+    setStartDate(dateStr)
+    const validationError = validateStartDate(dateStr)
+    setDateError(validationError)
   }
 
   const totals = useMemo(() => {
@@ -185,18 +256,18 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
 
   const selectedSlots = useMemo(
     () =>
-      daysOfWeek.flatMap((day) =>
+      weekDays.flatMap(({ dayName }) =>
         (['breakfast', 'lunch', 'dinner'] as MealType[]).reduce<Array<{ day: string; mealType: MealType }>>(
           (acc, mealType) => {
-            if (selections[day.full][mealType]) {
-              acc.push({ day: day.full, mealType })
+            if (selections[dayName]?.[mealType]) {
+              acc.push({ day: dayName, mealType })
             }
             return acc
           },
           []
         )
       ),
-    [selections]
+    [selections, weekDays]
   )
 
   useEffect(() => {
@@ -221,6 +292,18 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
   }
 
   const handleGenerate = async () => {
+    if (!startDate) {
+      setError('Please select a start date')
+      return
+    }
+
+    const validationError = validateStartDate(startDate)
+    if (validationError) {
+      setDateError(validationError)
+      setError(validationError)
+      return
+    }
+
     if (totals.total === 0) {
       setError('Please select at least one meal to generate')
       return
@@ -229,11 +312,11 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
     setLoading(true)
     setError('')
     setSuccess(false)
+    setDateError('')
 
     try {
-      // Get next Monday as the week start
-      // TODO: Make this configurable via user settings in the future
-      const weekOf = getNextWeekStart('Monday')
+      // Use the selected start date
+      const weekOf = startDate
 
       const result = await generateMealPlanFromPreferences(
         weekOf,
@@ -347,128 +430,171 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
             </p>
           </div>
 
-          <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
-            
-            {/* Main Content - Meal Selector */}
-            <div className="lg:col-span-2">
-              <div className="gg-card">
-                <h2 className="gg-heading-section mb-6">Select Your Meals</h2>
+          {/* Date Picker */}
+          <div className="mb-8">
+            <div className="gg-card">
+              <label htmlFor="start-date" className="block text-sm font-semibold text-gray-900 mb-3">
+                Select Start Date
+              </label>
+              <input
+                type="date"
+                id="start-date"
+                value={startDate}
+                onChange={(e) => handleDateChange(e.target.value)}
+                min={new Date().toISOString().split('T')[0]}
+                className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:border-[var(--gg-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--gg-primary)] focus:ring-opacity-20 text-gray-900"
+              />
+              {dateError && (
+                <p className="mt-2 text-sm text-red-600">{dateError}</p>
+              )}
+              {startDate && !dateError && (
+                <p className="mt-2 text-sm text-gray-600">
+                  Meal plan will start on {new Date(startDate + 'T00:00:00').toLocaleDateString('en-US', { 
+                    weekday: 'long', 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric' 
+                  })}
+                </p>
+              )}
+            </div>
+          </div>
 
-                {/* Meal Type Headers */}
-                <div className="flex items-center gap-4 mb-3 px-3">
-                  <div className="w-24"></div>
-                  <div className="flex items-center gap-6 flex-1">
-                    <button
-                      onClick={() => toggleAllForMealType('breakfast')}
-                      className="text-center text-sm font-semibold text-gray-700 hover:text-[var(--gg-primary)] transition-colors flex-1"
-                    >
-                      🍳 Breakfast
-                    </button>
-                    <button
-                      onClick={() => toggleAllForMealType('lunch')}
-                      className="text-center text-sm font-semibold text-gray-700 hover:text-[var(--gg-primary)] transition-colors flex-1"
-                    >
-                      🥗 Lunch
-                    </button>
-                    <button
-                      onClick={() => toggleAllForMealType('dinner')}
-                      className="text-center text-sm font-semibold text-gray-700 hover:text-[var(--gg-primary)] transition-colors flex-1"
-                    >
-                      🍽️ Dinner
-                    </button>
-                  </div>
-                </div>
+          {!startDate ? (
+            <div className="gg-card text-center py-12">
+              <svg className="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              <p className="text-gray-600 text-lg">Please select a start date above to begin selecting your meals</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+              
+              {/* Main Content - Meal Selector */}
+              <div className="lg:col-span-2">
+                <div className="gg-card">
+                  <h2 className="gg-heading-section mb-6">Select Your Meals</h2>
 
-                {/* Day Rows */}
-                <div className="space-y-2">
-                  {daysOfWeek.map((day) => (
-                    <div 
-                      key={day.full}
-                      className="flex items-center gap-4 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors"
-                    >
+                  {/* Meal Type Headers */}
+                  <div className="flex items-center gap-4 mb-3 px-3">
+                    <div className="w-32"></div>
+                    <div className="flex items-center gap-6 flex-1">
                       <button
-                        onClick={() => toggleAllForDay(day.full)}
-                        className="text-sm font-medium text-gray-900 text-left hover:text-[var(--gg-primary)] transition-colors w-24"
+                        onClick={() => toggleAllForMealType('breakfast')}
+                        className="text-center text-sm font-semibold text-gray-700 hover:text-[var(--gg-primary)] transition-colors flex-1"
                       >
-                        {day.full}
+                        🍳 Breakfast
                       </button>
-                      
-                      <div className="flex items-center gap-6 flex-1">
-                        {(['breakfast', 'lunch', 'dinner'] as MealType[]).map((mealType) => (
-                          <label
-                            key={mealType}
-                            className="flex items-center justify-center cursor-pointer flex-1"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={selections[day.full][mealType]}
-                              onChange={() => toggleMeal(day.full, mealType)}
-                              className="gg-checkbox"
-                            />
-                          </label>
-                        ))}
-                      </div>
+                      <button
+                        onClick={() => toggleAllForMealType('lunch')}
+                        className="text-center text-sm font-semibold text-gray-700 hover:text-[var(--gg-primary)] transition-colors flex-1"
+                      >
+                        🥗 Lunch
+                      </button>
+                      <button
+                        onClick={() => toggleAllForMealType('dinner')}
+                        className="text-center text-sm font-semibold text-gray-700 hover:text-[var(--gg-primary)] transition-colors flex-1"
+                      >
+                        🍽️ Dinner
+                      </button>
                     </div>
-                  ))}
-                </div>
+                  </div>
 
-                {/* Quick Actions */}
-                <div className="mt-6 pt-6 border-t border-gray-200">
-                  <p className="text-sm text-gray-600 mb-3">Quick actions:</p>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      onClick={() => {
-                        const allSelected = Object.values(selections).every(
-                          day => day.breakfast && day.lunch && day.dinner
-                        )
-                        setSelections(
-                          daysOfWeek.reduce((acc, day) => ({
-                            ...acc,
-                            [day.full]: { breakfast: !allSelected, lunch: !allSelected, dinner: !allSelected }
-                          }), {})
-                        )
-                      }}
-                      className="gg-btn-outline text-sm py-2 px-4"
-                    >
-                      Toggle All
-                    </button>
-                    <button
-                      onClick={() => {
-                        setSelections(
-                          daysOfWeek.reduce((acc, day) => ({
-                            ...acc,
-                            [day.full]: { 
-                              breakfast: false, 
-                              lunch: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].includes(day.full), 
-                              dinner: false 
-                            }
-                          }), {})
-                        )
-                      }}
-                      className="gg-btn-outline text-sm py-2 px-4"
-                    >
-                      Weekday Lunches Only
-                    </button>
-                    <button
-                      onClick={() => {
-                        setSelections(
-                          daysOfWeek.reduce((acc, day) => ({
-                            ...acc,
-                            [day.full]: { breakfast: false, lunch: false, dinner: true }
-                          }), {})
-                        )
-                      }}
-                      className="gg-btn-outline text-sm py-2 px-4"
-                    >
-                      Dinners Only
-                    </button>
+                  {/* Day Rows */}
+                  <div className="space-y-2">
+                    {weekDays.map(({ dayName, dateDisplay }) => (
+                      <div 
+                        key={dayName}
+                        className="flex items-center gap-4 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors"
+                      >
+                        <button
+                          onClick={() => toggleAllForDay(dayName)}
+                          className="text-sm font-medium text-gray-900 text-left hover:text-[var(--gg-primary)] transition-colors w-32"
+                        >
+                          <div>{dayName}</div>
+                          <div className="text-xs text-gray-500">{dateDisplay}</div>
+                        </button>
+                        
+                        <div className="flex items-center gap-6 flex-1">
+                          {(['breakfast', 'lunch', 'dinner'] as MealType[]).map((mealType) => (
+                            <label
+                              key={mealType}
+                              className="flex items-center justify-center cursor-pointer flex-1"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selections[dayName]?.[mealType] ?? false}
+                                onChange={() => toggleMeal(dayName, mealType)}
+                                className="gg-checkbox"
+                              />
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Quick Actions */}
+                  <div className="mt-6 pt-6 border-t border-gray-200">
+                    <p className="text-sm text-gray-600 mb-3">Quick actions:</p>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={() => {
+                          if (weekDays.length === 0) return
+                          const allSelected = weekDays.every(
+                            ({ dayName }) => selections[dayName]?.breakfast && selections[dayName]?.lunch && selections[dayName]?.dinner
+                          )
+                          setSelections(
+                            weekDays.reduce((acc, { dayName }) => ({
+                              ...acc,
+                              [dayName]: { breakfast: !allSelected, lunch: !allSelected, dinner: !allSelected }
+                            }), {})
+                          )
+                        }}
+                        className="gg-btn-outline text-sm py-2 px-4"
+                      >
+                        Toggle All
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (weekDays.length === 0) return
+                          const weekdayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
+                          setSelections(
+                            weekDays.reduce((acc, { dayName }) => ({
+                              ...acc,
+                              [dayName]: { 
+                                breakfast: false, 
+                                lunch: weekdayNames.includes(dayName), 
+                                dinner: false 
+                              }
+                            }), {})
+                          )
+                        }}
+                        className="gg-btn-outline text-sm py-2 px-4"
+                      >
+                        Weekday Lunches Only
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (weekDays.length === 0) return
+                          setSelections(
+                            weekDays.reduce((acc, { dayName }) => ({
+                              ...acc,
+                              [dayName]: { breakfast: false, lunch: false, dinner: true }
+                            }), {})
+                          )
+                        }}
+                        className="gg-btn-outline text-sm py-2 px-4"
+                      >
+                        Dinners Only
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
 
-            {/* Sidebar - Summary & Generate */}
-            <div className="space-y-6">
+              {/* Sidebar - Summary & Generate */}
+              <div className="space-y-6">
               
               {/* Summary Card */}
               <div className="gg-card">
@@ -573,9 +699,9 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
               {/* Generate Button */}
               <button
                 onClick={handleGenerate}
-                disabled={loading || totals.total === 0}
+                disabled={loading || totals.total === 0 || !startDate}
                 className={`gg-btn-primary w-full flex items-center justify-center gap-2 ${
-                  (loading || totals.total === 0) ? 'opacity-50 cursor-not-allowed' : ''
+                  (loading || totals.total === 0 || !startDate) ? 'opacity-50 cursor-not-allowed' : ''
                 }`}
               >
                 {loading ? (
@@ -630,6 +756,7 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
               </div>
             </div>
           </div>
+          )}
 
           {/* Error Message */}
           {error && (
