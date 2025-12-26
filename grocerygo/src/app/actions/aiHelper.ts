@@ -35,7 +35,7 @@ export async function callOpenAIStructured<T extends z.ZodTypeAny>(
     }
 
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o',
+      model: 'gpt-5.2',
       messages: [
         {
           role: 'system',
@@ -143,7 +143,7 @@ export async function callOpenAI<T>(
     }
 
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o',
+      model: 'gpt-5.2',
       messages: [
         {
           role: 'system',

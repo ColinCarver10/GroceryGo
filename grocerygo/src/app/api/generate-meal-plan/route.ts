@@ -20,11 +20,12 @@ interface MealSelection {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { mealSelection, mealPlanId, distinctRecipeCounts, selectedSlots } = body as {
+    const { mealSelection, mealPlanId, distinctRecipeCounts, selectedSlots, fetchCandidatesOnly } = body as {
       mealSelection: MealSelection
       mealPlanId: string
       distinctRecipeCounts?: MealSelection
       selectedSlots?: Array<{ day: string; mealType: string }>
+      fetchCandidatesOnly?: boolean
     }
 
     const context = await createMealPlanContext()
@@ -55,6 +56,33 @@ export async function POST(request: NextRequest) {
         lunch: mealSelection.lunch,
         dinner: mealSelection.dinner
       }
+
+    // Generate all three embedding prompts in a single LLM call
+    const embedPrompts = await getEmbedPrompts(surveyData);
+    
+    // Find breakfast, lunch, and dinner recipes using the generated prompts
+    const [breakfastIDs, lunchIDs, dinnerIDs] = await Promise.all([
+      fetchCandidateRecipesForMealType(embedPrompts.breakfast, context, 'breakfast', distinctCounts.breakfast),
+      fetchCandidateRecipesForMealType(embedPrompts.lunch, context, 'lunch/dinner', distinctCounts.lunch),
+      fetchCandidateRecipesForMealType(embedPrompts.dinner, context, 'lunch/dinner', distinctCounts.dinner)
+    ]);
+
+    // Fetch full recipe details for each meal type
+    const [breakfastRecipes, lunchRecipes, dinnerRecipes] = await Promise.all([
+      fetchRecipeDetailsByIds(context, breakfastIDs),
+      fetchRecipeDetailsByIds(context, lunchIDs),
+      fetchRecipeDetailsByIds(context, dinnerIDs)
+    ]);
+
+    // If only fetching candidates, return them now
+    if (fetchCandidatesOnly) {
+      const allCandidates = [
+        ...breakfastRecipes.map(r => ({ ...r, mealType: 'breakfast' })),
+        ...lunchRecipes.map(r => ({ ...r, mealType: 'lunch' })),
+        ...dinnerRecipes.map(r => ({ ...r, mealType: 'dinner' }))
+      ]
+      return NextResponse.json({ candidates: allCandidates })
+    }
 
     const slots = (selectedSlots?.length ? selectedSlots : mealPlan.survey_snapshot?.selected_slots) as Array<{
       day: string
@@ -110,23 +138,6 @@ export async function POST(request: NextRequest) {
         ingredientPreferencesSection += `**Excluded Ingredients (NEVER use these):** ${excludedIngredients.join(', ')}\n`
       }
     }
-      
-    // Generate all three embedding prompts in a single LLM call
-    const embedPrompts = await getEmbedPrompts(surveyData);
-    
-    // Find breakfast, lunch, and dinner recipes using the generated prompts
-    const [breakfastIDs, lunchIDs, dinnerIDs] = await Promise.all([
-      fetchCandidateRecipesForMealType(embedPrompts.breakfast, context, 'breakfast', distinctCounts.breakfast),
-      fetchCandidateRecipesForMealType(embedPrompts.lunch, context, 'lunch/dinner', distinctCounts.lunch),
-      fetchCandidateRecipesForMealType(embedPrompts.dinner, context, 'lunch/dinner', distinctCounts.dinner)
-    ]);
-
-    // Fetch full recipe details for each meal type
-    const [breakfastRecipes, lunchRecipes, dinnerRecipes] = await Promise.all([
-      fetchRecipeDetailsByIds(context, breakfastIDs),
-      fetchRecipeDetailsByIds(context, lunchIDs),
-      fetchRecipeDetailsByIds(context, dinnerIDs)
-    ]);
 
     const enhancedPrompt = `${mealPlanFromSurveyPrompt}
 

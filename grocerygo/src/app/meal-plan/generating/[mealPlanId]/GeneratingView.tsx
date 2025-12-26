@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import RecipeCardSkeleton from '@/components/RecipeCardSkeleton'
 import { saveGeneratedRecipes } from '../actions'
 import type { SurveyResponse } from '@/types/database'
+import { getIngredients } from '@/utils/mealPlanUtils'
 
 type SurveySnapshotData = SurveyResponse & {
   meal_selection?: {
@@ -27,8 +28,10 @@ interface GeneratingViewProps {
   surveySnapshot?: SurveySnapshotData
 }
 
+const DECAY_RATE = 0.001
 interface RecipeData {
   id?: string
+  recipe_id?: string
   name: string
   mealType?: string
   ingredients: Array<{
@@ -46,6 +49,25 @@ interface RecipeData {
   flavor_profile?: string[]
   estimated_cost?: number
   nutrition_info?: {
+    calories?: number
+    protein?: number
+    carbs?: number
+    fat?: number
+  }
+}
+
+interface CandidateRecipe {
+  recipe_id: string
+  name: string
+  meal_type?: string
+  mealType?: string
+  ingredients: Array<{
+    item: string
+    quantity: string
+  }>
+  steps: string[]
+  description?: string
+  nutrition?: {
     calories?: number
     protein?: number
     carbs?: number
@@ -80,6 +102,24 @@ function getScheduledDay(weekOf: string, index: number) {
   })
 }
 
+export function createDecayProgressSimulator(
+  initialProgress = 0,
+  decayRate = DECAY_RATE
+) {
+  let progress = initialProgress;
+
+  return function getProgress(): number {
+    // Remaining distance to completion
+    const remaining = 1 - progress;
+
+    // Add a shrinking increment
+    progress += remaining * decayRate;
+
+    // Cap so it never reaches 1.0 on its own
+    return Math.min(progress, 0.99);
+  };
+}
+
 export default function GeneratingView({
   mealPlanId,
   weekOf,
@@ -87,16 +127,22 @@ export default function GeneratingView({
   surveySnapshot
 }: GeneratingViewProps) {
   const router = useRouter()
-  const [recipes, setRecipes] = useState<(RecipeData | null)[]>(
-    Array(totalMeals).fill(null)
-  )
-  const [currentRecipeIndex, setCurrentRecipeIndex] = useState(0)
+  const [candidateRecipes, setCandidateRecipes] = useState<CandidateRecipe[]>([])
+  const [optimizedRecipes, setOptimizedRecipes] = useState<Map<string, RecipeData>>(new Map())
+  const [optimizationStatus, setOptimizationStatus] = useState<Map<string, 'optimizing' | 'complete'>>(new Map())
+  const [isFetchingCandidates, setIsFetchingCandidates] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [currentRecipeIndex, setCurrentRecipeIndex] = useState(1)
+  const [overallProgress, setOverallProgress] = useState(0)
+  const [hasStartedStreaming, setHasStartedStreaming] = useState(false)
 
   const recipeCountRef = useRef(0)
   const hasStartedGenerationRef = useRef(false)
+  const hasFetchedCandidatesRef = useRef(false)
   const uniqueRecipeIdsRef = useRef<Set<string>>(new Set())
+  const candidateToOptimizedMapRef = useRef<Map<string, string>>(new Map())
+  const progressSimulatorRef = useRef<ReturnType<typeof createDecayProgressSimulator> | null>(null)
 
   // Calculate total unique recipes expected
   const distinctRecipeCounts = surveySnapshot?.distinct_recipe_counts || {
@@ -106,13 +152,120 @@ export default function GeneratingView({
   }
   const totalUniqueRecipes = distinctRecipeCounts.breakfast + distinctRecipeCounts.lunch + distinctRecipeCounts.dinner
 
+  // Fetch candidate recipes immediately on mount
   useEffect(() => {
-    if (!hasStartedGenerationRef.current) {
+    if (!hasFetchedCandidatesRef.current) {
+      hasFetchedCandidatesRef.current = true
+      fetchCandidateRecipes()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Start AI generation after candidates are fetched
+  useEffect(() => {
+    if (!isFetchingCandidates && candidateRecipes.length > 0 && !hasStartedGenerationRef.current) {
       hasStartedGenerationRef.current = true
       generateMealPlan()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [isFetchingCandidates, candidateRecipes.length])
+
+  // Progress simulation using decay-based approach
+  useEffect(() => {
+    if (isFetchingCandidates) {
+      progressSimulatorRef.current = null
+      return
+    }
+
+    if (isSaving) {
+      setOverallProgress(100)
+      return
+    }
+
+    if (!progressSimulatorRef.current) {
+      return
+    }
+
+    let progressInterval: NodeJS.Timeout
+
+    const updateProgress = () => {
+      if (!progressSimulatorRef.current) return
+
+      // Get simulated progress from decay simulator (0-0.99 scale)
+      const simulatedProgress = progressSimulatorRef.current()
+
+      // Actual progress based on recipes received (0-1 scale)
+      const recipeProgress = totalUniqueRecipes > 0 
+        ? currentRecipeIndex / totalUniqueRecipes
+        : 0
+
+      // Use the higher of simulated or recipe progress, but cap at 0.95
+      const totalProgress = Math.min(0.95, Math.max(simulatedProgress, recipeProgress))
+
+      setOverallProgress(totalProgress)
+    }
+
+    progressInterval = setInterval(updateProgress, 100)
+    updateProgress() // Initial update
+
+    return () => {
+      if (progressInterval) clearInterval(progressInterval)
+    }
+  }, [isFetchingCandidates, isSaving, currentRecipeIndex, totalUniqueRecipes])
+
+  const fetchCandidateRecipes = async () => {
+    try {
+      setIsFetchingCandidates(true)
+      setError(null)
+
+      const mealSelection = surveySnapshot?.meal_selection || {
+        breakfast: Math.floor(totalMeals / 3),
+        lunch: Math.floor(totalMeals / 3),
+        dinner: totalMeals - 2 * Math.floor(totalMeals / 3)
+      }
+
+      const distinctRecipeCounts = surveySnapshot?.distinct_recipe_counts || mealSelection
+
+      const response = await fetch('/api/generate-meal-plan', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          mealSelection,
+          mealPlanId,
+          distinctRecipeCounts,
+          fetchCandidatesOnly: true
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch candidate recipes')
+      }
+
+      const data = await response.json()
+      const candidates: CandidateRecipe[] = data.candidates || []
+
+      // Convert candidates to display format and set optimization status
+      setCandidateRecipes(candidates)
+      const statusMap = new Map<string, 'optimizing' | 'complete'>()
+      candidates.forEach(candidate => {
+        statusMap.set(candidate.recipe_id, 'optimizing')
+      })
+      setOptimizationStatus(statusMap)
+      setIsFetchingCandidates(false)
+      
+      // Calculate initial progress: 1 / totalUniqueRecipes (0-1 scale)
+      const totalRecipes = candidates.length
+      const initialProgress = totalRecipes > 0 ? 1 / totalRecipes : 0
+      progressSimulatorRef.current = createDecayProgressSimulator(initialProgress, DECAY_RATE)
+      setOverallProgress(initialProgress)
+    } catch (err) {
+      console.error('Error fetching candidates:', err)
+      setError(err instanceof Error ? err.message : 'Failed to fetch candidate recipes')
+      setIsFetchingCandidates(false)
+    }
+  }
 
   const tryParsePartialRecipes = (buffer: string) => {
     try {
@@ -196,30 +349,47 @@ export default function GeneratingView({
         }
 
         if (newParsedRecipes.length > 0) {
-          const startIndex = recipeCountRef.current
-          
+          // Mark that streaming has started
+          if (!hasStartedStreaming) {
+            setHasStartedStreaming(true)
+          }
+
+          // Update optimized recipes map and status
+          setOptimizedRecipes(prev => {
+            const updated = new Map(prev)
+            const statusUpdated = new Map(optimizationStatus)
+            
+            newParsedRecipes.forEach((recipe) => {
+              const recipeId = recipe.id || recipe.recipe_id || recipe.name
+              if (recipeId) {
+                updated.set(recipeId, recipe)
+                statusUpdated.set(recipeId, 'complete')
+                
+                // Try to map back to candidate recipe_id
+                candidateRecipes.forEach(candidate => {
+                  if (candidate.name === recipe.name || candidate.recipe_id === recipeId) {
+                    candidateToOptimizedMapRef.current.set(candidate.recipe_id, recipeId)
+                    statusUpdated.set(candidate.recipe_id, 'complete')
+                  }
+                })
+              }
+            })
+            
+            setOptimizationStatus(statusUpdated)
+            return updated
+          })
+
           // Track unique recipes by ID or name
           newParsedRecipes.forEach((recipe) => {
-            const uniqueKey = recipe.id || recipe.name
+            const uniqueKey = recipe.id || recipe.recipe_id || recipe.name
             if (uniqueKey && !uniqueRecipeIdsRef.current.has(uniqueKey)) {
               uniqueRecipeIdsRef.current.add(uniqueKey)
             }
           })
 
-          setRecipes((prev) => {
-            const next = [...prev]
-            newParsedRecipes.forEach((recipe, idx) => {
-              const index = startIndex + idx
-              if (index < totalMeals && next[index] === null) {
-                next[index] = recipe
-              }
-            })
-            return next
-          })
-
-          recipeCountRef.current = startIndex + newParsedRecipes.length
-          // Update to show unique recipe count instead
-          setCurrentRecipeIndex(uniqueRecipeIdsRef.current.size)
+          recipeCountRef.current = recipeCountRef.current + newParsedRecipes.length
+          // Ensure we show at least 1, or the actual count if higher
+          setCurrentRecipeIndex(Math.max(1, uniqueRecipeIdsRef.current.size))
         }
       }
     } catch {
@@ -265,7 +435,6 @@ export default function GeneratingView({
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          weekOf,
           mealSelection,
           mealPlanId,
           distinctRecipeCounts,
@@ -335,21 +504,53 @@ export default function GeneratingView({
         return
       }
 
+      // Mark that streaming has started
+      if (!hasStartedStreaming) {
+        setHasStartedStreaming(true)
+      }
+
+      // Update optimized recipes map and mark all as complete
+      setOptimizedRecipes(prev => {
+        const updated = new Map(prev)
+        const statusUpdated = new Map(optimizationStatus)
+        
+        parsedRecipes.forEach((recipe) => {
+          const recipeId = recipe.id || recipe.recipe_id || recipe.name
+          if (recipeId) {
+            updated.set(recipeId, recipe)
+            statusUpdated.set(recipeId, 'complete')
+            
+            // Map back to candidate recipe_id by matching name or ID
+            candidateRecipes.forEach(candidate => {
+              const candidateName = candidate.name.toLowerCase().trim()
+              const recipeName = recipe.name.toLowerCase().trim()
+              if (candidateName === recipeName || candidate.recipe_id === recipeId) {
+                candidateToOptimizedMapRef.current.set(candidate.recipe_id, recipeId)
+                statusUpdated.set(candidate.recipe_id, 'complete')
+              }
+            })
+          }
+        })
+        
+        setOptimizationStatus(statusUpdated)
+        return updated
+      })
+
       // Track unique recipes from final response
       parsedRecipes.forEach((recipe) => {
-        const uniqueKey = recipe.id || recipe.name
+        const uniqueKey = recipe.id || recipe.recipe_id || recipe.name
         if (uniqueKey && !uniqueRecipeIdsRef.current.has(uniqueKey)) {
           uniqueRecipeIdsRef.current.add(uniqueKey)
         }
       })
 
-      setRecipes(parsedRecipes)
-      setCurrentRecipeIndex(uniqueRecipeIdsRef.current.size)
+      // Ensure we show at least 1, or the actual count if higher
+      setCurrentRecipeIndex(Math.max(1, uniqueRecipeIdsRef.current.size))
+      setOverallProgress(95) // Near completion when all recipes are parsed
 
       const groceryListItems = Array.isArray(aiResponse.grocery_list) ? aiResponse.grocery_list : []
-      // setGroceryList(groceryListItems)
-      // setScheduleEntries(parsedSchedule)
 
+      setOverallProgress(100) // Complete
       await saveRecipes(parsedRecipes, groceryListItems, parsedSchedule)
     } catch (err) {
       console.error('Parse error:', err)
@@ -389,105 +590,260 @@ export default function GeneratingView({
     }
   }
 
+  // Get display recipes: use optimized version if available, otherwise use candidate
+  const getDisplayRecipe = (candidate: CandidateRecipe): RecipeData => {
+    const candidateId = candidate.recipe_id
+    const optimizedId = candidateToOptimizedMapRef.current.get(candidateId)
+    const optimized = optimizedId ? optimizedRecipes.get(optimizedId) : null
+    
+    if (optimized) {
+      return optimized
+    }
+    
+    // Convert candidate to RecipeData format
+    return {
+      id: candidate.recipe_id,
+      recipe_id: candidate.recipe_id,
+      name: candidate.name,
+      mealType: candidate.mealType || candidate.meal_type,
+      ingredients: candidate.ingredients,
+      steps: candidate.steps,
+      description: candidate.description,
+      nutrition_info: candidate.nutrition
+    }
+  }
+
+  const isOptimizing = (candidateId: string): boolean => {
+    return optimizationStatus.get(candidateId) === 'optimizing'
+  }
+
+  // Group recipes by meal type
+  const recipesByMealType = candidateRecipes.reduce((acc, candidate) => {
+    const mealType = (candidate.mealType || candidate.meal_type || 'other').toLowerCase()
+    if (!acc[mealType]) {
+      acc[mealType] = []
+    }
+    acc[mealType].push(candidate)
+    return acc
+  }, {} as Record<string, CandidateRecipe[]>)
+
+  // Define meal type order and labels
+  const mealTypeOrder = ['breakfast', 'lunch', 'dinner']
+  const mealTypeLabels: Record<string, string> = {
+    breakfast: 'Breakfast',
+    lunch: 'Lunch',
+    dinner: 'Dinner',
+    other: 'Other'
+  }
+
   return (
     <div className="gg-bg-page min-h-screen relative">
-      <div className="fixed inset-0 bg-white/40 backdrop-blur-[2px] z-40 flex items-center justify-center">
-        <div className="text-center">
-          <div className="mb-6">
-            <div className="inline-flex h-16 w-16 animate-spin rounded-full border-4 border-solid border-[var(--gg-primary)] border-r-transparent"></div>
-          </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">
-            {isSaving ? 'Saving Your Meal Plan...' : 'Generating Your Personalized Meal Plan'}
-          </h2>
-          <p className="text-gray-600 mb-4">
-            {isSaving
-              ? 'Almost done! Finalizing your recipes and grocery list...'
-              : `Creating ${currentRecipeIndex} of ${totalUniqueRecipes} unique recipes...`}
-          </p>
-
-          <div className="w-80 mx-auto bg-gray-200 rounded-full h-2.5 mb-4">
-            <div
-              className="bg-[var(--gg-primary)] h-2.5 rounded-full transition-all duration-300"
-              style={{ width: `${(currentRecipeIndex / totalUniqueRecipes) * 100}%` }}
-            ></div>
-          </div>
-
-          {error && (
-            <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg max-w-md mx-auto">
-              <p className="text-red-800 text-sm">{error}</p>
+      {/* Loading overlay - only show while fetching candidates */}
+      {isFetchingCandidates && (
+        <div className="fixed inset-0 bg-white/40 backdrop-blur-[2px] z-40 flex items-center justify-center">
+          <div className="text-center">
+            <div className="mb-6">
+              <div className="inline-flex h-16 w-16 animate-spin rounded-full border-4 border-solid border-[var(--gg-primary)] border-r-transparent"></div>
             </div>
-          )}
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">
+              Fetching Your Recipes...
+            </h2>
+            <p className="text-gray-600 mb-4">
+              Finding the perfect recipes for your meal plan
+            </p>
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* Saving overlay */}
+      {isSaving && (
+        <div className="fixed inset-0 bg-white/40 backdrop-blur-[2px] z-40 flex items-center justify-center">
+          <div className="text-center">
+            <div className="mb-6">
+              <div className="inline-flex h-16 w-16 animate-spin rounded-full border-4 border-solid border-[var(--gg-primary)] border-r-transparent"></div>
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">
+              Saving Your Meal Plan...
+            </h2>
+            <p className="text-gray-600 mb-4">
+              Almost done! Finalizing your recipes and grocery list...
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="gg-container">
         <div className="gg-section">
           <div className="mb-8">
             <h1 className="gg-heading-page mb-2">Your Meal Plan</h1>
             <p className="gg-text-subtitle">Week of {new Date(weekOf).toLocaleDateString()}</p>
+            {!isFetchingCandidates && candidateRecipes.length > 0 && (
+              <p className="text-sm text-gray-600 mt-2">
+                Using AI to optimize {currentRecipeIndex} of {totalUniqueRecipes} unique recipes to align with your goals...
+              </p>
+            )}
           </div>
 
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {recipes.map((recipe, index) => (
-              <div
-                key={index}
-                className={`transition-all duration-500 ${
-                  recipe ? 'opacity-100 scale-100' : 'opacity-0 scale-95'
-                }`}
-              >
-                {recipe ? (
-                  <div className="rounded-xl border-2 border-gray-200 bg-white p-6 hover:border-[var(--gg-primary)] hover:shadow-md transition-all animate-in fade-in slide-in-from-bottom-4 duration-500">
-                    <div className="mb-4">
-                      <h3 className="gg-heading-card mb-2">{recipe.name}</h3>
-                      {recipe.mealType && (
-                        <span className="inline-block rounded-full bg-[var(--gg-primary)] bg-opacity-10 px-3 py-1 text-xs font-medium text-[var(--gg-primary)]">
-                          {recipe.mealType}
-                        </span>
-                      )}
-                    </div>
+          {error && (
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-red-800 text-sm">{error}</p>
+            </div>
+          )}
 
-                    <div className="mb-4 flex flex-wrap gap-3 text-sm text-gray-600">
-                      {recipe.prep_time_minutes && (
-                        <span className="flex items-center gap-1">
-                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          {recipe.prep_time_minutes}m
-                        </span>
-                      )}
-                      {recipe.servings && (
-                        <span className="flex items-center gap-1">
-                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0zM7 10a2 2 0 11-4 0 2 2 0z" />
-                          </svg>
-                          {recipe.servings} servings
-                        </span>
-                      )}
-                    </div>
+          {/* Overall progress bar above cards */}
+          {!isFetchingCandidates && !isSaving && (
+            <div className="mb-6">
+              <p className="text-sm text-gray-600 mb-2">Optimizing your meal plan...</p>
+              <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-[var(--gg-primary)] transition-all duration-300 ease-out"
+                  style={{ width: `${overallProgress * 100}%` }}
+                />
+              </div>
+            </div>
+          )}
 
-                    <div>
-                      <p className="mb-2 text-xs font-semibold text-gray-700">Ingredients:</p>
-                      <ul className="space-y-1 text-sm text-gray-600">
-                        {recipe.ingredients.slice(0, 3).map((ingredient, idx) => (
-                          <li key={idx} className="flex items-start gap-2">
-                            <span className="text-[var(--gg-primary)]">•</span>
-                            <span className="truncate">{ingredient.item}</span>
-                          </li>
-                        ))}
-                        {recipe.ingredients.length > 3 && (
-                          <li className="text-gray-400 text-xs">
-                            +{recipe.ingredients.length - 3} more...
-                          </li>
-                        )}
-                      </ul>
+          {candidateRecipes.length === 0 && !isFetchingCandidates ? (
+            // Show skeletons while waiting
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+              {Array.from({ length: totalUniqueRecipes }).map((_, index) => (
+                <RecipeCardSkeleton key={index} />
+              ))}
+            </div>
+          ) : (
+            // Organize recipes by meal type
+            <div className="space-y-8">
+              {mealTypeOrder.map((mealType) => {
+                const recipes = recipesByMealType[mealType] || []
+                if (recipes.length === 0) return null
+
+                return (
+                  <div key={mealType} className="space-y-4">
+                    <h2 className="gg-heading-section">
+                      {mealTypeLabels[mealType] || mealType}
+                    </h2>
+                    <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                      {recipes.map((candidate) => {
+                        const displayRecipe = getDisplayRecipe(candidate)
+                        const optimizing = isOptimizing(candidate.recipe_id)
+                        const ingredients = getIngredients(displayRecipe as any)
+                        
+                        return (
+                          <div
+                            key={candidate.recipe_id}
+                            className="transition-all duration-500 opacity-100 scale-100"
+                          >
+                            <div className="rounded-xl border-2 border-gray-200 bg-white p-6 hover:border-[var(--gg-primary)] hover:shadow-md transition-all animate-in fade-in slide-in-from-bottom-4 duration-500 relative overflow-hidden">
+                              <div className="mb-2">
+                                <h3 className="gg-heading-card mb-2 capitalize truncate">{displayRecipe.name}</h3>
+                              </div>
+
+                              <div>
+                                <p className="mb-2 text-xs font-semibold text-gray-700">Ingredients:</p>
+                                <ul className="space-y-1 text-sm text-gray-600 mb-5">
+                                  {ingredients.slice(0, 5).map((ingredient, idx) => (
+                                    <li key={idx} className="flex items-start gap-2">
+                                      <span className="text-[var(--gg-primary)]">•</span>
+                                      <span className="truncate">{ingredient.ingredient}</span>
+                                    </li>
+                                  ))}
+                                  {ingredients.length > 3 && (
+                                    <li className="text-gray-400 text-xs">
+                                      +{ingredients.length - 3} more...
+                                    </li>
+                                  )}
+                                </ul>
+                              </div>
+
+                              {/* Bottom progress bar for optimization */}
+                              {optimizing && (
+                                <div className="absolute bottom-0 left-0 right-0">
+                                  <div className="h-1 bg-gray-100">
+                                    <div className="h-full bg-[var(--gg-primary)] animate-pulse" style={{ width: '100%' }} />
+                                  </div>
+                                  <div className="bg-white px-4 py-2 flex items-center gap-2 border-t border-gray-100">
+                                    <div className="h-3 w-3 animate-spin rounded-full border-2 border-solid border-[var(--gg-primary)] border-r-transparent"></div>
+                                    <span className="text-xs font-medium text-[var(--gg-primary)]">
+                                      Optimizing with AI
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
                     </div>
                   </div>
-                ) : (
-                  <RecipeCardSkeleton />
-                )}
-              </div>
-            ))}
-          </div>
+                )
+              })}
+              {/* Show any recipes that don't match standard meal types */}
+              {Object.keys(recipesByMealType).filter(type => !mealTypeOrder.includes(type)).map((mealType) => {
+                const recipes = recipesByMealType[mealType] || []
+                if (recipes.length === 0) return null
+
+                return (
+                  <div key={mealType} className="space-y-4">
+                    <h2 className="gg-heading-section">
+                      {mealTypeLabels[mealType] || mealType}
+                    </h2>
+                    <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                      {recipes.map((candidate) => {
+                        const displayRecipe = getDisplayRecipe(candidate)
+                        const optimizing = isOptimizing(candidate.recipe_id)
+                        const ingredients = getIngredients(displayRecipe as any)
+                        
+                        return (
+                          <div
+                            key={candidate.recipe_id}
+                            className="transition-all duration-500 opacity-100 scale-100"
+                          >
+                            <div className="rounded-xl border-2 border-gray-200 bg-white p-6 hover:border-[var(--gg-primary)] hover:shadow-md transition-all animate-in fade-in slide-in-from-bottom-4 duration-500 relative overflow-hidden">
+                              <div className="mb-4">
+                                <h3 className="gg-heading-card mb-2 capitalize truncate">{displayRecipe.name}</h3>
+                              </div>
+
+                              <div>
+                                <p className="mb-2 text-xs font-semibold text-gray-700">Ingredients:</p>
+                                <ul className="space-y-1 text-sm text-gray-600">
+                                  {ingredients.slice(0, 3).map((ingredient, idx) => (
+                                    <li key={idx} className="flex items-start gap-2">
+                                      <span className="text-[var(--gg-primary)]">•</span>
+                                      <span className="truncate">{ingredient.ingredient}</span>
+                                    </li>
+                                  ))}
+                                  {ingredients.length > 3 && (
+                                    <li className="text-gray-400 text-xs">
+                                      +{ingredients.length - 3} more...
+                                    </li>
+                                  )}
+                                </ul>
+                              </div>
+
+                              {/* Bottom progress bar for optimization */}
+                              {optimizing && (
+                                <div className="absolute bottom-0 left-0 right-0">
+                                  <div className="h-1 bg-gray-100">
+                                    <div className="h-full bg-[var(--gg-primary)] animate-pulse" style={{ width: '100%' }} />
+                                  </div>
+                                  <div className="bg-white px-4 py-2 flex items-center gap-2 border-t border-gray-100">
+                                    <div className="h-3 w-3 animate-spin rounded-full border-2 border-solid border-[var(--gg-primary)] border-r-transparent"></div>
+                                    <span className="text-xs font-medium text-[var(--gg-primary)]">
+                                      Optimizing with AI
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       </div>
     </div>

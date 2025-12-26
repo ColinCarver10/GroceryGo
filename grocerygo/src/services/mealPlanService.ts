@@ -566,7 +566,7 @@ export async function getEmbedPrompts(surveyData: any): Promise<EmbeddingPrompts
 
   try {
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o',
+      model: 'gpt-5-mini',
       messages: [
         {
           role: 'system',
@@ -577,7 +577,6 @@ export async function getEmbedPrompts(surveyData: any): Promise<EmbeddingPrompts
           content: userPrompt,
         },
       ],
-      temperature: 0.7,
     });
 
     const response = completion.choices[0]?.message?.content;
