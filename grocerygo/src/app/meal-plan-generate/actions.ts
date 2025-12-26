@@ -91,12 +91,14 @@ export async function replaceExistingMealPlan(
 
     await deleteMealPlanForUser(context, existingPlanId)
 
+    // Skip conflict check since we just deleted the conflicting plan
     const result = await internalGenerateMealPlan(
       context,
       weekOf,
       mealSelection,
       distinctCounts,
-      selectedSlots
+      selectedSlots,
+      true // skipConflictCheck = true
     )
 
     // 'replaced' is not a property of the response; just return the result as-is
@@ -114,17 +116,21 @@ async function internalGenerateMealPlan(
   weekOf: string,
   mealSelection: MealSelection,
   distinctCounts: MealSelection,
-  selectedSlots: MealSlot[]
+  selectedSlots: MealSlot[],
+  skipConflictCheck: boolean = false
 ): Promise<GenerateMealPlanResponse> {
   try {
-    const existingPlan = await findExistingMealPlanByWeek(context, weekOf)
+    // Skip conflict check when replacing an existing meal plan
+    if (!skipConflictCheck) {
+      const existingPlan = await findExistingMealPlanByWeek(context, weekOf)
 
-    if (existingPlan) {
-      return {
-        conflict: true,
-        existingPlanId: existingPlan.id,
-        weekOf,
-        error: 'A meal plan already exists for this week.'
+      if (existingPlan) {
+        return {
+          conflict: true,
+          existingPlanId: existingPlan.id,
+          weekOf,
+          error: 'A meal plan already exists that overlaps with the selected date range.'
+        }
       }
     }
 

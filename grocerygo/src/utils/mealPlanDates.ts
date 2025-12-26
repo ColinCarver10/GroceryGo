@@ -175,3 +175,62 @@ export function getDateForDayName(weekOf: string, dayName?: string): string | un
   return `${resultYear}-${resultMonth}-${resultDay}`
 }
 
+/**
+ * Check if the current date falls within the meal plan's date range
+ * A meal plan covers 7 days starting from week_of
+ * @param weekOf - The start date of the meal plan (YYYY-MM-DD)
+ * @returns true if current date is within the meal plan's date range
+ */
+export function isCurrentDateInMealPlanRange(weekOf: string): boolean {
+  // Parse the date string to avoid timezone issues
+  const [year, month, day] = weekOf.split('-').map(Number)
+  const startDate = new Date(year, month - 1, day)
+  
+  // Calculate end date (6 days after start, so 7 days total)
+  const endDate = new Date(startDate)
+  endDate.setDate(startDate.getDate() + 6)
+  
+  // Get current date (local timezone, set to midnight for date-only comparison)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  
+  // Set start and end dates to midnight for date-only comparison
+  startDate.setHours(0, 0, 0, 0)
+  endDate.setHours(0, 0, 0, 0)
+  
+  // Check if today is within the range (inclusive)
+  return today >= startDate && today <= endDate
+}
+
+/**
+ * Check if two meal plan date ranges overlap
+ * Each meal plan covers 7 days starting from week_of
+ * @param weekOf1 - The start date of the first meal plan (YYYY-MM-DD)
+ * @param weekOf2 - The start date of the second meal plan (YYYY-MM-DD)
+ * @returns true if the date ranges overlap
+ */
+export function doMealPlanRangesOverlap(weekOf1: string, weekOf2: string): boolean {
+  // Parse both date strings
+  const [year1, month1, day1] = weekOf1.split('-').map(Number)
+  const [year2, month2, day2] = weekOf2.split('-').map(Number)
+  
+  const startDate1 = new Date(year1, month1 - 1, day1)
+  const startDate2 = new Date(year2, month2 - 1, day2)
+  
+  // Calculate end dates (6 days after start, so 7 days total)
+  const endDate1 = new Date(startDate1)
+  endDate1.setDate(startDate1.getDate() + 6)
+  
+  const endDate2 = new Date(startDate2)
+  endDate2.setDate(startDate2.getDate() + 6)
+  
+  // Set all dates to midnight for date-only comparison
+  startDate1.setHours(0, 0, 0, 0)
+  endDate1.setHours(0, 0, 0, 0)
+  startDate2.setHours(0, 0, 0, 0)
+  endDate2.setHours(0, 0, 0, 0)
+  
+  // Two ranges overlap if: start1 <= end2 AND start2 <= end1
+  return startDate1 <= endDate2 && startDate2 <= endDate1
+}
+

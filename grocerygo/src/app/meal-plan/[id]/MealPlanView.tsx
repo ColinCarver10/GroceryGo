@@ -10,6 +10,7 @@ import MealSlotCard from '@/components/MealSlotCard'
 import MealColumn, { mealTypeConfig } from '@/components/MealColumn'
 import type { PlanAdjustments } from '@/components/AdjustPlanPanel'
 import { getRecipeSteps, organizeMealsByWeek, type WeekDayMeals } from '@/utils/mealPlanUtils';
+import { getEffectiveMealPlanStatus } from '@/utils/mealPlanStatus';
 import { 
   createInstacartOrder,
   replaceRecipe,
@@ -401,6 +402,9 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
   // Count unique recipes for tab label
   const uniqueRecipeIds = new Set(mealPlan.meal_plan_recipes.map(mpr => mpr.recipe_id))
 
+  // Calculate effective status based on current date
+  const effectiveStatus = getEffectiveMealPlanStatus(mealPlan.week_of, mealPlan.status)
+
   return (
     <div className="gg-bg-page min-h-screen">
       <div className="gg-container">
@@ -428,7 +432,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
                 </p>
               </div>
               <div className="flex items-center gap-3">
-                {getStatusBadge(mealPlan.status)}
+                {getStatusBadge(effectiveStatus)}
                 
                 {/* Adjust Plan Button */}
                 <button

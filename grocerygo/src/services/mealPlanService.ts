@@ -7,7 +7,7 @@ import {
 import { generateText } from 'ai'
 import OpenAI from "openai";
 import { z } from 'zod';
-import { getDateForDayName } from '@/utils/mealPlanDates'
+import { getDateForDayName, doMealPlanRangesOverlap } from '@/utils/mealPlanDates'
 
 
 
@@ -79,14 +79,26 @@ export async function findExistingMealPlanByWeek(
   weekOf: string
 ) {
   const { supabase, user } = context
-  const { data } = await supabase
+  
+  // Fetch all meal plans for the user (excluding 'generating' status as those are temporary)
+  const { data: allMealPlans } = await supabase
     .from('meal_plans')
-    .select('id')
+    .select('id, week_of')
     .eq('user_id', user.id)
-    .eq('week_of', weekOf)
-    .single()
-
-  return data
+    .neq('status', 'generating')
+  
+  if (!allMealPlans || allMealPlans.length === 0) {
+    return null
+  }
+  
+  // Check if any existing meal plan's date range overlaps with the new weekOf
+  for (const plan of allMealPlans) {
+    if (doMealPlanRangesOverlap(weekOf, plan.week_of)) {
+      return { id: plan.id }
+    }
+  }
+  
+  return null
 }
 
 export async function insertGeneratingMealPlan(

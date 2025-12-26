@@ -810,7 +810,7 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
                 Meal Plan Already Exists
               </h3>
               <p className="text-gray-600 mb-6">
-                You already have a meal plan for this week. Would you like to replace it with a new one?
+                You already have a meal plan that overlaps with the selected date range. Would you like to replace it with a new one?
               </p>
               <div className="flex gap-3 justify-end">
                 <button
