@@ -5,8 +5,88 @@ import { unstable_cache } from 'next/cache'
 import { revalidateTag } from 'next/cache'
 import type { MealPlanWithRecipes } from '@/types/database'
 
+/**
+ * Update meal plan statuses based on current date
+ * - Pending plans within date range -> in-progress
+ * - In-progress plans with past end date -> completed
+ */
+export async function updateMealPlanStatuses(userId: string): Promise<number> {
+  const supabase = await createClient()
+  
+  // Get current date (local timezone, set to midnight for date-only comparison)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  
+  // Fetch all meal plans with status 'pending' or 'in-progress'
+  const { data: mealPlans, error: fetchError } = await supabase
+    .from('meal_plans')
+    .select('id, week_of, status')
+    .eq('user_id', userId)
+    .in('status', ['pending', 'in-progress'])
+  
+  if (fetchError) {
+    console.error('Error fetching meal plans for status update:', fetchError)
+    return 0
+  }
+  
+  if (!mealPlans || mealPlans.length === 0) {
+    return 0
+  }
+  
+  let updatedCount = 0
+  
+  // Process each meal plan
+  for (const plan of mealPlans) {
+    // Parse the date string to avoid timezone issues
+    const [year, month, day] = plan.week_of.split('-').map(Number)
+    const startDate = new Date(year, month - 1, day)
+    
+    // Calculate end date (6 days after start, so 7 days total)
+    const endDate = new Date(startDate)
+    endDate.setDate(startDate.getDate() + 6)
+    
+    // Set dates to midnight for date-only comparison
+    startDate.setHours(0, 0, 0, 0)
+    endDate.setHours(0, 0, 0, 0)
+    
+    let newStatus: 'in-progress' | 'completed' | null = null
+    
+    if (plan.status === 'pending') {
+      // If current date is within range, update to in-progress
+      if (today >= startDate && today <= endDate) {
+        newStatus = 'in-progress'
+      }
+    } else if (plan.status === 'in-progress') {
+      // If end date is in the past, update to completed
+      if (endDate < today) {
+        newStatus = 'completed'
+      }
+    }
+    
+    // Update status if needed
+    if (newStatus) {
+      const { error: updateError } = await supabase
+        .from('meal_plans')
+        .update({ status: newStatus })
+        .eq('id', plan.id)
+        .eq('user_id', userId)
+      
+      if (updateError) {
+        console.error(`Error updating meal plan ${plan.id} status:`, updateError)
+      } else {
+        updatedCount++
+      }
+    }
+  }
+  
+  return updatedCount
+}
+
 export async function getUserDashboardData(userId: string, page: number = 1, pageSize: number = 5) {
   const supabase = await createClient()
+  
+  // Update meal plan statuses before fetching data
+  await updateMealPlanStatuses(userId)
   
   // Calculate offset for pagination
   const offset = (page - 1) * pageSize

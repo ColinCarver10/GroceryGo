@@ -10,7 +10,6 @@ import MealSlotCard from '@/components/MealSlotCard'
 import MealColumn, { mealTypeConfig } from '@/components/MealColumn'
 // import type { PlanAdjustments } from '@/components/AdjustPlanPanel' // COMMENTED OUT: Adjust plan functionality hidden temporarily
 import { getRecipeSteps, organizeMealsByWeek, type WeekDayMeals } from '@/utils/mealPlanUtils';
-import { getEffectiveMealPlanStatus } from '@/utils/mealPlanStatus';
 import { 
   createInstacartOrder,
   replaceRecipe,
@@ -361,16 +360,18 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
     const styles = {
       completed: 'bg-green-100 text-green-800',
       'in-progress': 'bg-blue-100 text-blue-800',
-      pending: 'bg-gray-100 text-gray-800'
+      pending: 'bg-gray-100 text-gray-800',
+      generating: 'bg-yellow-100 text-yellow-800'
     }
     const labels = {
       completed: 'Completed',
       'in-progress': 'In Progress',
-      pending: 'Pending'
+      pending: 'Pending',
+      generating: 'Generating...'
     }
     return (
-      <span className={`rounded-full px-3 py-1 text-xs font-medium ${styles[status as keyof typeof styles]}`}>
-        {labels[status as keyof typeof labels]}
+      <span className={`rounded-full px-3 py-1 text-xs font-medium ${styles[status as keyof typeof styles] || 'bg-gray-100 text-gray-800'}`}>
+        {labels[status as keyof typeof labels] || status}
       </span>
     )
   }
@@ -415,9 +416,6 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
   // Count unique recipes for tab label
   const uniqueRecipeIds = new Set(mealPlan.meal_plan_recipes.map(mpr => mpr.recipe_id))
 
-  // Calculate effective status based on current date
-  const effectiveStatus = getEffectiveMealPlanStatus(mealPlan.week_of, mealPlan.status)
-
   return (
     <div className="gg-bg-page min-h-screen">
       <div className="gg-container">
@@ -445,7 +443,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
                 </p>
               </div>
               <div className="flex items-center gap-3">
-                {getStatusBadge(effectiveStatus)}
+                {getStatusBadge(mealPlan.status)}
                 
                 {/* COMMENTED OUT: Adjust Plan Button - functionality hidden temporarily */}
                 {/* <button

@@ -7,7 +7,6 @@ import RecipeModal from '@/components/RecipeModal'
 import Pagination from '@/components/Pagination'
 import { updateSurveyResponse, getPaginatedMealPlans } from './actions'
 import { questions } from '@/app/schemas/userPreferenceQuestions'
-import { getEffectiveMealPlanStatus } from '@/utils/mealPlanStatus'
 
 interface DashboardClientProps {
   surveyResponse: SurveyResponse | null
@@ -200,7 +199,6 @@ export default function DashboardClient({
                   <>
                     <div className="space-y-4">
                       {mealPlans.map((plan) => {
-                        const effectiveStatus = getEffectiveMealPlanStatus(plan.week_of, plan.status)
                         return (
                       <Link 
                         key={plan.id}
@@ -212,17 +210,17 @@ export default function DashboardClient({
                             <div className="mb-2 flex items-center gap-3">
                               <h3 className="gg-heading-card">Week of {formatWeekOf(plan.week_of)}</h3>
                               <span className={`rounded-full px-3 py-1 text-xs font-medium ${
-                                effectiveStatus === 'completed' 
+                                plan.status === 'completed' 
                                   ? 'bg-green-100 text-green-800'
-                                  : effectiveStatus === 'in-progress'
+                                  : plan.status === 'in-progress'
                                   ? 'bg-blue-100 text-blue-800'
-                                  : effectiveStatus === 'generating'
+                                  : plan.status === 'generating'
                                   ? 'bg-yellow-100 text-yellow-800'
                                   : 'bg-gray-100 text-gray-800'
                               }`}>
-                                {effectiveStatus === 'completed' ? 'Completed' : 
-                                 effectiveStatus === 'in-progress' ? 'In Progress' :
-                                 effectiveStatus === 'generating' ? 'Generating...' : 'Pending'}
+                                {plan.status === 'completed' ? 'Completed' : 
+                                 plan.status === 'in-progress' ? 'In Progress' :
+                                 plan.status === 'generating' ? 'Generating...' : 'Pending'}
                               </span>
                             </div>
                             
