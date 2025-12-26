@@ -12,6 +12,7 @@ import type {
   SurveyResponse
 } from '@/types/database'
 import { getDateForDayName } from '@/utils/mealPlanDates'
+import { REGULAR_MODEL } from '@/config/aiModels'
 
 /**
  * Create a complete meal plan from AI-generated data
@@ -58,7 +59,7 @@ export async function createMealPlanFromAI(
         total_meals: totalMeals,
         survey_snapshot: surveySnapshot,
         generation_method: 'ai-generated',
-        ai_model: 'gpt-4o'
+        ai_model: REGULAR_MODEL
       } as MealPlanInsert)
       .select()
       .single()

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { streamText } from 'ai'
 import { openai } from '@ai-sdk/openai'
 import { mealPlanFromSurveyPrompt } from '@/app/meal-plan-generate/prompts'
+import { REGULAR_MODEL } from '@/config/aiModels'
 import {
   createMealPlanContext,
   fetchUserSurveyResponse,
@@ -217,7 +218,7 @@ Return exactly the schema required above.`
 
 
     const result = streamText({
-      model: openai('gpt-5'),
+      model: openai(REGULAR_MODEL),
       system: `You are an expert meal planning assistant for GroceryGo.
 
       You must build meal plans by MODIFYING the provided recipes to align with user goals, then scheduling them and producing a grocery list.

@@ -8,6 +8,7 @@ import {
   getMealPlanForUser,
   insertGeneratingMealPlan
 } from '@/services/mealPlanService'
+import { REGULAR_MODEL } from '@/config/aiModels'
 
 type MealPlanContextType = Awaited<ReturnType<typeof createMealPlanContext>>
 
@@ -160,7 +161,7 @@ async function internalGenerateMealPlan(
         total_meals: totalMeals,
         survey_snapshot: extendedSnapshot,
         generation_method: 'ai-generated',
-        ai_model: 'gpt-4o'
+        ai_model: REGULAR_MODEL
       }
     )
 

@@ -3,6 +3,7 @@
 import OpenAI from 'openai'
 import type { z } from 'zod'
 import { zodToJsonSchema } from 'zod-to-json-schema'
+import { REGULAR_MODEL } from '@/config/aiModels'
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -35,7 +36,7 @@ export async function callOpenAIStructured<T extends z.ZodTypeAny>(
     }
 
     const completion = await openai.chat.completions.create({
-      model: 'gpt-5.2',
+      model: REGULAR_MODEL,
       messages: [
         {
           role: 'system',
@@ -143,7 +144,7 @@ export async function callOpenAI<T>(
     }
 
     const completion = await openai.chat.completions.create({
-      model: 'gpt-5.2',
+      model: REGULAR_MODEL,
       messages: [
         {
           role: 'system',

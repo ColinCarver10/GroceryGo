@@ -8,6 +8,7 @@ import { generateText } from 'ai'
 import OpenAI from "openai";
 import { z } from 'zod';
 import { getDateForDayName, doMealPlanRangesOverlap } from '@/utils/mealPlanDates'
+import { SMALL_MODEL, EMBEDDED_MODEL } from '@/config/aiModels'
 
 
 
@@ -492,7 +493,7 @@ async function generateEmbeddingFromPrompt(embedPrompt: string): Promise<Number[
 
   try {
     const embeddingResponse = await openai.embeddings.create({
-      model: "text-embedding-3-small",
+      model: EMBEDDED_MODEL,
       input: embedPrompt,
     });
 
@@ -540,7 +541,7 @@ export async function getEmbedPrompts(surveyData: any): Promise<EmbeddingPrompts
 
   try {
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4.1-nano',
+      model: SMALL_MODEL,
       messages: [
         {
           role: 'system',

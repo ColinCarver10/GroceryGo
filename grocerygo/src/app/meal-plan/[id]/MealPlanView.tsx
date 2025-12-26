@@ -4,17 +4,17 @@ import { useState } from 'react'
 import Link from 'next/link'
 import type { MealPlanWithRecipes, Recipe, MealPlanRecipe } from '@/types/database'
 import RecipeModal from '@/components/RecipeModal'
-import AdjustPlanPanel from '@/components/AdjustPlanPanel'
+// import AdjustPlanPanel from '@/components/AdjustPlanPanel' // COMMENTED OUT: Adjust plan functionality hidden temporarily
 import IngredientActions from '@/components/IngredientActions'
 import MealSlotCard from '@/components/MealSlotCard'
 import MealColumn, { mealTypeConfig } from '@/components/MealColumn'
-import type { PlanAdjustments } from '@/components/AdjustPlanPanel'
+// import type { PlanAdjustments } from '@/components/AdjustPlanPanel' // COMMENTED OUT: Adjust plan functionality hidden temporarily
 import { getRecipeSteps, organizeMealsByWeek, type WeekDayMeals } from '@/utils/mealPlanUtils';
 import { getEffectiveMealPlanStatus } from '@/utils/mealPlanStatus';
 import { 
   createInstacartOrder,
   replaceRecipe,
-  regenerateWithAdjustments,
+  // regenerateWithAdjustments, // COMMENTED OUT: Adjust plan functionality hidden temporarily
   saveCookingNote,
   // scaleRecipeServings, // COMMENTED OUT: Scale servings functionality
   // swapIngredient, // COMMENTED OUT: Swap ingredient functionality
@@ -37,8 +37,8 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
   const [isOrderingInstacart, setIsOrderingInstacart] = useState(false)
   const [instacartError, setInstacartError] = useState<string | null>(null)
   
-  // New state for meal plan adjustments
-  const [isAdjustPanelOpen, setIsAdjustPanelOpen] = useState(false)
+  // COMMENTED OUT: Adjust plan functionality hidden temporarily
+  // const [isAdjustPanelOpen, setIsAdjustPanelOpen] = useState(false)
   const [favoriteRecipes, setFavoriteRecipes] = useState<Set<string>>(new Set(savedRecipeIds))
   const [isProcessing, setIsProcessing] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -134,25 +134,26 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
     }
   }
 
-  const handleApplyAdjustments = async (adjustments: PlanAdjustments) => {
-    setIsProcessing(true)
-    setActionError(null)
-    
-    try {
-      const result = await regenerateWithAdjustments(mealPlan.id, adjustments)
-      
-      if (result.success) {
-        setIsAdjustPanelOpen(false)
-        router.refresh()
-      } else {
-        setActionError(result.error || 'Failed to apply adjustments')
-      }
-    } catch (error) {
-      setActionError('An unexpected error occurred' + error)
-    } finally {
-      setIsProcessing(false)
-    }
-  }
+  // COMMENTED OUT: Adjust plan functionality hidden temporarily
+  // const handleApplyAdjustments = async (adjustments: PlanAdjustments) => {
+  //   setIsProcessing(true)
+  //   setActionError(null)
+  //   
+  //   try {
+  //     const result = await regenerateWithAdjustments(mealPlan.id, adjustments)
+  //     
+  //     if (result.success) {
+  //       setIsAdjustPanelOpen(false)
+  //       router.refresh()
+  //     } else {
+  //       setActionError(result.error || 'Failed to apply adjustments')
+  //     }
+  //   } catch (error) {
+  //     setActionError('An unexpected error occurred' + error)
+  //   } finally {
+  //     setIsProcessing(false)
+  //   }
+  // }
 
   const handleExcludeIngredient = async (itemId: string, itemName: string) => {
     setIsProcessing(true)
@@ -434,8 +435,8 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
               <div className="flex items-center gap-3">
                 {getStatusBadge(effectiveStatus)}
                 
-                {/* Adjust Plan Button */}
-                <button
+                {/* COMMENTED OUT: Adjust Plan Button - functionality hidden temporarily */}
+                {/* <button
                   onClick={() => setIsAdjustPanelOpen(true)}
                   className="gg-btn-outline flex items-center gap-2"
                 >
@@ -443,7 +444,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
                   </svg>
                   Adjust Plan
-                </button>
+                </button> */}
               </div>
             </div>
           </div>
@@ -815,13 +816,13 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
         />
       )}
 
-      {/* Adjust Plan Panel */}
-      <AdjustPlanPanel
+      {/* COMMENTED OUT: Adjust Plan Panel - functionality hidden temporarily */}
+      {/* <AdjustPlanPanel
         isOpen={isAdjustPanelOpen}
         onClose={() => setIsAdjustPanelOpen(false)}
         onApplyAdjustments={handleApplyAdjustments}
         appliedAdjustments={mealPlan.survey_snapshot?.applied_adjustments || []}
-      />
+      /> */}
 
       {/* Action Error Toast */}
       {actionError && (
