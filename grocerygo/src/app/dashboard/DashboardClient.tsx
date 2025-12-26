@@ -2,9 +2,11 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import type { MealPlanWithRecipes, Recipe, SurveyResponse } from '@/types/database'
 import RecipeModal from '@/components/RecipeModal'
 import Pagination from '@/components/Pagination'
+import GeneratingMealPlanModal from '@/components/GeneratingMealPlanModal'
 import { updateSurveyResponse, getPaginatedMealPlans } from './actions'
 import { questions } from '@/app/schemas/userPreferenceQuestions'
 
@@ -37,6 +39,7 @@ export default function DashboardClient({
   currentPage: initialPage,
   pageSize 
 }: DashboardClientProps) {
+  const router = useRouter()
   const [showSurveyDropdown, setShowSurveyDropdown] = useState(false)
   const [showSavedRecipes, setShowSavedRecipes] = useState(false)
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null)
@@ -49,6 +52,9 @@ export default function DashboardClient({
   const [totalMealPlans, setTotalMealPlans] = useState(initialTotal)
   const [currentPage, setCurrentPage] = useState(initialPage)
   const [isLoadingPage, setIsLoadingPage] = useState(false)
+  
+  // Generating modal state
+  const [generatingModalPlanId, setGeneratingModalPlanId] = useState<string | null>(null)
 
   // Toggle preferences dropdown and persist state
   const toggleSurveyDropdown = () => {
@@ -162,6 +168,24 @@ export default function DashboardClient({
     }
   }
 
+  const handleMealPlanClick = (e: React.MouseEvent, plan: MealPlanWithRecipes) => {
+    // If meal plan is generating, show modal instead of navigating
+    if (plan.status === 'generating') {
+      e.preventDefault()
+      setGeneratingModalPlanId(plan.id)
+    }
+    // Otherwise, let the Link handle navigation normally
+  }
+
+  const handleGenerationComplete = () => {
+    // Refresh the page to get updated meal plans
+    router.refresh()
+  }
+
+  const handleCloseGeneratingModal = () => {
+    setGeneratingModalPlanId(null)
+  }
+
   return (
     <div className="gg-bg-page min-h-screen">
       <div className="gg-container">
@@ -202,7 +226,8 @@ export default function DashboardClient({
                         return (
                       <Link 
                         key={plan.id}
-                        href={`/meal-plan/${plan.id}`}
+                        href={plan.status === 'generating' ? '#' : `/meal-plan/${plan.id}`}
+                        onClick={(e) => handleMealPlanClick(e, plan)}
                         className="block group rounded-xl border-2 border-gray-200 bg-white p-6 transition-all hover:border-[var(--gg-primary)] hover:shadow-md"
                       >
                         <div className="flex items-start justify-between">
@@ -693,6 +718,16 @@ export default function DashboardClient({
           recipe={selectedRecipe}
           isOpen={!!selectedRecipe}
           onClose={() => setSelectedRecipe(null)}
+        />
+      )}
+
+      {/* Generating Meal Plan Modal */}
+      {generatingModalPlanId && (
+        <GeneratingMealPlanModal
+          mealPlanId={generatingModalPlanId}
+          isOpen={!!generatingModalPlanId}
+          onClose={handleCloseGeneratingModal}
+          onGenerationComplete={handleGenerationComplete}
         />
       )}
     </div>

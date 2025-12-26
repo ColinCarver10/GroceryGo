@@ -6,6 +6,27 @@ import { revalidateTag } from 'next/cache'
 import type { MealPlanWithRecipes } from '@/types/database'
 
 /**
+ * Check if recipes already exist for a meal plan
+ * Returns true if meal_plan_recipes exist, indicating generation is complete
+ */
+export async function checkMealPlanRecipesExist(mealPlanId: string): Promise<boolean> {
+  const supabase = await createClient()
+  
+  const { data, error } = await supabase
+    .from('meal_plan_recipes')
+    .select('id')
+    .eq('meal_plan_id', mealPlanId)
+    .limit(1)
+  
+  if (error) {
+    console.error('Error checking meal plan recipes:', error)
+    return false
+  }
+  
+  return (data?.length ?? 0) > 0
+}
+
+/**
  * Update meal plan statuses based on current date
  * - Pending plans within date range -> in-progress
  * - In-progress plans with past end date -> completed
