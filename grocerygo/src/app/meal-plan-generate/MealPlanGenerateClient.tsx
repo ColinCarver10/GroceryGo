@@ -46,6 +46,7 @@ interface MealSlot {
   day: string
   mealType: MealType
   id: string
+  mealNumber: number
 }
 
 interface MealGroup {
@@ -178,6 +179,8 @@ function MealChip({ mealSlot, isDragging }: { mealSlot: MealSlot; isDragging?: b
     opacity: isDragging ? 0.5 : 1,
   }
 
+  const mealTypeLabel = mealSlot.mealType.charAt(0).toUpperCase() + mealSlot.mealType.slice(1)
+
   return (
     <div
       ref={setNodeRef}
@@ -189,8 +192,7 @@ function MealChip({ mealSlot, isDragging }: { mealSlot: MealSlot; isDragging?: b
       }`}
     >
       <div className="flex items-center gap-2">
-        <span className="font-semibold text-gray-900">{getDayShortName(mealSlot.day)}</span>
-        <span className="text-sm text-gray-600 capitalize">{mealSlot.mealType}</span>
+        <span className="font-semibold text-gray-900 capitalize">{mealTypeLabel} #{mealSlot.mealNumber}</span>
       </div>
     </div>
   )
@@ -277,24 +279,27 @@ function RecipeBox({
       <div className="min-h-[60px]">
         {groupMealSlots.length > 0 ? (
           <div className="flex flex-wrap gap-2">
-            {groupMealSlots.map(slot => (
-              <div
-                key={slot.id}
-                className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm flex items-center gap-2"
-              >
-                <span className="font-medium text-gray-900">{getDayShortName(slot.day)}</span>
-                <span className="text-gray-600 capitalize">{slot.mealType}</span>
-                <button
-                  onClick={() => onRemoveMeal(group.id, slot.id)}
-                  className="ml-1 text-gray-400 hover:text-red-600 transition-colors"
-                  aria-label="Remove meal"
+            {groupMealSlots.map(slot => {
+              const mealTypeLabel = slot.mealType.charAt(0).toUpperCase() + slot.mealType.slice(1)
+              
+              return (
+                <div
+                  key={slot.id}
+                  className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm flex items-center gap-2"
                 >
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            ))}
+                  <span className="font-medium text-gray-900 capitalize">{mealTypeLabel} #{slot.mealNumber}</span>
+                  <button
+                    onClick={() => onRemoveMeal(group.id, slot.id)}
+                    className="ml-1 text-gray-400 hover:text-red-600 transition-colors"
+                    aria-label="Remove meal"
+                  >
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              )
+            })}
           </div>
         ) : (
           <p className="text-sm text-gray-400 italic">Drag meals here</p>
@@ -377,12 +382,23 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
     [selections, weekDays]
   )
 
-  // Convert selectedSlots to MealSlot format with IDs
+  // Convert selectedSlots to MealSlot format with IDs and permanent meal numbers
   const mealSlots = useMemo<MealSlot[]>(() => {
-    return selectedSlots.map((slot, index) => ({
-      ...slot,
-      id: `${slot.day}-${slot.mealType}-${index}`
-    }))
+    // Count meals by type to assign permanent numbers
+    const mealCounts: Record<MealType, number> = {
+      breakfast: 0,
+      lunch: 0,
+      dinner: 0
+    }
+
+    return selectedSlots.map((slot) => {
+      mealCounts[slot.mealType] += 1
+      return {
+        ...slot,
+        id: `${slot.day}-${slot.mealType}-${mealCounts[slot.mealType]}`,
+        mealNumber: mealCounts[slot.mealType]
+      }
+    })
   }, [selectedSlots])
 
   // Meal groups state
@@ -1355,14 +1371,17 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
         {activeId ? (
           (() => {
             const mealSlot = mealSlots.find(ms => ms.id === activeId)
-            return mealSlot ? (
+            if (!mealSlot) return null
+            
+            const mealTypeLabel = mealSlot.mealType.charAt(0).toUpperCase() + mealSlot.mealType.slice(1)
+            
+            return (
               <div className="px-4 py-3 bg-white border-2 border-[var(--gg-primary)] rounded-lg shadow-lg opacity-90">
                 <div className="flex items-center gap-2">
-                  <span className="font-semibold text-gray-900">{getDayShortName(mealSlot.day)}</span>
-                  <span className="text-sm text-gray-600 capitalize">{mealSlot.mealType}</span>
+                  <span className="font-semibold text-gray-900 capitalize">{mealTypeLabel} #{mealSlot.mealNumber}</span>
                 </div>
               </div>
-            ) : null
+            )
           })()
         ) : null}
       </DragOverlay>
