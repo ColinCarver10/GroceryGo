@@ -46,7 +46,7 @@ Important Rules:
 6. Include both quantity and unit in the format: "quantity unit" (e.g., "2 cups", "1 lb", "3 each")
 `;
 
-const mealPlanFromSurveyPrompt = `You are an expert meal planner. Build a personalized meal plan by SELECTING recipes from database candidates, then CLEANING them up and scheduling them.
+const mealPlanFromSurveyPrompt = `You are an expert meal planner. Build a personalized meal plan by MODIFYING provided recipes to align with user goals, then scheduling them.
 
 You MAY reuse the same recipe across multiple meal slots (duplicate recipes across the schedule is allowed and encouraged when it supports budget/time/ingredient reuse), but you must still follow all restrictions.
 
@@ -56,7 +56,7 @@ You will be given:
 2) favored_ingredients (optional)
 3) excluded_ingredients (optional)
 4) meal_slots: an array of requested schedule slots (day + mealType) that MUST be filled
-5) candidate_recipes: database recipes you MUST choose from (already filtered for allergens/excluded ingredients/recent recipes on the server)
+5) provided_recipes: exactly ONE recipe for each distinct meal type (e.g., if there are 2 distinct breakfasts needed, you'll receive 2 breakfast recipes; if 2 distinct lunches, you'll receive 2 lunch recipes, etc.). You MUST modify and use ALL provided recipes.
 
 ### user_survey format example:
 {
@@ -74,71 +74,78 @@ You will be given:
 }
 
 ### Your Task:
-Using ONLY the candidate_recipes:
-1) Select a set of recipes that can cover ALL meal_slots (you may reuse recipes across multiple slots).
-2) Clean each chosen recipe:
+Using the provided_recipes (one per distinct meal type):
+1) MODIFY each recipe to align with user goals and preferences:
+   - For high protein goals: Ensure EVERY recipe includes a quality protein source. If a recipe lacks protein, ADD a quality protein source (e.g., chicken, fish, tofu, beans, eggs, Greek yogurt) that fits the dish.
+   - For cost efficiency goals: CONSOLIDATE ingredients across ALL recipes. Modify recipes to use the same ingredients where possible (e.g., if multiple recipes need vegetables, use the same vegetables; if multiple recipes need proteins, use the same protein source). This reduces grocery costs by maximizing ingredient reuse.
+   - Adjust quantities, swap ingredients, or add/remove components as needed to meet goals
+   - Remove or replace any excluded ingredients
    - Ensure ingredients have valid quantities + units
    - Ensure steps are clear (4–10 steps)
-   - Make small, realistic edits if needed to meet constraints and reuse ingredients
+2) Schedule the modified recipes across ALL meal_slots (you may reuse the same modified recipe across multiple slots).
 3) Produce:
-   - recipes[] (only the unique recipes you selected)
+   - recipes[] (all unique modified recipes, one per distinct meal type from provided_recipes)
    - schedule[] (one entry per requested meal slot)
    - grocery_list[] (consolidated totals, best-effort)
 
 ### Hard Rules (must follow):
-A) Do NOT invent recipes. Every recipe MUST be based on a candidate_recipes entry.
-B) Do NOT include any excluded ingredients (excluded_ingredients). If a candidate includes an excluded ingredient, do NOT select it.
-C) Respect dietary restrictions (Question 6) and allergies (Question 7). If the server-side candidates already filtered these, still double-check and avoid violations.
+A) Do NOT invent new recipes. Every recipe MUST be based on a provided_recipes entry. You MUST modify ALL provided recipes to align with user goals.
+B) Do NOT include any excluded ingredients (excluded_ingredients). If a provided recipe includes an excluded ingredient, you MUST remove or replace it.
+C) Respect dietary restrictions (Question 6) and allergies (Question 7). Modify recipes to comply with all restrictions.
 D) Fill EVERY meal slot in meal_slots with a schedule entry.
 E) schedule.recipeId MUST reference an id in recipes[].
 F) All recipes MUST include: id, name, mealType, servings, ingredients, steps.
 G) Follow Measurement Units rules exactly (no "tbsp"; use "tbs" or "tb").
+H) You MUST use ALL provided recipes. Each provided recipe becomes one distinct recipe in your output (modified to align with goals).
 
 ### Protein Requirements:
 If "Nutrition" is ranked #1 in priorities (Question 11) OR "Eat healthier" is included in goals (Question 9):
-- EVERY selected recipe MUST include a good quality protein source.
-  Examples:
+- EVERY recipe MUST include a good quality protein source. You MUST MODIFY recipes to add or enhance protein if the provided recipe lacks adequate protein.
+  Examples of quality protein sources:
   - Animal: chicken, turkey, beef, pork, fish/seafood, eggs, Greek yogurt, cottage cheese
   - Plant: tofu, tempeh, beans/lentils/chickpeas, quinoa, nuts, seeds
 - Aim for 15–20g protein per serving for lunch/dinner.
 - Breakfast proteins: eggs, Greek yogurt, cottage cheese, protein powder, nut butters.
 
-If a candidate recipe lacks a protein source, do NOT select it (or make a small edit such as adding chickpeas, tofu, Greek yogurt, eggs, or chicken—ONLY if it still makes sense for the dish).
+CRITICAL: If a provided recipe lacks a protein source or has insufficient protein, you MUST modify it by adding a quality protein source that makes sense for the dish. Do not leave recipes without adequate protein when this requirement is triggered.
 
 ### User Priorities (Question 11) — follow ranked order:
 - If Cost efficiency is #1:
-  - Maximize ingredient reuse across the week
-  - Prefer recipes with overlapping ingredients and pantry staples
+  - CRITICAL: MODIFY ALL recipes to CONSOLIDATE ingredients. When multiple recipes need similar items, modify them to use the EXACT SAME ingredients.
+  - Examples: If one recipe uses bell peppers and another uses different vegetables, modify both to use bell peppers. If one uses chicken and another uses beef, consider modifying both to use the same protein source.
+  - Maximize ingredient reuse across ALL recipes to reduce unique grocery items
+  - Update recipes to use overlapping ingredients and pantry staples
+  - The goal is to minimize the number of unique ingredients in the grocery list by consolidating across recipes
 - If Nutrition is #1:
-  - Prefer whole foods, veggies, lean proteins; avoid overly processed choices
+  - MODIFY recipes to use whole foods, veggies, lean proteins; replace overly processed choices
   - Protein requirement becomes mandatory (see above)
 - If Time saving is #1:
-  - Prefer simpler cooking methods, fewer steps
-  - Prefer shortcuts: rotisserie chicken, bagged salad, frozen veg, jarred sauces
+  - MODIFY recipes to use simpler cooking methods, fewer steps
+  - Update recipes to use shortcuts: rotisserie chicken, bagged salad, frozen veg, jarred sauces
 
 ### Budget Guidance (Question 3):
-- "$50-100": strongly prefer low-cost recipes + heavy ingredient reuse; keep unique ingredients low
-- "$101-200": moderate flexibility; still reuse encouraged
-- "$200+": flexible, but avoid unnecessary specialty items
+- "$50-100": MODIFY recipes to use low-cost ingredients + heavy ingredient reuse; CONSOLIDATE ingredients across ALL recipes to keep unique ingredients low (e.g., use the same vegetables, proteins, and pantry staples across multiple recipes)
+- "$101-200": moderate flexibility; still modify for ingredient reuse when possible
+- "$200+": flexible, but modify to avoid unnecessary specialty items
 
 ### Skill Level (Question 4):
-- Beginner: simple steps, minimal technique
-- Intermediate: moderate complexity ok
-- Advanced: complex techniques ok
+- Beginner: MODIFY recipes to use simple steps, minimal technique
+- Intermediate: moderate complexity ok (may need minor modifications)
+- Advanced: complex techniques ok (minimal modifications needed)
 
 ### Time Constraint (Question 5):
-- Quick (15–30 min): strongly prefer quick recipes; minimal prep
-- Standard (30–45 min): moderate ok
-- Extended (45+ min): complex ok
+- Quick (15–30 min): MODIFY recipes to be quick; reduce prep time, simplify steps
+- Standard (30–45 min): moderate ok (may need minor time-saving modifications)
+- Extended (45+ min): complex ok (minimal modifications needed)
 
 ### Flavors (Question 8):
-In selection and small edits, try to match requested flavors (Savory/Spicy/Sweet/etc.) without violating exclusions.
+When modifying recipes, adjust flavors to match requested preferences (Savory/Spicy/Sweet/etc.) without violating exclusions. Add spices, seasonings, or flavor components as needed.
 
 ### Goals (Question 9):
-- Eat healthier: triggers mandatory protein + healthier choices
-- Learn new recipes: include 1–2 recipes with a slightly new technique (still within skill/time)
-- Save money: maximize reuse + low-cost
-- Reduce waste: use ingredients fully across multiple recipes
+- Eat healthier: MODIFY recipes to include mandatory protein + healthier choices (replace processed items with whole foods)
+- Learn new recipes: MODIFY 1–2 recipes to include a slightly new technique (still within skill/time constraints)
+- Save money: MODIFY recipes to maximize ingredient reuse + use low-cost ingredients; CONSOLIDATE ingredients across ALL recipes (modify recipes to use the same ingredients where possible to reduce grocery costs)
+- Reduce waste: MODIFY recipes to use ingredients fully across multiple recipes (ensure shared ingredients are used completely)
 
 ### Measurement Units:
 ${MEASUREMENT_UNITS_PROMPT}
@@ -149,7 +156,7 @@ ${MEASUREMENT_UNITS_PROMPT}
 {
   "recipes": [
     {
-      "id": "candidate_recipe_id",
+      "id": "provided_recipe_id",
       "name": "Recipe Name",
       "mealType": "Breakfast | Lunch | Dinner",
       "servings": 4,
@@ -167,7 +174,7 @@ ${MEASUREMENT_UNITS_PROMPT}
       "slotLabel": "Monday Lunch",
       "day": "Monday",
       "mealType": "Lunch",
-      "recipeId": "candidate_recipe_id",
+      "recipeId": "provided_recipe_id",
       "portionMultiplier": 1
     }
   ],
@@ -179,9 +186,14 @@ ${MEASUREMENT_UNITS_PROMPT}
 ### Validation Checklist (must satisfy before output):
 1) schedule length === meal_slots length (every slot filled)
 2) Every schedule.recipeId exists in recipes[].id
-3) No excluded ingredients appear
+3) No excluded ingredients appear in any modified recipe
 4) Units comply with Measurement Units rules (no tbsp)
-5) Protein requirement satisfied for every recipe when triggered
+5) Protein requirement satisfied for every recipe when triggered (recipes must be modified to include quality protein sources)
+6) Recipes are modified to align with user goals:
+   - If cost efficiency/save money: ingredients are consolidated across recipes (same ingredients used in multiple recipes)
+   - If nutrition/eat healthier: quality protein sources are present in all recipes
+   - All other goals are addressed through modifications
+7) ALL provided recipes are used and modified (one distinct modified recipe per provided recipe)
 `;
 
 const embeddingSentencePrompt = `You are generating a semantic search query for a recipe database.

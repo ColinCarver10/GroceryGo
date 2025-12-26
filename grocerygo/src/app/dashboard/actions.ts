@@ -39,7 +39,7 @@ export async function getUserDashboardData(userId: string, page: number = 1, pag
       *,
       meal_plan_recipes (
         *,
-        recipe:full_recipes_table (*)
+        updated_recipe:recipes (*)
       ),
       grocery_items (*)
     `)
@@ -50,6 +50,36 @@ export async function getUserDashboardData(userId: string, page: number = 1, pag
   if (plansError) {
     console.error('Error fetching meal plans:', plansError)
   }
+
+  // Fetch parent recipes separately for meal_plan_recipes that don't have updated_recipe_id
+  const mealPlanRecipes = (mealPlans || []).flatMap((plan: any) => plan.meal_plan_recipes || [])
+  const parentRecipeIds = mealPlanRecipes
+    .filter((mpr: any) => !mpr.updated_recipe_id && mpr.recipe_id)
+    .map((mpr: any) => mpr.recipe_id)
+    .filter((id: any, index: number, arr: any[]) => arr.indexOf(id) === index) // unique
+
+  let parentRecipesMap = new Map()
+  if (parentRecipeIds.length > 0) {
+    const { data: parentRecipes } = await supabase
+      .from('full_recipes_table')
+      .select('recipe_id, name, nutrition, steps, description, ingredients, meal_type')
+      .in('recipe_id', parentRecipeIds)
+
+    if (parentRecipes) {
+      parentRecipes.forEach((pr: any) => {
+        parentRecipesMap.set(pr.recipe_id, pr)
+      })
+    }
+  }
+
+  // Transform data to use updated_recipe if available, fallback to parent_recipe
+  const transformedMealPlans = (mealPlans || []).map((plan: any) => ({
+    ...plan,
+    meal_plan_recipes: (plan.meal_plan_recipes || []).map((mpr: any) => ({
+      ...mpr,
+      recipe: mpr.updated_recipe || parentRecipesMap.get(mpr.recipe_id) || null
+    }))
+  }))
 
   // Fetch saved recipes with full recipe details
   const { data: savedRecipes, error: savedError } = await supabase
@@ -85,7 +115,7 @@ export async function getUserDashboardData(userId: string, page: number = 1, pag
   return {
     surveyResponse: userData?.survey_response || null,
     email: userData?.email || '',
-    mealPlans: (mealPlans as MealPlanWithRecipes[]) || [],
+    mealPlans: (transformedMealPlans as MealPlanWithRecipes[]) || [],
     savedRecipes: savedRecipes || [],
     totalMealPlans: totalCount || 0,
     totalMealsPlanned,

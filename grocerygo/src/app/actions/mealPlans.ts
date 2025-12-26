@@ -207,7 +207,7 @@ export async function getUserMealPlans(userId: string): Promise<MealPlanWithReci
       *,
       meal_plan_recipes (
         *,
-        recipe:full_recipes_table (*)
+        updated_recipe:recipes (*)
       ),
       grocery_items (*)
     `)
@@ -219,7 +219,37 @@ export async function getUserMealPlans(userId: string): Promise<MealPlanWithReci
     return []
   }
 
-  return data as MealPlanWithRecipes[]
+  // Fetch parent recipes separately for meal_plan_recipes that don't have updated_recipe_id
+  const mealPlanRecipes = (data || []).flatMap((plan: any) => plan.meal_plan_recipes || [])
+  const parentRecipeIds = mealPlanRecipes
+    .filter((mpr: any) => !mpr.updated_recipe_id && mpr.recipe_id)
+    .map((mpr: any) => mpr.recipe_id)
+    .filter((id: any, index: number, arr: any[]) => arr.indexOf(id) === index) // unique
+
+  let parentRecipesMap = new Map()
+  if (parentRecipeIds.length > 0) {
+    const { data: parentRecipes } = await supabase
+      .from('full_recipes_table')
+      .select('recipe_id, name, nutrition, steps, description, ingredients, meal_type')
+      .in('recipe_id', parentRecipeIds)
+
+    if (parentRecipes) {
+      parentRecipes.forEach((pr: any) => {
+        parentRecipesMap.set(pr.recipe_id, pr)
+      })
+    }
+  }
+
+  // Transform data to use updated_recipe if available, fallback to parent_recipe
+  const transformedData = (data || []).map((plan: any) => ({
+    ...plan,
+    meal_plan_recipes: (plan.meal_plan_recipes || []).map((mpr: any) => ({
+      ...mpr,
+      recipe: mpr.updated_recipe || parentRecipesMap.get(mpr.recipe_id) || null
+    }))
+  }))
+
+  return transformedData as MealPlanWithRecipes[]
 }
 
 /**
@@ -234,7 +264,7 @@ export async function getMealPlanById(mealPlanId: string, userId: string) {
       *,
       meal_plan_recipes (
         *,
-        recipe:full_recipes_table (*)
+        updated_recipe:recipes (*)
       ),
       grocery_items (*)
     `)
@@ -247,7 +277,37 @@ export async function getMealPlanById(mealPlanId: string, userId: string) {
     return null
   }
 
-  return data as MealPlanWithRecipes
+  // Fetch parent recipes separately for meal_plan_recipes that don't have updated_recipe_id
+  const mealPlanRecipes = data.meal_plan_recipes || []
+  const parentRecipeIds = mealPlanRecipes
+    .filter((mpr: any) => !mpr.updated_recipe_id && mpr.recipe_id)
+    .map((mpr: any) => mpr.recipe_id)
+    .filter((id: any, index: number, arr: any[]) => arr.indexOf(id) === index) // unique
+
+  let parentRecipesMap = new Map()
+  if (parentRecipeIds.length > 0) {
+    const { data: parentRecipes } = await supabase
+      .from('full_recipes_table')
+      .select('recipe_id, name, nutrition, steps, description, ingredients, meal_type')
+      .in('recipe_id', parentRecipeIds)
+
+    if (parentRecipes) {
+      parentRecipes.forEach((pr: any) => {
+        parentRecipesMap.set(pr.recipe_id, pr)
+      })
+    }
+  }
+
+  // Transform data to use updated_recipe if available, fallback to parent_recipe
+  const transformedData = {
+    ...data,
+    meal_plan_recipes: mealPlanRecipes.map((mpr: any) => ({
+      ...mpr,
+      recipe: mpr.updated_recipe || parentRecipesMap.get(mpr.recipe_id) || null
+    }))
+  }
+
+  return transformedData as MealPlanWithRecipes
 }
 
 /**

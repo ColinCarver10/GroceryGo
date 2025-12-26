@@ -210,6 +210,69 @@ export async function persistGeneratedMealPlan(
     }
   }
 
+  // Insert modified recipes into recipes table
+  const modifiedRecipeMap = new Map<string, string>() // parent_id (int4) -> modified_uuid
+  const recipeErrors: string[] = []
+
+  for (const recipe of recipes) {
+    if (!recipe.id) {
+      recipeErrors.push(`${recipe.name}: missing recipe id`)
+      continue
+    }
+
+    // Map RecipeInput to RecipeInsert format
+    const recipeInsert: RecipeInsert = {
+      name: recipe.name,
+      ingredients: recipe.ingredients.map(ing => ({
+        item: ing.item,
+        quantity: ing.quantity,
+        unit: ing.quantity.split(/\s+/).slice(1).join(' ') || undefined
+      })),
+      steps: recipe.steps,
+      servings: recipe.servings,
+      meal_type: recipe.mealType ? recipe.mealType.toLowerCase() : undefined,
+      description: recipe.description,
+      prep_time_minutes: recipe.prep_time_minutes,
+      cook_time_minutes: recipe.cook_time_minutes,
+      difficulty: recipe.difficulty,
+      cuisine_type: recipe.cuisine_type,
+      dietary_tags: recipe.dietary_tags,
+      flavor_profile: recipe.flavor_profile,
+      estimated_cost: recipe.estimated_cost,
+      nutrition_info: recipe.nutrition_info && Array.isArray(recipe.nutrition_info) && recipe.nutrition_info.length >= 4
+        ? {
+            calories: recipe.nutrition_info[0] || undefined,
+            protein: recipe.nutrition_info[1] || undefined,
+            carbs: recipe.nutrition_info[2] || undefined,
+            fat: recipe.nutrition_info[3] || undefined
+          }
+        : undefined
+    }
+
+    // Insert modified recipe into recipes table
+    const { data: newRecipe, error: recipeError } = await supabase
+      .from('recipes')
+      .insert(recipeInsert)
+      .select('id')
+      .single()
+
+    if (recipeError) {
+      recipeErrors.push(`${recipe.name}: ${recipeError.message}`)
+      continue
+    }
+
+    if (newRecipe) {
+      // Map parent recipe_id (int4) to new recipe UUID
+      modifiedRecipeMap.set(recipe.id, newRecipe.id)
+    }
+  }
+
+  if (recipeErrors.length > 0 && modifiedRecipeMap.size === 0) {
+    throw new Error(
+      `Failed to create any modified recipes. Errors: ${recipeErrors.join('; ')}`
+    )
+  }
+
   const typedInsertedRecipes = existingRecipes as Array<{ recipe_id: string; name: string }>
 
   const mealPlanRecipes: MealPlanRecipeInsert[] =
@@ -229,9 +292,14 @@ export async function persistGeneratedMealPlan(
             }
           }
 
+          // Get parent recipe_id (int4) and modified recipe UUID
+          const parentRecipeId = parseInt(slot.recipeId)
+          const updatedRecipeId = modifiedRecipeMap.get(slot.recipeId)
+
           acc.push({
             meal_plan_id: mealPlan.id,
-            recipe_id: parseInt(slot.recipeId),
+            recipe_id: parentRecipeId,
+            updated_recipe_id: updatedRecipeId,
             planned_for_date: getDateForDayName(mealPlan.week_of, slot.day),
             meal_type: normalizeMealType(slot.mealType),
             portion_multiplier: portionMultiplier,
@@ -240,12 +308,16 @@ export async function persistGeneratedMealPlan(
 
           return acc
         }, [])
-      : typedInsertedRecipes.map((recipe, index) => ({
-          meal_plan_id: mealPlan.id,
-          recipe_id: parseInt(recipe.recipe_id),
-          planned_for_date: getDateForMealIndex(mealPlan.week_of, index),
-          portion_multiplier: 1
-        }))
+      : typedInsertedRecipes.map((recipe, index) => {
+          const updatedRecipeId = modifiedRecipeMap.get(recipe.recipe_id)
+          return {
+            meal_plan_id: mealPlan.id,
+            recipe_id: parseInt(recipe.recipe_id),
+            updated_recipe_id: updatedRecipeId,
+            planned_for_date: getDateForMealIndex(mealPlan.week_of, index),
+            portion_multiplier: 1
+          }
+        })
 
   if (mealPlanRecipes.length) {
     const { error: linkError } = await supabase

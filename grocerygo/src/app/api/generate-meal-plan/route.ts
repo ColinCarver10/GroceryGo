@@ -110,17 +110,15 @@ export async function POST(request: NextRequest) {
         ingredientPreferencesSection += `**Excluded Ingredients (NEVER use these):** ${excludedIngredients.join(', ')}\n`
       }
     }
-    
-    const EXCESS_MULTIPLIER = 3;
-    
+      
     // Generate all three embedding prompts in a single LLM call
     const embedPrompts = await getEmbedPrompts(surveyData);
     
     // Find breakfast, lunch, and dinner recipes using the generated prompts
     const [breakfastIDs, lunchIDs, dinnerIDs] = await Promise.all([
-      fetchCandidateRecipesForMealType(embedPrompts.breakfast, context, 'breakfast', distinctCounts.breakfast * EXCESS_MULTIPLIER),
-      fetchCandidateRecipesForMealType(embedPrompts.lunch, context, 'lunch/dinner', distinctCounts.lunch * EXCESS_MULTIPLIER),
-      fetchCandidateRecipesForMealType(embedPrompts.dinner, context, 'lunch/dinner', distinctCounts.dinner * EXCESS_MULTIPLIER)
+      fetchCandidateRecipesForMealType(embedPrompts.breakfast, context, 'breakfast', distinctCounts.breakfast),
+      fetchCandidateRecipesForMealType(embedPrompts.lunch, context, 'lunch/dinner', distinctCounts.lunch),
+      fetchCandidateRecipesForMealType(embedPrompts.dinner, context, 'lunch/dinner', distinctCounts.dinner)
     ]);
 
     // Fetch full recipe details for each meal type
@@ -136,42 +134,43 @@ export async function POST(request: NextRequest) {
 ${JSON.stringify(surveyData, null, 2)}
 ${ingredientPreferencesSection}
 
-### candidate_recipes:
-Breakfast recipes:
+### provided_recipes:
+You have been provided with exactly ONE recipe for each distinct meal type needed:
+- ${distinctCounts.breakfast} Breakfast recipe(s):
 ${JSON.stringify(breakfastRecipes, null, 2)}
-Lunch/Dinner recipes:
+- ${distinctCounts.lunch} Lunch recipe(s):
 ${JSON.stringify(lunchRecipes, null, 2)}
-Dinner recipes:
+- ${distinctCounts.dinner} Dinner recipe(s):
 ${JSON.stringify(dinnerRecipes, null, 2)}
 
 ### Meal Slots (authoritative: you MUST fill every one exactly once):
 ${slotListText}
 
-## 🎯 SELECTION + SCHEDULING REQUIREMENTS (MANDATORY)
+## 🎯 MODIFICATION + SCHEDULING REQUIREMENTS (MANDATORY)
 
 ### Counts
 - Total schedule slots: ${resolvedSlots.length}
-- Total unique recipes to SELECT: ${
+- Total unique recipes to MODIFY and use: ${
   distinctCounts.breakfast + distinctCounts.lunch + distinctCounts.dinner
 }
 - Total meals (schedule entries): ${totalMeals}
 
-### Unique recipe targets (per mealType)
-You MUST SELECT exactly:
-- ${distinctCounts.breakfast} unique Breakfast recipe(s)
-- ${distinctCounts.lunch} unique Lunch recipe(s)
-- ${distinctCounts.dinner} unique Dinner recipe(s)
+### Recipe modification targets (per mealType)
+You MUST MODIFY and use ALL provided recipes:
+- ${distinctCounts.breakfast} Breakfast recipe(s) - modify each to align with user goals
+- ${distinctCounts.lunch} Lunch recipe(s) - modify each to align with user goals
+- ${distinctCounts.dinner} Dinner recipe(s) - modify each to align with user goals
 
 ### Schedule breakdown (slot totals by mealType)
 - ${mealSelection.breakfast} Breakfast slot(s)
 - ${mealSelection.lunch} Lunch slot(s)
 - ${mealSelection.dinner} Dinner slot(s)
 
-### Critical selection rules
-1) You MUST choose recipes ONLY from candidate_recipes. Do NOT invent recipes.
-2) Do NOT select any candidate that violates exclusions/restrictions (excluded_ingredients, allergies Q7, dietary restrictions Q6).
-3) Recipes may be reused across multiple slots by referencing the same recipeId in the schedule.
-4) Prefer ingredient reuse across selected recipes, especially when cost efficiency is a priority.
+### Critical modification rules
+1) You MUST modify ALL provided recipes to align with user goals. Do NOT use recipes as-is without modifications.
+2) If a provided recipe violates exclusions/restrictions (excluded_ingredients, allergies Q7, dietary restrictions Q6), you MUST modify it to remove or replace those ingredients.
+3) Recipes may be reused across multiple slots by referencing the same recipeId in the schedule (after modification).
+4) When cost efficiency is a priority, MODIFY recipes to consolidate ingredients - use the same ingredients across multiple recipes to maximize reuse.
 
 ### Servings + Portions rule (MANDATORY)
 - Each schedule entry has a portionMultiplier (integer >= 1).
@@ -180,24 +179,27 @@ You MUST SELECT exactly:
   (Example: if recipe-abc appears in 3 slots with multipliers 2,1,1 then servings must be 4)
 
 ### Required process (follow exactly)
-1) Select the required number of UNIQUE recipes per mealType (ids) from candidate_recipes.
-2) Build the schedule array so that EVERY slot listed above is mapped to one of the selected recipe IDs.
+1) MODIFY each provided recipe to align with user goals:
+   - For high protein goals: Add quality protein sources if missing
+   - For cost efficiency: Consolidate ingredients across ALL recipes (use same ingredients in multiple recipes)
+   - Remove/replace excluded ingredients
+   - Adjust for dietary restrictions and allergies
+   - Ensure ingredients have valid quantities + units
+   - Ensure steps are clear (4–10 steps)
+2) Build the schedule array so that EVERY slot listed above is mapped to one of the modified recipe IDs.
 3) For each slot:
    - Use the correct day + mealType from the slot label
-   - recipeId must be one of the selected recipes
+   - recipeId must reference one of the modified recipes
    - portionMultiplier must be an integer >= 1 (default 1 unless user household needs more)
-4) Clean the selected recipes:
-   - Ensure every ingredient has a valid quantity + unit (per Measurement Units rules)
-   - Steps must be 4–10 clear steps
-   - Only small edits allowed (swap 1–3 ingredients, adjust quantities, minor simplifications) to meet preferences and ingredient reuse
-5) Produce grocery_list with best-effort consolidated totals.
-6) VALIDATE before returning (MANDATORY):
-   - Unique recipe counts per mealType match the targets above.
+4) Produce grocery_list with best-effort consolidated totals (this should be easier since you've consolidated ingredients across recipes).
+5) VALIDATE before returning (MANDATORY):
+   - ALL provided recipes are used and modified (one distinct modified recipe per provided recipe).
    - schedule length equals ${resolvedSlots.length} and covers every slot exactly once.
    - Every schedule entry references a valid recipe ID.
    - Every recipe.servings equals the total portions assigned to that recipe across schedule.
    - Units comply (no "tbsp"; use "tbs" or "tb").
-   - Protein requirement satisfied for every recipe when triggered.
+   - Protein requirement satisfied for every recipe when triggered (recipes must be modified to include quality protein sources).
+   - If cost efficiency is a priority: ingredients are consolidated across recipes (same ingredients used in multiple recipes).
 
 ### Output (JSON only, no explanation)
 Return exactly the schema required above.`
@@ -207,23 +209,22 @@ Return exactly the schema required above.`
       model: openai('gpt-5'),
       system: `You are an expert meal planning assistant for GroceryGo.
 
-      You must build meal plans by SELECTING recipes from the provided database candidates and then cleaning them up (units/steps/minor edits), creating a complete schedule, and producing a grocery list.
+      You must build meal plans by MODIFYING the provided recipes to align with user goals, then scheduling them and producing a grocery list.
 
       CRITICAL RULES:
-      - Do NOT invent recipes. Every recipe must come from candidate_recipes.
+      - Do NOT invent new recipes. Every recipe must be based on a provided_recipes entry, but you MUST modify them.
+      - You MUST modify ALL provided recipes to align with user goals (protein requirements, cost efficiency via ingredient consolidation, etc.).
       - Fill every requested slot exactly once in the schedule.
-      - Enforce the exact unique recipe counts per mealType provided by the user prompt.
       - recipes[].servings MUST equal the total portions assigned to that recipe across schedule (sum of portionMultiplier).
       - Follow measurement units strictly (NEVER "tbsp"; use "tbs" or "tb").
       - Return JSON only.
 
       PROCESS:
-      1) Select: Pick the exact number of unique recipes per mealType from candidate_recipes.
-      2) Schedule: Map every slot to a selected recipeId (reuse allowed).
+      1) Modify: Update each provided recipe to align with user goals (add protein if needed, consolidate ingredients for cost efficiency, remove excluded ingredients, etc.).
+      2) Schedule: Map every slot to a modified recipeId (reuse allowed).
       3) Set servings: For each recipe, set servings = sum of portionMultiplier in schedule for that recipeId.
-      4) Clean: Normalize ingredients + units and produce 4–10 steps per recipe.
-      5) Validate: Ensure counts, slot coverage, servings math, exclusions, and unit rules all pass.
-      6) Output: Return only if validation passes.`,
+      4) Validate: Ensure all provided recipes are used, slot coverage, servings math, exclusions, unit rules, and goal alignment all pass.
+      5) Output: Return only if validation passes.`,
       prompt: enhancedPrompt,
     })
 

@@ -1,23 +1,73 @@
-import { Ingredient } from '@/types/database';
+import { Ingredient, RecipeIngredient } from '@/types/database';
 import type { Recipe, MealPlanWithRecipes, MealPlanRecipe } from '@/types/database'
+
 export const getIngredients = (recipe: Recipe): Ingredient[] => {
     if (!recipe.ingredients) return [];
-    if (typeof recipe.ingredients === 'string') {
-        let ingredients: string = recipe.ingredients; 
-        let ingredientArray: Ingredient[] = parseArrayFromString(ingredients).map((i) => ({
-            ingredient: i,
-        }));
-        return ingredientArray;
+    
+    // Handle JSON array format (current format)
+    if (Array.isArray(recipe.ingredients)) {
+        return recipe.ingredients.map((ing: RecipeIngredient | string) => {
+            // If it's already a RecipeIngredient object
+            if (typeof ing === 'object' && ing !== null && 'item' in ing) {
+                const recipeIng = ing as RecipeIngredient;
+                // Format as "quantity item" (quantity already includes unit per prompts)
+                return { ingredient: `${recipeIng.quantity} ${recipeIng.item}` };
+            }
+            // If it's a string (backward compatibility)
+            if (typeof ing === 'string') {
+                return { ingredient: ing };
+            }
+            return { ingredient: String(ing) };
+        });
     }
+    
+    // Handle string format (backward compatibility)
+    if (typeof recipe.ingredients === 'string') {
+        try {
+            // Try to parse as JSON first
+            const parsed = JSON.parse(recipe.ingredients);
+            if (Array.isArray(parsed)) {
+                return parsed.map((ing: RecipeIngredient | string) => {
+                    if (typeof ing === 'object' && ing !== null && 'item' in ing) {
+                        const recipeIng = ing as RecipeIngredient;
+                        return { ingredient: `${recipeIng.quantity} ${recipeIng.item}` };
+                    }
+                    return { ingredient: String(ing) };
+                });
+            }
+        } catch {
+            // If JSON parsing fails, fall back to old string parsing
+            return parseArrayFromString(recipe.ingredients).map((i) => ({
+                ingredient: i,
+            }));
+        }
+    }
+    
     return [];
 };
 
 export const getRecipeSteps = (recipe: Recipe): string[] => {
     if (!recipe.steps) return [];
-    if (typeof recipe.steps === 'string') {
-        const stepsString: string = recipe.steps;
-        return parseArrayFromString(stepsString);
+    
+    // Handle JSON array format (current format)
+    if (Array.isArray(recipe.steps)) {
+        return recipe.steps.map(step => String(step));
     }
+    
+    // Handle string format (backward compatibility)
+    if (typeof recipe.steps === 'string') {
+        try {
+            // Try to parse as JSON first
+            const parsed = JSON.parse(recipe.steps);
+            if (Array.isArray(parsed)) {
+                return parsed.map(step => String(step));
+            }
+        } catch {
+            // If JSON parsing fails, fall back to old string parsing
+            return parseArrayFromString(recipe.steps);
+        }
+    }
+    
     return [];
 };
 

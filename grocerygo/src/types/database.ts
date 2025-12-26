@@ -132,6 +132,7 @@ export interface MealPlanRecipe {
   id: string
   meal_plan_id: string
   recipe_id: string
+  updated_recipe_id?: string
   planned_for_date?: string
   meal_type?: 'breakfast' | 'lunch' | 'dinner'
   notes?: string
@@ -143,6 +144,7 @@ export interface MealPlanRecipe {
 export interface MealPlanRecipeInsert {
   meal_plan_id: string
   recipe_id: number
+  updated_recipe_id?: string
   planned_for_date?: string
   meal_type?: 'breakfast' | 'lunch' | 'dinner'
   notes?: string
