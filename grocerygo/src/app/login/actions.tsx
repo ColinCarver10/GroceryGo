@@ -100,3 +100,22 @@ export async function signup(formData: FormData) {
   // New users should complete the questionnaire
   redirect('/onboarding')
 }
+
+export async function signInWithGoogle() {
+  const supabase = await createClient()
+  
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL + '/auth/callback' || 'http://localhost:3000/auth/callback'}`,
+    },
+  })
+
+  if (error) {
+    redirect('/login?error=' + encodeURIComponent(error.message || 'Failed to sign in with Google. Please try again.'))
+  }
+
+  if (data.url) {
+    redirect(data.url)
+  }
+}

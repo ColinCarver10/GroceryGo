@@ -71,11 +71,11 @@ export default function OnboardingPage() {
 
   const handleNext = async () => {
     if (isLastSection) {
-      // Save answers and redirect to meal planning
+      // Save answers and redirect to dashboard
       const result = await saveSurveyResponse(answers)
       
       if (result.success) {
-        router.push('/meal-plan-generate')
+        router.push('/dashboard')
       } else {
         console.error('Failed to save survey:', result.error)
         // You might want to show an error message to the user here

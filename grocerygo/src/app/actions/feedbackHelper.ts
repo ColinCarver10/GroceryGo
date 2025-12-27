@@ -85,8 +85,8 @@ export async function submitMealPlanFeedback(
       meal_plan_id: mealPlanId,
       user_id: userId,
       rating,
-      feedback_text: feedbackText || null,
-      would_make_again: wouldMakeAgain ?? null
+      feedback_text: feedbackText || '',
+      would_make_again: wouldMakeAgain ?? false
     }
 
     if (existingFeedback) {

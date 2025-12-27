@@ -1,7 +1,19 @@
 import Link from 'next/link'
 import { createClient } from '@/utils/supabase/server'
+import { redirect } from 'next/navigation'
 
-export default async function HomePage() {
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ code?: string }>
+}) {
+  const params = await searchParams
+  
+  // Redirect OAuth callback to the callback route
+  if (params.code) {
+    redirect(`/auth/callback?code=${params.code}`)
+  }
+  
   const supabase = await createClient()
   
   // Check if user is authenticated and has completed survey
