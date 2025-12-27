@@ -49,6 +49,7 @@ type SimplifiedRecipe = {
 }
 
 export async function createInstacartOrder(
+  mealPlanId: string,
   groceryItems: GroceryItem[],
   mealPlanTitle: string,
   mealPlanUrl: string
@@ -56,6 +57,13 @@ export async function createInstacartOrder(
   try {
     if (!INSTACART_API_KEY) {
       throw new Error('Instacart API key is not configured')
+    }
+
+    // Get authenticated user
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return { success: false, error: 'User not authenticated' }
     }
 
     // Convert grocery items to Instacart line items
@@ -120,6 +128,22 @@ export async function createInstacartOrder(
 
     const data: InstacartResponse = await response.json()
     
+    // Save the link to the database
+    const { error: updateError } = await supabase
+      .from('meal_plans')
+      .update({
+        instacart_link: data.products_link_url,
+        instacart_link_expires_at: data.expires_at || null
+      })
+      .eq('id', mealPlanId)
+      .eq('user_id', user.id)
+
+    if (updateError) {
+      console.error('Error saving Instacart link to database:', updateError)
+      // Still return success with the link even if database update fails
+      // The link is still valid and can be used
+    }
+
     return {
       success: true,
       link: data.products_link_url

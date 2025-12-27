@@ -283,6 +283,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
       const mealPlanTitle = `Meal Plan for ${formatDate(mealPlan.week_of)}`
       
       const result = await createInstacartOrder(
+        mealPlan.id,
         uncheckedItems,
         mealPlanTitle,
         mealPlanUrl
