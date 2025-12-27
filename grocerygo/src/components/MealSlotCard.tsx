@@ -11,6 +11,7 @@ export interface MealSlotCardProps {
   onReplace: (recipeId: string, mealType?: string | null) => Promise<void>
   onToggleFavorite: (recipeId: string, isFavorite: boolean) => Promise<void>
   allMealPlanRecipes?: (MealPlanRecipe & { recipe: Recipe })[]
+  isReplacing?: boolean // Whether this recipe is currently being replaced
 }
 
 export default function MealSlotCard({
@@ -19,7 +20,8 @@ export default function MealSlotCard({
   onRecipeClick,
   onReplace,
   onToggleFavorite,
-  allMealPlanRecipes
+  allMealPlanRecipes,
+  isReplacing = false
 }: MealSlotCardProps) {
   const { recipe } = mealPlanRecipe
   const isFavorite = favoriteRecipes.has(recipe.id)
@@ -143,6 +145,7 @@ export default function MealSlotCard({
             isFavorite={isFavorite}
             onReplace={(id) => onReplace(id, mealType)}
             onToggleFavorite={onToggleFavorite}
+            isReplacing={isReplacing}
           />
         </div>
 

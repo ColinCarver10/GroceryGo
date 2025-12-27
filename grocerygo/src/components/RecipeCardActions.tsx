@@ -8,24 +8,40 @@ interface RecipeCardActionsProps {
   isFavorite: boolean
   onReplace?: (recipeId: string) => void
   onToggleFavorite?: (recipeId: string, isFavorite: boolean) => void
+  isReplacing?: boolean // External control of replacing state
 }
 
 export default function RecipeCardActions({
   recipeId,
   isFavorite,
   onReplace,
-  onToggleFavorite
+  onToggleFavorite,
+  isReplacing: externalIsReplacing
 }: RecipeCardActionsProps) {
-  const [isReplacing, setIsReplacing] = useState(false)
+  const [internalIsReplacing, setInternalIsReplacing] = useState(false)
+  
+  // Use external state if provided, otherwise use internal state
+  const isReplacing = externalIsReplacing !== undefined ? externalIsReplacing : internalIsReplacing
 
   // Reset loading state when recipeId changes (after refresh)
   useEffect(() => {
-    setIsReplacing(false)
-  }, [recipeId])
+    if (externalIsReplacing === undefined) {
+      setInternalIsReplacing(false)
+    }
+  }, [recipeId, externalIsReplacing])
+
+  // Reset internal state when external state changes to false
+  useEffect(() => {
+    if (externalIsReplacing === false && internalIsReplacing) {
+      setInternalIsReplacing(false)
+    }
+  }, [externalIsReplacing, internalIsReplacing])
 
   const handleReplace = () => {
     if (onReplace) {
-      setIsReplacing(true)
+      if (externalIsReplacing === undefined) {
+        setInternalIsReplacing(true)
+      }
       onReplace(recipeId)
     }
   }

@@ -451,35 +451,78 @@ CRITICAL: When updating total_ingredients, you MUST:
       systemPrompt,
       prompt,
       (response: string) => {
+        console.log('[replaceRecipe] Parsing AI response, length:', response.length)
+        console.log('[replaceRecipe] Response preview:', response.substring(0, 500))
+        
         // Extract JSON from response
         const jsonMatch = response.match(/\{[\s\S]*\}/)
         if (!jsonMatch) {
+          console.error('[replaceRecipe] No JSON found in response. Full response:', response)
           throw new Error('No JSON found in response')
         }
         
-        const parsed = JSON.parse(jsonMatch[0])
-        
-        if (!parsed.recipe || !parsed.updated_total_ingredients) {
-          throw new Error('Missing required fields in response')
+        let parsed: any
+        try {
+          parsed = JSON.parse(jsonMatch[0])
+          console.log('[replaceRecipe] JSON parsed successfully. Keys:', Object.keys(parsed))
+        } catch (parseError) {
+          console.error('[replaceRecipe] JSON parse error:', parseError)
+          console.error('[replaceRecipe] JSON string that failed to parse:', jsonMatch[0].substring(0, 1000))
+          throw new Error(`Failed to parse JSON: ${parseError instanceof Error ? parseError.message : String(parseError)}`)
         }
+        
+        if (!parsed.recipe) {
+          console.error('[replaceRecipe] Missing recipe field in parsed data. Available keys:', Object.keys(parsed))
+          throw new Error('Missing required field: recipe')
+        }
+        
+        if (!parsed.updated_total_ingredients) {
+          console.error('[replaceRecipe] Missing updated_total_ingredients field in parsed data. Available keys:', Object.keys(parsed))
+          throw new Error('Missing required field: updated_total_ingredients')
+        }
+
+        console.log('[replaceRecipe] Recipe structure:', {
+          hasName: !!parsed.recipe.name,
+          hasIngredients: !!parsed.recipe.ingredients,
+          ingredientsIsArray: Array.isArray(parsed.recipe.ingredients),
+          hasSteps: !!parsed.recipe.steps,
+          stepsIsArray: Array.isArray(parsed.recipe.steps),
+          updatedTotalIngredientsType: typeof parsed.updated_total_ingredients,
+          updatedTotalIngredientsIsArray: Array.isArray(parsed.updated_total_ingredients),
+          updatedTotalIngredientsKeys: typeof parsed.updated_total_ingredients === 'object' && parsed.updated_total_ingredients !== null ? Object.keys(parsed.updated_total_ingredients) : null
+        })
 
         // Handle both old array format and new nested structure from AI
         let updatedTotalIngredients: { items: Array<{ item: string; quantity: string }>; seasonings: Array<{ item: string; quantity: string }> }
         if (Array.isArray(parsed.updated_total_ingredients)) {
           // Old format: convert to new structure
+          console.log('[replaceRecipe] Detected old array format for updated_total_ingredients, converting')
           updatedTotalIngredients = {
             items: parsed.updated_total_ingredients,
             seasonings: []
           }
         } else if (parsed.updated_total_ingredients.items || parsed.updated_total_ingredients.seasonings) {
           // New format: use as-is
+          console.log('[replaceRecipe] Detected new object format for updated_total_ingredients')
           updatedTotalIngredients = {
             items: parsed.updated_total_ingredients.items || [],
             seasonings: parsed.updated_total_ingredients.seasonings || []
           }
         } else {
+          console.error('[replaceRecipe] Invalid updated_total_ingredients format:', {
+            type: typeof parsed.updated_total_ingredients,
+            value: parsed.updated_total_ingredients,
+            isArray: Array.isArray(parsed.updated_total_ingredients),
+            keys: typeof parsed.updated_total_ingredients === 'object' && parsed.updated_total_ingredients !== null ? Object.keys(parsed.updated_total_ingredients) : null
+          })
           throw new Error('Invalid updated_total_ingredients format')
         }
+
+        console.log('[replaceRecipe] Successfully parsed and transformed data:', {
+          recipeName: parsed.recipe.name,
+          ingredientsCount: updatedTotalIngredients.items.length,
+          seasoningsCount: updatedTotalIngredients.seasonings.length
+        })
 
         return {
           recipe: parsed.recipe,
@@ -487,19 +530,60 @@ CRITICAL: When updating total_ingredients, you MUST:
         }
       },
       (data) => {
-        // Basic validation
-        return !!(
-          data.recipe &&
-          data.recipe.name &&
-          Array.isArray(data.recipe.ingredients) &&
-          Array.isArray(data.recipe.steps) &&
-          Array.isArray(data.updated_total_ingredients)
+        // Basic validation with detailed logging
+        const hasRecipe = !!data.recipe
+        const hasRecipeName = !!(data.recipe && data.recipe.name)
+        const hasIngredientsArray = !!(data.recipe && Array.isArray(data.recipe.ingredients))
+        const hasStepsArray = !!(data.recipe && Array.isArray(data.recipe.steps))
+        const hasUpdatedTotalIngredients = !!data.updated_total_ingredients
+        const isUpdatedTotalIngredientsObject = !!(data.updated_total_ingredients && typeof data.updated_total_ingredients === 'object' && !Array.isArray(data.updated_total_ingredients))
+        const hasItemsArray = !!(data.updated_total_ingredients && typeof data.updated_total_ingredients === 'object' && Array.isArray(data.updated_total_ingredients.items))
+        const hasSeasoningsArray = !!(data.updated_total_ingredients && typeof data.updated_total_ingredients === 'object' && Array.isArray(data.updated_total_ingredients.seasonings))
+        
+        const validationPassed = !!(
+          hasRecipe &&
+          hasRecipeName &&
+          hasIngredientsArray &&
+          hasStepsArray &&
+          hasUpdatedTotalIngredients &&
+          isUpdatedTotalIngredientsObject &&
+          hasItemsArray &&
+          hasSeasoningsArray
         )
+        
+        if (!validationPassed) {
+          console.error('[replaceRecipe] Validation failed. Data structure:', {
+            hasRecipe,
+            hasRecipeName,
+            hasIngredientsArray,
+            hasStepsArray,
+            hasUpdatedTotalIngredients,
+            isUpdatedTotalIngredientsObject,
+            hasItemsArray,
+            hasSeasoningsArray,
+            recipeType: typeof data.recipe,
+            recipeKeys: data.recipe ? Object.keys(data.recipe) : null,
+            updatedTotalIngredientsType: typeof data.updated_total_ingredients,
+            updatedTotalIngredientsIsArray: Array.isArray(data.updated_total_ingredients),
+            updatedTotalIngredientsKeys: data.updated_total_ingredients && typeof data.updated_total_ingredients === 'object' ? Object.keys(data.updated_total_ingredients) : null,
+            fullData: JSON.stringify(data, null, 2)
+          })
+        }
+        
+        return validationPassed
       }
     )
 
     if (!aiResult.success || !aiResult.data) {
-      console.error('[replaceRecipe] AI generation failed:', aiResult.error)
+      console.error('[replaceRecipe] AI generation failed:', {
+        error: aiResult.error,
+        hasRawResponse: !!aiResult.rawResponse,
+        rawResponseLength: aiResult.rawResponse?.length,
+        rawResponsePreview: aiResult.rawResponse?.substring(0, 500)
+      })
+      if (aiResult.rawResponse) {
+        console.error('[replaceRecipe] Full raw AI response:', aiResult.rawResponse)
+      }
       return { success: false, error: aiResult.error || 'Failed to generate replacement recipe' }
     }
 
@@ -1094,6 +1178,315 @@ function parseQuantity(quantityStr: string): number | undefined {
 function parseUnit(quantityStr: string): string | undefined {
   const match = quantityStr.match(/^[\d.]+\s*(.+)/)
   return match ? match[1].trim() : undefined
+}
+
+/**
+ * Replace recipe with a saved recipe
+ * Replaces ALL occurrences of a recipe with an existing saved recipe
+ */
+export async function replaceRecipeWithSaved(
+  mealPlanId: string,
+  recipeId: string,
+  savedRecipeId: string,
+  mealType: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    console.log('[replaceRecipeWithSaved] Starting replacement', { mealPlanId, recipeId, savedRecipeId, mealType })
+    const supabase = await createClient()
+
+    // Get authenticated user
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      console.error('[replaceRecipeWithSaved] Auth error:', authError)
+      return { success: false, error: 'User not authenticated' }
+    }
+    console.log('[replaceRecipeWithSaved] User authenticated:', user.id)
+
+    // Get meal plan with total_ingredients
+    const { data: mealPlan, error: mealPlanError } = await supabase
+      .from('meal_plans')
+      .select('*, meal_plan_recipes(*, recipe:full_recipes_table(*))')
+      .eq('id', mealPlanId)
+      .eq('user_id', user.id)
+      .single()
+
+    if (mealPlanError || !mealPlan) {
+      console.error('[replaceRecipeWithSaved] Meal plan fetch error:', mealPlanError)
+      return { success: false, error: 'Meal plan not found' }
+    }
+
+    // Find ALL meal_plan_recipes that use this recipe_id
+    const mealPlanRecipesToReplace = mealPlan.meal_plan_recipes.filter(
+      (mpr: any) => String(mpr.recipe_id) === String(recipeId) || String(mpr.updated_recipe_id) === String(recipeId)
+    )
+
+    if (mealPlanRecipesToReplace.length === 0) {
+      console.error('[replaceRecipeWithSaved] No meal plan recipes found with recipe_id:', recipeId)
+      return { success: false, error: 'No meal plan recipes found with this recipe' }
+    }
+
+    // Get the recipe being replaced
+    let oldRecipe: any = null
+    const { data: recipeFromRecipes } = await supabase
+      .from('recipes')
+      .select('*')
+      .eq('id', recipeId)
+      .single()
+    
+    if (recipeFromRecipes) {
+      oldRecipe = recipeFromRecipes
+    } else {
+      const { data: recipeFromFull } = await supabase
+        .from('full_recipes_table')
+        .select('*')
+        .eq('recipe_id', recipeId)
+        .single()
+      
+      if (recipeFromFull) {
+        oldRecipe = recipeFromFull
+      }
+    }
+
+    if (!oldRecipe) {
+      console.error('[replaceRecipeWithSaved] Recipe not found:', recipeId)
+      return { success: false, error: 'Recipe not found' }
+    }
+
+    // Get the saved recipe
+    const { data: savedRecipe, error: savedRecipeError } = await supabase
+      .from('recipes')
+      .select('*')
+      .eq('id', savedRecipeId)
+      .single()
+
+    if (savedRecipeError || !savedRecipe) {
+      console.error('[replaceRecipeWithSaved] Saved recipe not found:', savedRecipeError)
+      return { success: false, error: 'Saved recipe not found' }
+    }
+    console.log('[replaceRecipeWithSaved] Using saved recipe:', savedRecipe.name)
+
+    // Get current total_ingredients
+    let currentTotalIngredients: { items: Array<{ item: string; quantity: string }>; seasonings: Array<{ item: string; quantity: string }> }
+    if (Array.isArray(mealPlan.total_ingredients)) {
+      currentTotalIngredients = {
+        items: mealPlan.total_ingredients,
+        seasonings: []
+      }
+    } else if (mealPlan.total_ingredients && typeof mealPlan.total_ingredients === 'object' && ('items' in mealPlan.total_ingredients || 'seasonings' in mealPlan.total_ingredients)) {
+      currentTotalIngredients = {
+        items: (mealPlan.total_ingredients as any).items || [],
+        seasonings: (mealPlan.total_ingredients as any).seasonings || []
+      }
+    } else {
+      currentTotalIngredients = { items: [], seasonings: [] }
+    }
+
+    // Get old recipe ingredients
+    const oldRecipeIngredients = (oldRecipe.ingredients || []) as Array<{ item: string; quantity: string }>
+    const newRecipeIngredients = (savedRecipe.ingredients || []) as Array<{ item: string; quantity: string }>
+
+    // Helper function to parse quantity
+    const parseQuantity = (qtyStr: string): number => {
+      const match = qtyStr.match(/^([\d.]+)/)
+      return match ? parseFloat(match[1]) : 0
+    }
+
+    // Helper function to parse unit
+    const parseUnit = (qtyStr: string): string => {
+      const match = qtyStr.match(/^[\d.]+\s*(.+)/)
+      return match ? match[1].trim() : ''
+    }
+
+    // Helper function to normalize ingredient name
+    const normalizeName = (name: string): string => name.toLowerCase().trim()
+
+    // Create maps for easier lookup and updating
+    const itemsMap = new Map<string, { item: string; quantity: number; unit: string }>()
+    const seasoningsMap = new Map<string, { item: string; quantity: number; unit: string }>()
+
+    // Helper to determine if ingredient is a seasoning
+    const isSeasoning = (itemName: string): boolean => {
+      const name = normalizeName(itemName)
+      const seasoningKeywords = ['salt', 'pepper', 'paprika', 'cumin', 'turmeric', 'cinnamon', 'nutmeg', 'oregano', 'basil', 'thyme', 'rosemary', 'curry', 'chili powder', 'garlic powder', 'onion powder', 'cayenne', 'cumin', 'garam masala']
+      return seasoningKeywords.some(keyword => name.includes(keyword))
+    }
+
+    // Initialize maps with current ingredients
+    currentTotalIngredients.items.forEach(ing => {
+      const key = `${normalizeName(ing.item)}|${parseUnit(ing.quantity)}`
+      itemsMap.set(key, {
+        item: ing.item,
+        quantity: parseQuantity(ing.quantity),
+        unit: parseUnit(ing.quantity)
+      })
+    })
+
+    currentTotalIngredients.seasonings.forEach(ing => {
+      const key = `${normalizeName(ing.item)}|${parseUnit(ing.quantity)}`
+      seasoningsMap.set(key, {
+        item: ing.item,
+        quantity: parseQuantity(ing.quantity),
+        unit: parseUnit(ing.quantity)
+      })
+    })
+
+    // Subtract old recipe ingredients
+    oldRecipeIngredients.forEach(ing => {
+      const unit = parseUnit(ing.quantity)
+      const qty = parseQuantity(ing.quantity)
+      const key = `${normalizeName(ing.item)}|${unit}`
+      const map = isSeasoning(ing.item) ? seasoningsMap : itemsMap
+      
+      const existing = map.get(key)
+      if (existing) {
+        existing.quantity -= qty
+        if (existing.quantity <= 0) {
+          map.delete(key)
+        }
+      }
+    })
+
+    // Add new recipe ingredients
+    newRecipeIngredients.forEach(ing => {
+      const unit = parseUnit(ing.quantity)
+      const qty = parseQuantity(ing.quantity)
+      const key = `${normalizeName(ing.item)}|${unit}`
+      const map = isSeasoning(ing.item) ? seasoningsMap : itemsMap
+      
+      const existing = map.get(key)
+      if (existing) {
+        existing.quantity += qty
+      } else {
+        map.set(key, {
+          item: ing.item,
+          quantity: qty,
+          unit: unit
+        })
+      }
+    })
+
+    // Convert maps back to arrays
+    const updatedItems = Array.from(itemsMap.values())
+      .filter(item => item.quantity > 0)
+      .map(item => ({
+        item: item.item,
+        quantity: `${item.quantity}${item.unit ? ' ' + item.unit : ''}`.trim()
+      }))
+      .sort((a, b) => a.item.localeCompare(b.item))
+
+    const updatedSeasonings = Array.from(seasoningsMap.values())
+      .filter(item => item.quantity > 0)
+      .map(item => ({
+        item: item.item,
+        quantity: `${item.quantity}${item.unit ? ' ' + item.unit : ''}`.trim()
+      }))
+      .sort((a, b) => a.item.localeCompare(b.item))
+
+    const updatedTotalIngredients = {
+      items: updatedItems,
+      seasonings: updatedSeasonings
+    }
+
+    // Update meal_plan_recipes with saved recipe ID
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(recipeId)
+    const isInteger = /^\d+$/.test(recipeId)
+    
+    let totalUpdated = 0
+    let updateError: any = null
+    
+    if (isUUID) {
+      const { data: updated, error: error } = await supabase
+        .from('meal_plan_recipes')
+        .update({ updated_recipe_id: savedRecipeId })
+        .eq('meal_plan_id', mealPlanId)
+        .eq('updated_recipe_id', recipeId)
+        .select('id')
+      
+      totalUpdated = updated?.length || 0
+      updateError = error
+    } else if (isInteger) {
+      const { data: updated, error: error } = await supabase
+        .from('meal_plan_recipes')
+        .update({ updated_recipe_id: savedRecipeId })
+        .eq('meal_plan_id', mealPlanId)
+        .eq('recipe_id', parseInt(recipeId, 10))
+        .select('id')
+      
+      totalUpdated = updated?.length || 0
+      updateError = error
+    } else {
+      // Try both methods
+      const { data: updated1, error: error1 } = await supabase
+        .from('meal_plan_recipes')
+        .update({ updated_recipe_id: savedRecipeId })
+        .eq('meal_plan_id', mealPlanId)
+        .eq('updated_recipe_id', recipeId)
+        .select('id')
+      
+      let updated2: any[] = []
+      let error2: any = null
+      if (!updated1 || updated1.length === 0) {
+        const parsedInt = parseInt(recipeId, 10)
+        if (!isNaN(parsedInt)) {
+          const result = await supabase
+            .from('meal_plan_recipes')
+            .update({ updated_recipe_id: savedRecipeId })
+            .eq('meal_plan_id', mealPlanId)
+            .eq('recipe_id', parsedInt)
+            .select('id')
+          updated2 = result.data || []
+          error2 = result.error
+        }
+      }
+      
+      totalUpdated = (updated1?.length || 0) + (updated2?.length || 0)
+      updateError = error1 || error2
+    }
+    
+    if (updateError) {
+      console.error('[replaceRecipeWithSaved] Error updating meal_plan_recipes:', updateError)
+      return { success: false, error: `Failed to update meal plan recipes: ${updateError.message}` }
+    }
+    
+    if (totalUpdated === 0) {
+      console.error('[replaceRecipeWithSaved] No records were updated')
+      return { success: false, error: 'No meal plan recipes were updated' }
+    }
+
+    // Update meal plan's total_ingredients
+    const { error: totalIngredientsError } = await supabase
+      .from('meal_plans')
+      .update({ total_ingredients: updatedTotalIngredients })
+      .eq('id', mealPlanId)
+
+    if (totalIngredientsError) {
+      console.error('[replaceRecipeWithSaved] Error updating total_ingredients:', totalIngredientsError)
+      // Don't fail the whole operation, but log the error
+    }
+
+    // Track action
+    try {
+      await trackMealPlanAction(
+        mealPlanId,
+        user.id,
+        `User replaced recipe '${oldRecipe.name}' with saved recipe '${savedRecipe.name}' (${totalUpdated} occurrence${totalUpdated === 1 ? '' : 's'})`
+      )
+    } catch (trackError) {
+      console.warn('[replaceRecipeWithSaved] Failed to track action:', trackError)
+    }
+
+    revalidateTag('meal-plan')
+    revalidateTag('dashboard')
+
+    console.log('[replaceRecipeWithSaved] Replacement completed successfully')
+    return { success: true }
+  } catch (error) {
+    console.error('[replaceRecipeWithSaved] Unexpected error:', error)
+    return { 
+      success: false, 
+      error: `An unexpected error occurred: ${error instanceof Error ? error.message : String(error)}` 
+    }
+  }
 }
 
 /**

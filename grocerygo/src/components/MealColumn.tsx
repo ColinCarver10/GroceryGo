@@ -22,6 +22,7 @@ export interface MealColumnProps {
   showMobileHeader?: boolean
   minHeight?: string
   allMealPlanRecipes?: (MealPlanRecipe & { recipe: Recipe })[]
+  replacingRecipeIds?: Set<string> // Set of recipe IDs currently being replaced
 }
 
 export default function MealColumn({
@@ -35,7 +36,8 @@ export default function MealColumn({
   onToggleFavorite,
   showMobileHeader = false,
   minHeight = '',
-  allMealPlanRecipes
+  allMealPlanRecipes,
+  replacingRecipeIds = new Set()
 }: MealColumnProps) {
   const mealTypeLabel = mealType.charAt(0).toUpperCase() + mealType.slice(1)
   
@@ -66,6 +68,7 @@ export default function MealColumn({
                 onReplace={onReplace}
                 onToggleFavorite={onToggleFavorite}
                 allMealPlanRecipes={allMealPlanRecipes}
+                isReplacing={replacingRecipeIds.has(mpr.recipe.id)}
               />
             ))}
           </div>

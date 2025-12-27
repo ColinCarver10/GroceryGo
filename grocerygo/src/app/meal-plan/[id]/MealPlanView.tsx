@@ -8,11 +8,14 @@ import RecipeModal from '@/components/RecipeModal'
 import IngredientActions from '@/components/IngredientActions'
 import MealSlotCard from '@/components/MealSlotCard'
 import MealColumn, { mealTypeConfig } from '@/components/MealColumn'
+import ReplaceRecipeChoiceModal from '@/components/ReplaceRecipeChoiceModal'
+import SavedRecipeSelector from '@/components/SavedRecipeSelector'
 // import type { PlanAdjustments } from '@/components/AdjustPlanPanel' // COMMENTED OUT: Adjust plan functionality hidden temporarily
 import { getRecipeSteps, organizeMealsByWeek, type WeekDayMeals } from '@/utils/mealPlanUtils';
 import { 
   createInstacartOrder,
   replaceRecipe,
+  replaceRecipeWithSaved,
   // regenerateWithAdjustments, // COMMENTED OUT: Adjust plan functionality hidden temporarily
   saveCookingNote,
   // scaleRecipeServings, // COMMENTED OUT: Scale servings functionality
@@ -45,6 +48,12 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
   const [favoriteRecipes, setFavoriteRecipes] = useState<Set<string>>(new Set(savedRecipeIds))
   const [isProcessing, setIsProcessing] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
+  
+  // Replace recipe flow state
+  const [showReplaceChoiceModal, setShowReplaceChoiceModal] = useState(false)
+  const [showSavedRecipeSelector, setShowSavedRecipeSelector] = useState(false)
+  const [replaceRecipeContext, setReplaceRecipeContext] = useState<{ recipeId: string; mealType: string } | null>(null)
+  const [replacingRecipeIds, setReplacingRecipeIds] = useState<Set<string>>(new Set())
 
   const toggleItem = (itemId: string) => {
     setCheckedItems(prev => {
@@ -59,26 +68,110 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
   }
 
   // Handler functions for new features
-  const handleReplaceRecipe = async (recipeId: string, suggestedMealType?: string | null) => {
+  const handleReplaceRecipe = async (recipeId: string, suggestedMealType?: string | null): Promise<void> => {
+    // Find the meal type for this recipe
+    const mealPlanRecipe = mealPlan.meal_plan_recipes.find(mpr => 
+      String(mpr.recipe_id) === String(recipeId) || String(mpr.updated_recipe_id) === String(recipeId)
+    )
+    const mealType = suggestedMealType || mealPlanRecipe?.meal_type || 'dinner'
+    
+    // Store context and show choice modal (reset saved recipe selector state)
+    setReplaceRecipeContext({ recipeId, mealType })
+    setShowSavedRecipeSelector(false)
+    setShowReplaceChoiceModal(true)
+    // Mark this recipe as being replaced
+    setReplacingRecipeIds(prev => new Set(prev).add(recipeId))
+  }
+
+  const handleGenerateNewRecipe = async () => {
+    if (!replaceRecipeContext) return
+    
     setIsProcessing(true)
     setActionError(null)
     
+    const recipeId = replaceRecipeContext.recipeId
+    
     try {
-      // Find the meal type for this recipe
-      const mealPlanRecipe = mealPlan.meal_plan_recipes.find(mpr => mpr.recipe_id === recipeId)
-      const mealType = suggestedMealType || mealPlanRecipe?.meal_type || 'dinner'
-      
-      const result = await replaceRecipe(mealPlan.id, recipeId, mealType)
+      const result = await replaceRecipe(mealPlan.id, recipeId, replaceRecipeContext.mealType)
       
       if (result.success) {
         router.refresh()
       } else {
         setActionError(result.error || 'Failed to replace recipe')
+        // Reset replacing state on error
+        setReplacingRecipeIds(prev => {
+          const newSet = new Set(prev)
+          newSet.delete(recipeId)
+          return newSet
+        })
       }
     } catch (error) {
       setActionError('An unexpected error occurred:' + error)
+      // Reset replacing state on error
+      setReplacingRecipeIds(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(recipeId)
+        return newSet
+      })
     } finally {
       setIsProcessing(false)
+      setReplacingRecipeIds(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(recipeId)
+        return newSet
+      })
+      setReplaceRecipeContext(null)
+    }
+  }
+
+  const handleReplaceWithSavedRecipe = () => {
+    setShowReplaceChoiceModal(false)
+    setShowSavedRecipeSelector(true)
+  }
+
+  const handleSavedRecipeSelected = async (savedRecipeId: string) => {
+    if (!replaceRecipeContext) return
+    
+    setIsProcessing(true)
+    setActionError(null)
+    
+    const recipeId = replaceRecipeContext.recipeId
+    
+    try {
+      const result = await replaceRecipeWithSaved(
+        mealPlan.id,
+        recipeId,
+        savedRecipeId,
+        replaceRecipeContext.mealType
+      )
+      
+      if (result.success) {
+        router.refresh()
+      } else {
+        setActionError(result.error || 'Failed to replace recipe')
+        // Reset replacing state on error
+        setReplacingRecipeIds(prev => {
+          const newSet = new Set(prev)
+          newSet.delete(recipeId)
+          return newSet
+        })
+      }
+    } catch (error) {
+      setActionError('An unexpected error occurred:' + error)
+      // Reset replacing state on error
+      setReplacingRecipeIds(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(recipeId)
+        return newSet
+      })
+    } finally {
+      setIsProcessing(false)
+      setReplacingRecipeIds(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(recipeId)
+        return newSet
+      })
+      setReplaceRecipeContext(null)
     }
   }
 
@@ -595,6 +688,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
                             onToggleFavorite={handleToggleFavorite}
                             showMobileHeader={true}
                             allMealPlanRecipes={mealPlan.meal_plan_recipes}
+                            replacingRecipeIds={replacingRecipeIds}
                           />
                           <MealColumn
                             mealType="lunch"
@@ -607,6 +701,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
                             onToggleFavorite={handleToggleFavorite}
                             showMobileHeader={true}
                             allMealPlanRecipes={mealPlan.meal_plan_recipes}
+                            replacingRecipeIds={replacingRecipeIds}
                           />
                           <MealColumn
                             mealType="dinner"
@@ -619,6 +714,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
                             onToggleFavorite={handleToggleFavorite}
                             showMobileHeader={true}
                             allMealPlanRecipes={mealPlan.meal_plan_recipes}
+                            replacingRecipeIds={replacingRecipeIds}
                           />
                         </div>
                       )}
@@ -638,6 +734,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
                             showMobileHeader={false}
                             minHeight="min-h-[200px]"
                             allMealPlanRecipes={mealPlan.meal_plan_recipes}
+                            replacingRecipeIds={replacingRecipeIds}
                           />
                           <MealColumn
                             mealType="lunch"
@@ -651,6 +748,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
                             showMobileHeader={false}
                             minHeight="min-h-[200px]"
                             allMealPlanRecipes={mealPlan.meal_plan_recipes}
+                            replacingRecipeIds={replacingRecipeIds}
                           />
                           <MealColumn
                             mealType="dinner"
@@ -664,6 +762,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
                             showMobileHeader={false}
                             minHeight="min-h-[200px]"
                             allMealPlanRecipes={mealPlan.meal_plan_recipes}
+                            replacingRecipeIds={replacingRecipeIds}
                           />
                         </div>
                       )}
@@ -686,6 +785,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
                         onReplace={handleReplaceRecipe}
                         onToggleFavorite={handleToggleFavorite}
                         allMealPlanRecipes={mealPlan.meal_plan_recipes}
+                        isReplacing={replacingRecipeIds.has(mpr.recipe.id)}
                       />
                     ))}
                   </div>
@@ -1103,6 +1203,48 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
             </div>
           </div>
         </>
+      )}
+
+      {/* Replace Recipe Choice Modal */}
+      <ReplaceRecipeChoiceModal
+        isOpen={showReplaceChoiceModal}
+        onClose={() => {
+          setShowReplaceChoiceModal(false)
+          setShowSavedRecipeSelector(false)
+          // Reset replacing state for the recipe when modal closes
+          if (replaceRecipeContext) {
+            setReplacingRecipeIds(prev => {
+              const newSet = new Set(prev)
+              newSet.delete(replaceRecipeContext.recipeId)
+              return newSet
+            })
+          }
+          setReplaceRecipeContext(null)
+        }}
+        onGenerateNew={handleGenerateNewRecipe}
+        onReplaceWithSaved={handleReplaceWithSavedRecipe}
+      />
+
+      {/* Saved Recipe Selector */}
+      {replaceRecipeContext && (
+        <SavedRecipeSelector
+          isOpen={showSavedRecipeSelector}
+          onClose={() => {
+            setShowSavedRecipeSelector(false)
+            setShowReplaceChoiceModal(false)
+            // Reset replacing state for the recipe when modal closes
+            setReplacingRecipeIds(prev => {
+              const newSet = new Set(prev)
+              newSet.delete(replaceRecipeContext.recipeId)
+              return newSet
+            })
+            setReplaceRecipeContext(null)
+          }}
+          onSelect={handleSavedRecipeSelected}
+          mealType={replaceRecipeContext.mealType as 'breakfast' | 'lunch' | 'dinner'}
+          userId={mealPlan.user_id}
+          excludeRecipeId={replaceRecipeContext.recipeId}
+        />
       )}
     </div>
   )
