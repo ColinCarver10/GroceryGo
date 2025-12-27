@@ -159,22 +159,36 @@ export async function createMealPlanFromAI(
       return { success: false, error: `Failed to link recipes: ${linkError.message}` }
     }
 
-    // 4. Create grocery list items
-    const groceryItems: GroceryItemInsert[] = aiResponse.grocery_list.map(item => ({
-      meal_plan_id: mealPlan.id,
-      item_name: item.item,
-      quantity: parseQuantity(item.quantity),
-      unit: parseUnit(item.quantity),
-      purchased: false
-    }))
+    // 4. Store total_ingredients from AI response
+    if (aiResponse.grocery_list) {
+      // Handle both old array format and new nested structure
+      let totalIngredients: { items: Array<{ item: string; quantity: string }>; seasonings: Array<{ item: string; quantity: string }> } | null = null
+      if (Array.isArray(aiResponse.grocery_list)) {
+        // Old format: convert to new structure
+        totalIngredients = {
+          items: aiResponse.grocery_list,
+          seasonings: []
+        }
+      } else if (typeof aiResponse.grocery_list === 'object' && ('items' in aiResponse.grocery_list || 'seasonings' in aiResponse.grocery_list)) {
+        // New format: use as-is
+        const groceryList = aiResponse.grocery_list as { items?: Array<{ item: string; quantity: string }>; seasonings?: Array<{ item: string; quantity: string }> }
+        totalIngredients = {
+          items: groceryList.items || [],
+          seasonings: groceryList.seasonings || []
+        }
+      }
 
-    const { error: groceryError } = await supabase
-      .from('grocery_items')
-      .insert(groceryItems)
+      if (totalIngredients && (totalIngredients.items.length > 0 || totalIngredients.seasonings.length > 0)) {
+        const { error: updateError } = await supabase
+          .from('meal_plans')
+          .update({ total_ingredients: totalIngredients })
+          .eq('id', mealPlan.id)
 
-    if (groceryError) {
-      console.error('Error creating grocery items:', groceryError)
-      return { success: false, error: `Failed to create grocery items: ${groceryError.message}` }
+        if (updateError) {
+          console.error('Error updating total_ingredients:', updateError)
+          // Don't fail the whole operation if this fails
+        }
+      }
     }
 
     // Invalidate cache
@@ -267,8 +281,7 @@ export async function getMealPlanById(mealPlanId: string, userId: string) {
       meal_plan_recipes (
         *,
         updated_recipe:recipes (*)
-      ),
-      grocery_items (*)
+      )
     `)
     .eq('id', mealPlanId)
     .eq('user_id', userId)

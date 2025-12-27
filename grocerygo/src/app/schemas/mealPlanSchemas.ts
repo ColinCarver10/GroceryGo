@@ -56,6 +56,23 @@ export const ReplaceRecipeSchema = z.object({
   additional_grocery_items: z.array(GroceryItemSchema)
 })
 
+// Recipe replacement with total ingredients update schema
+// Using a simple structure that matches the working ReplaceRecipeSchema pattern
+export const ReplaceRecipeWithTotalIngredientsSchema = z.object({
+  recipe: z.object({
+    name: z.string().describe('The recipe name'),
+    ingredients: z.array(z.object({
+      item: z.string().describe('Ingredient name'),
+      quantity: z.string().describe('Quantity with unit')
+    })).describe('List of ingredients'),
+    steps: z.array(z.string()).describe('Cooking steps in order')
+  }).describe('The replacement recipe'),
+  updated_total_ingredients: z.array(z.object({
+    item: z.string().describe('Ingredient name'),
+    quantity: z.string().describe('Total quantity with unit')
+  })).describe('Updated total ingredients list after replacing the recipe')
+})
+
 // Recipe simplification schema
 export const SimplifyRecipeSchema = z.object({
   simplified_recipe: RecipeSchema,
@@ -68,5 +85,6 @@ export type Recipe = z.infer<typeof RecipeSchema>
 export type Ingredient = z.infer<typeof IngredientSchema>
 export type GroceryItem = z.infer<typeof GroceryItemSchema>
 export type ReplaceRecipeResponse = z.infer<typeof ReplaceRecipeSchema>
+export type ReplaceRecipeWithTotalIngredientsResponse = z.infer<typeof ReplaceRecipeWithTotalIngredientsSchema>
 export type SimplifyRecipeResponse = z.infer<typeof SimplifyRecipeSchema>
 

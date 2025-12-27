@@ -25,9 +25,10 @@ import { useRouter } from 'next/navigation'
 interface MealPlanViewProps {
   mealPlan: MealPlanWithRecipes
   savedRecipeIds: string[]
+  totalIngredients: { items: Array<{ item: string; quantity: string }>; seasonings: Array<{ item: string; quantity: string }> }
 }
 
-export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewProps) {
+export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredients }: MealPlanViewProps) {
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<'recipes' | 'shopping'>('recipes')
   const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set())
@@ -36,6 +37,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
   const [clickedSlotDate, setClickedSlotDate] = useState<string | null>(null)
   const [isOrderingInstacart, setIsOrderingInstacart] = useState(false)
   const [instacartError, setInstacartError] = useState<string | null>(null)
+  const [movedSeasonings, setMovedSeasonings] = useState<Map<string, { item: string; quantity: string }>>(new Map())
   
   // COMMENTED OUT: Adjust plan functionality hidden temporarily
   // const [isAdjustPanelOpen, setIsAdjustPanelOpen] = useState(false)
@@ -267,8 +269,31 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
   }
 
   const handleOrderInstacart = async () => {
+    // Combine main items and moved seasonings
+    const allItems = [
+      ...totalIngredients.items.map((item, index) => ({ ...item, index, type: 'item' as const, itemId: `item-${index}` })),
+      ...Array.from(movedSeasonings.values()).map((item, index) => ({ ...item, index, type: 'seasoning' as const, itemId: `moved-seasoning-${Array.from(movedSeasonings.keys())[index]}` }))
+    ]
+
     // Filter out checked items - only send unchecked items to Instacart
-    const uncheckedItems = mealPlan.grocery_items.filter(item => !checkedItems.has(item.id))
+    // Convert total_ingredients to GroceryItem format for Instacart API
+    const uncheckedItems = allItems
+      .filter((item) => !checkedItems.has(item.itemId))
+      .map((item, globalIndex) => {
+        // Parse quantity string to extract number and unit
+        const quantityMatch = item.quantity.match(/^([\d.]+)\s*(.+)?/)
+        const quantity = quantityMatch ? parseFloat(quantityMatch[1]) : undefined
+        const unit = quantityMatch && quantityMatch[2] ? quantityMatch[2].trim() : undefined
+        
+        return {
+          id: `item-${globalIndex}`,
+          meal_plan_id: mealPlan.id,
+          item_name: item.item,
+          quantity,
+          unit,
+          purchased: false
+        }
+      })
     
     if (uncheckedItems.length === 0) {
       setInstacartError('No unchecked items to order')
@@ -284,7 +309,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
       
       const result = await createInstacartOrder(
         mealPlan.id,
-        uncheckedItems,
+        uncheckedItems as any,
         mealPlanTitle,
         mealPlanUrl
       )
@@ -490,7 +515,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
                   <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
                   </svg>
-                  Shopping List ({mealPlan.grocery_items.length})
+                  Shopping List ({totalIngredients.items.length + movedSeasonings.size})
                 </span>
               </button>
             </div>
@@ -662,70 +687,175 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
               <div className="lg:col-span-2">
                 <div className="gg-card">
-                  <h2 className="gg-heading-section mb-6">Shopping List</h2>
+                  <h2 className="gg-heading-section mb-4">Shopping List</h2>
                   
-                  {mealPlan.grocery_items.length > 0 ? (
-                    <div className="space-y-2">
-                      {mealPlan.grocery_items.map((item) => (
-                        <div
-                          key={item.id}
-                          className={`flex items-center gap-4 rounded-lg border-2 p-4 transition-all ${
-                            checkedItems.has(item.id)
-                              ? 'border-gray-200 bg-gray-50'
-                              : 'border-gray-200 bg-white hover:border-gray-300'
-                          }`}
-                        >
-                          <button
-                            onClick={() => toggleItem(item.id)}
-                            className={`flex h-6 w-6 items-center justify-center rounded border-2 transition-all ${
-                              checkedItems.has(item.id)
-                                ? 'border-[var(--gg-primary)] bg-[var(--gg-primary)]'
-                                : 'border-gray-300 hover:border-[var(--gg-primary)]'
+                  {/* Description */}
+                  <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <p className="text-sm text-gray-700 mb-2">
+                      <strong>How it works:</strong> Click anywhere on an item to check it off your list. Use the menu (⋮) to exclude ingredients from future meal plans or mark them as favorites.
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      Items are automatically consolidated from all recipes in your meal plan. Checked items are excluded when ordering from Instacart.
+                    </p>
+                  </div>
+                  
+                  {/* Main Items */}
+                  {(totalIngredients.items.length > 0 || movedSeasonings.size > 0) ? (
+                    <div className="space-y-2 mb-8">
+                      {/* Regular items */}
+                      {totalIngredients.items.map((item, index) => {
+                        const itemId = `item-${index}`
+                        return (
+                          <div
+                            key={itemId}
+                            onClick={() => toggleItem(itemId)}
+                            className={`flex items-center gap-4 rounded-lg border-2 p-4 transition-all cursor-pointer ${
+                              checkedItems.has(itemId)
+                                ? 'border-gray-200 bg-gray-50'
+                                : 'border-gray-200 bg-white hover:border-gray-300'
                             }`}
                           >
-                            {checkedItems.has(item.id) && (
-                              <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                              </svg>
-                            )}
-                          </button>
-                          
-                          <div className="flex-1">
-                            <p className={`font-medium ${checkedItems.has(item.id) ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
-                              {item.item_name}
-                            </p>
-                            {item.quantity && item.unit && (
-                              <p className="text-sm text-gray-500">
-                                {item.quantity} {item.unit}
+                            <div
+                              className={`flex h-6 w-6 items-center justify-center rounded border-2 transition-all flex-shrink-0 ${
+                                checkedItems.has(itemId)
+                                  ? 'border-[var(--gg-primary)] bg-[var(--gg-primary)]'
+                                  : 'border-gray-300'
+                              }`}
+                            >
+                              {checkedItems.has(itemId) && (
+                                <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                </svg>
+                              )}
+                            </div>
+                            
+                            <div className="flex-1">
+                              <p className={`font-medium ${checkedItems.has(itemId) ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
+                                {item.item}
                               </p>
-                            )}
+                              {item.quantity && (
+                                <p className="text-sm text-gray-500">
+                                  {item.quantity}
+                                </p>
+                              )}
+                            </div>
+
+                            {/* Ingredient Actions Menu */}
+                            <div onClick={(e) => e.stopPropagation()}>
+                              <IngredientActions
+                                itemId={itemId}
+                                itemName={item.item}
+                                onExclude={handleExcludeIngredient}
+                                onFavor={handleFavorIngredient}
+                              />
+                            </div>
                           </div>
+                        )
+                      })}
+                      {/* Moved seasonings */}
+                      {Array.from(movedSeasonings.entries()).map(([seasoningId, item], index) => {
+                        const itemId = `moved-seasoning-${seasoningId}`
+                        return (
+                          <div
+                            key={itemId}
+                            onClick={() => toggleItem(itemId)}
+                            className={`flex items-center gap-4 rounded-lg border-2 p-4 transition-all cursor-pointer ${
+                              checkedItems.has(itemId)
+                                ? 'border-gray-200 bg-gray-50'
+                                : 'border-gray-200 bg-white hover:border-gray-300'
+                            }`}
+                          >
+                            <div
+                              className={`flex h-6 w-6 items-center justify-center rounded border-2 transition-all flex-shrink-0 ${
+                                checkedItems.has(itemId)
+                                  ? 'border-[var(--gg-primary)] bg-[var(--gg-primary)]'
+                                  : 'border-gray-300'
+                              }`}
+                            >
+                              {checkedItems.has(itemId) && (
+                                <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                </svg>
+                              )}
+                            </div>
+                            
+                            <div className="flex-1">
+                              <p className={`font-medium ${checkedItems.has(itemId) ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
+                                {item.item}
+                              </p>
+                              {item.quantity && (
+                                <p className="text-sm text-gray-500">
+                                  {item.quantity}
+                                </p>
+                              )}
+                            </div>
 
-                          {item.category && (
-                            <span className="rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-600">
-                              {item.category}
-                            </span>
-                          )}
-
-                          {item.estimated_price && (
-                            <span className="font-semibold text-gray-700">
-                              ${item.estimated_price.toFixed(2)}
-                            </span>
-                          )}
-
-                          {/* Ingredient Actions Menu */}
-                          <IngredientActions
-                            itemId={item.id}
-                            itemName={item.item_name}
-                            onExclude={handleExcludeIngredient}
-                            onFavor={handleFavorIngredient}
-                          />
-                        </div>
-                      ))}
+                            {/* Ingredient Actions Menu */}
+                            <div onClick={(e) => e.stopPropagation()}>
+                              <IngredientActions
+                                itemId={itemId}
+                                itemName={item.item}
+                                onExclude={handleExcludeIngredient}
+                                onFavor={handleFavorIngredient}
+                              />
+                            </div>
+                          </div>
+                        )
+                      })}
                     </div>
                   ) : (
-                    <div className="text-center py-12">
+                    <div className="text-center py-12 mb-8">
                       <p className="gg-text-body text-gray-500">No items in shopping list.</p>
+                    </div>
+                  )}
+
+                  {/* Seasonings Section */}
+                  {totalIngredients.seasonings.length > 0 && (
+                    <div className="border-t-2 border-gray-200 pt-6">
+                      <h3 className="gg-heading-section mb-2 text-gray-600">Seasonings & Spices</h3>
+                      <p className="text-sm text-gray-500 mb-4">
+                        Click any seasoning below to add it to your shopping list. Once added, you can check it off like other items.
+                      </p>
+                      <div className="space-y-2">
+                        {totalIngredients.seasonings
+                          .map((item, index) => ({ item, index, seasoningId: `seasoning-${index}` }))
+                          .filter(({ seasoningId }) => !movedSeasonings.has(seasoningId))
+                          .map(({ item, index, seasoningId }) => {
+                          const isChecked = checkedItems.has(`moved-seasoning-${seasoningId}`)
+                          
+                          return (
+                            <div
+                              key={seasoningId}
+                              className="flex items-center gap-4 rounded-lg border-2 p-4 transition-all cursor-pointer border-gray-200 bg-gray-50 hover:border-gray-300"
+                              onClick={() => {
+                                // Move seasoning to items section
+                                setMovedSeasonings(prev => {
+                                  const newMap = new Map(prev)
+                                  newMap.set(seasoningId, item)
+                                  return newMap
+                                })
+                              }}
+                            >
+                              <div className="flex h-6 w-6 items-center justify-center">
+                                <svg className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                </svg>
+                              </div>
+                              
+                              <div className="flex-1">
+                                <p className="font-medium text-gray-600">
+                                  {item.item}
+                                </p>
+                                {item.quantity && (
+                                  <p className="text-sm text-gray-500">
+                                    {item.quantity}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -739,7 +869,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
                     <div className="flex items-center justify-between">
                       <span className="gg-text-body text-sm">Total Items</span>
                       <span className="text-2xl font-bold text-[var(--gg-primary)]">
-                        {mealPlan.grocery_items.length}
+                        {totalIngredients.items.length + movedSeasonings.size}
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
@@ -763,7 +893,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
                 <div className="gg-card">
                   <button
                     onClick={handleOrderInstacart}
-                    disabled={isOrderingInstacart || mealPlan.grocery_items.length === 0 || mealPlan.grocery_items.every(item => checkedItems.has(item.id))}
+                    disabled={isOrderingInstacart || (totalIngredients.items.length === 0 && movedSeasonings.size === 0) || (totalIngredients.items.every((_, index) => checkedItems.has(`item-${index}`)) && Array.from(movedSeasonings.keys()).every(id => checkedItems.has(`moved-seasoning-${id}`)))}
                     className="w-full gg-btn-primary flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isOrderingInstacart ? (
@@ -896,7 +1026,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds }: MealPlanViewP
                   d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                 />
               </svg>
-              <p className="text-gray-700 font-semibold">Processing your request...</p>
+              <p className="text-gray-700 font-semibold">Updating your meal plan...</p>
             </div>
           </div>
         </>

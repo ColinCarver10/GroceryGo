@@ -164,7 +164,7 @@ export async function deleteMealPlanForUser(
 export interface PersistMealPlanParams {
   mealPlan: MealPlan
   recipes: RecipeInput[]
-  groceryList: GroceryItemInput[]
+  groceryList?: GroceryItemInput[] | { items: GroceryItemInput[]; seasonings: GroceryItemInput[] }
   schedule?: ScheduleInput[]
 }
 
@@ -343,32 +343,42 @@ export async function persistGeneratedMealPlan(
     }
   }
 
-  if (groceryList.length) {
-    const groceryItems: GroceryItemInsert[] = groceryList.map((item) => ({
-      meal_plan_id: mealPlan.id,
-      item_name: item.item,
-      quantity: parseQuantity(item.quantity),
-      unit: parseUnit(item.quantity),
-      purchased: false
-    }))
-
-    const { error: groceryError } = await supabase
-      .from('grocery_items')
-      .insert(groceryItems)
-
-    if (groceryError) {
-      throw new Error(
-        groceryError.message || 'Failed to create grocery list items'
-      )
+  // Update meal plan with status, total_meals, and total_ingredients
+  const updateData: any = {
+    status: 'pending',
+    total_meals: schedule.length > 0 ? schedule.length : typedInsertedRecipes.length
+  }
+  
+  // Add total_ingredients if groceryList is provided
+  if (groceryList) {
+    // Handle both old array format and new nested structure
+    if (Array.isArray(groceryList)) {
+      // Old format: convert to new structure
+      updateData.total_ingredients = {
+        items: groceryList.map(item => ({
+          item: item.item,
+          quantity: item.quantity
+        })),
+        seasonings: []
+      }
+    } else if (groceryList.items || groceryList.seasonings) {
+      // New format: use as-is
+      updateData.total_ingredients = {
+        items: (groceryList.items || []).map((item: any) => ({
+          item: item.item,
+          quantity: item.quantity
+        })),
+        seasonings: (groceryList.seasonings || []).map((item: any) => ({
+          item: item.item,
+          quantity: item.quantity
+        }))
+      }
     }
   }
 
   const { error: updateError } = await supabase
     .from('meal_plans')
-    .update({
-      status: 'pending',
-      total_meals: schedule.length > 0 ? schedule.length : typedInsertedRecipes.length
-    })
+    .update(updateData)
     .eq('id', mealPlan.id)
 
   if (updateError) {

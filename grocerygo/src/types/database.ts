@@ -108,6 +108,13 @@ export interface MealPlan {
   // Instacart caching fields
   instacart_link?: string
   instacart_link_expires_at?: string
+  
+  // Total ingredients list (consolidated grocery list)
+  // Can be either old array format (for backward compatibility) or new nested structure
+  total_ingredients?: Array<{ item: string; quantity: string }> | {
+    items: Array<{ item: string; quantity: string }>
+    seasonings: Array<{ item: string; quantity: string }>
+  }
 }
 
 export interface MealPlanInsert {
@@ -115,6 +122,10 @@ export interface MealPlanInsert {
   week_of: string
   status: 'completed' | 'in-progress' | 'pending' | 'generating'
   total_meals: number
+  total_ingredients?: Array<{ item: string; quantity: string }> | {
+    items: Array<{ item: string; quantity: string }>
+    seasonings: Array<{ item: string; quantity: string }>
+  }
   total_budget?: number
   
   survey_snapshot?: SurveyResponse
@@ -251,7 +262,7 @@ export interface SavedRecipeInsert {
 // Extended types with relations for queries
 export interface MealPlanWithRecipes extends MealPlan {
   meal_plan_recipes: Array<MealPlanRecipe & { recipe: Recipe }>
-  grocery_items: GroceryItem[]
+  grocery_items?: GroceryItem[] // Optional - not always fetched
 }
 
 // AI Response format (matches schema with separate meal type arrays)

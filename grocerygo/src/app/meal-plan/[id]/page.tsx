@@ -28,9 +28,29 @@ export default async function MealPlanDetailPage({ params }: { params: Promise<{
     notFound()
   }
 
+  // Handle backward compatibility: convert old array format to new structure
+  let totalIngredients: { items: Array<{ item: string; quantity: string }>; seasonings: Array<{ item: string; quantity: string }> }
+  if (!mealPlan.total_ingredients) {
+    totalIngredients = { items: [], seasonings: [] }
+  } else if (Array.isArray(mealPlan.total_ingredients)) {
+    // Old format: convert to new structure
+    totalIngredients = {
+      items: mealPlan.total_ingredients,
+      seasonings: []
+    }
+  } else if (typeof mealPlan.total_ingredients === 'object' && ('items' in mealPlan.total_ingredients || 'seasonings' in mealPlan.total_ingredients)) {
+    // New format: use as-is
+    totalIngredients = {
+      items: (mealPlan.total_ingredients as any).items || [],
+      seasonings: (mealPlan.total_ingredients as any).seasonings || []
+    }
+  } else {
+    totalIngredients = { items: [], seasonings: [] }
+  }
+
   // Fetch user's saved recipe IDs
   const savedRecipeIds = await getSavedRecipeIds(user.id)
 
-  return <MealPlanView mealPlan={mealPlan} savedRecipeIds={savedRecipeIds} />
+  return <MealPlanView mealPlan={mealPlan} savedRecipeIds={savedRecipeIds} totalIngredients={totalIngredients} />
 }
 

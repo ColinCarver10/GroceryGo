@@ -86,7 +86,7 @@ Using the provided_recipes (one per distinct meal type):
 3) Produce:
    - recipes[] (all unique modified recipes, one per distinct meal type from provided_recipes)
    - schedule[] (one entry per requested meal slot)
-   - grocery_list[] (consolidated totals, best-effort)
+   - grocery_list{} (consolidated totals with items and seasonings separated)
 
 ### Hard Rules (must follow):
 A) Do NOT invent new recipes. Every recipe MUST be based on a provided_recipes entry. You MUST modify ALL provided recipes to align with user goals.
@@ -178,10 +178,27 @@ ${MEASUREMENT_UNITS_PROMPT}
       "portionMultiplier": 1
     }
   ],
-  "grocery_list": [
-    { "item": "Ingredient Name", "quantity": "Total Amount + Unit" }
-  ]
+  "grocery_list": {
+    "items": [
+      { "item": "Ingredient Name", "quantity": "Total Amount + Unit" }
+    ],
+    "seasonings": [
+      { "item": "Spice/Seasoning Name", "quantity": "Total Amount + Unit" }
+    ]
+  }
 }
+
+### Grocery List Structure:
+- **items**: Main ingredients (produce, meat, dairy, grains, etc.) - everything that is NOT a seasoning
+- **seasonings**: Spices, herbs, and seasonings including:
+  - Salt, pepper (black, white, cayenne, etc.)
+  - Spices: paprika, cumin, turmeric, cinnamon, nutmeg, etc.
+  - Dried herbs: oregano, basil, thyme, rosemary, etc.
+  - Spice blends: curry powder, chili powder, garam masala, etc.
+  - Powdered seasonings: garlic powder, onion powder, etc.
+  - Use your cooking knowledge to determine what counts as a seasoning vs. a main ingredient
+
+**IMPORTANT**: Do NOT include water in the grocery list. Water is assumed to be available and should not be listed as an ingredient.
 
 ### Validation Checklist (must satisfy before output):
 1) schedule length === meal_slots length (every slot filled)

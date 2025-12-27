@@ -493,7 +493,10 @@ export default function GeneratingView({
       const jsonStr = jsonMatch ? jsonMatch[1] : buffer
       const aiResponse = JSON.parse(jsonStr.trim()) as {
         recipes?: RecipeData[]
-        grocery_list?: Array<{ item: string; quantity: string }>
+        grocery_list?: Array<{ item: string; quantity: string }> | {
+          items: Array<{ item: string; quantity: string }>
+          seasonings: Array<{ item: string; quantity: string }>
+        }
         schedule?: ScheduleEntry[]
       }
 
@@ -559,10 +562,26 @@ export default function GeneratingView({
       setCurrentRecipeIndex(Math.max(1, uniqueRecipeIdsRef.current.size))
       setOverallProgress(95) // Near completion when all recipes are parsed
 
-      const groceryListItems = Array.isArray(aiResponse.grocery_list) ? aiResponse.grocery_list : []
+      // Handle both old array format and new nested structure
+      let groceryListData: any
+      if (Array.isArray(aiResponse.grocery_list)) {
+        // Old format: convert to new structure
+        groceryListData = {
+          items: aiResponse.grocery_list,
+          seasonings: []
+        }
+      } else if (aiResponse.grocery_list && (aiResponse.grocery_list.items || aiResponse.grocery_list.seasonings)) {
+        // New format: use as-is
+        groceryListData = {
+          items: aiResponse.grocery_list.items || [],
+          seasonings: aiResponse.grocery_list.seasonings || []
+        }
+      } else {
+        groceryListData = { items: [], seasonings: [] }
+      }
 
       setOverallProgress(100) // Complete
-      await saveRecipes(parsedRecipes, groceryListItems, parsedSchedule)
+      await saveRecipes(parsedRecipes, groceryListData, parsedSchedule)
     } catch (err) {
       console.error('Parse error:', err)
       console.error('Buffer content:', buffer)
@@ -573,7 +592,7 @@ export default function GeneratingView({
 
   const saveRecipes = async (
     recipesToSave: RecipeData[],
-    groceryListToSave: Array<{ item: string; quantity: string }>,
+    groceryListToSave: { items: Array<{ item: string; quantity: string }>; seasonings: Array<{ item: string; quantity: string }> },
     schedule: ScheduleEntry[]
   ) => {
     setIsSaving(true)

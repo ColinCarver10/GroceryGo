@@ -2,6 +2,8 @@
 
 import { createClient } from '@/utils/supabase/server'
 import { revalidateTag } from 'next/cache'
+import { headers } from 'next/headers'
+import { readAndParseMealPlanStream } from '@/utils/mealPlanStreamParser'
 import type {
   GroceryItem,
   RecipeInsert,
@@ -12,11 +14,18 @@ import type { ShoppingListData, InstacartResponse, LineItem } from '@/types/inst
 import { callOpenAI } from '@/app/actions/aiHelper'
 import { trackMealPlanAction } from '@/app/actions/feedbackHelper'
 import {
-  replaceRecipePrompt, 
+  replaceRecipePrompt,
+  replaceRecipeWithTotalIngredientsPrompt,
   bulkAdjustmentPrompt, 
   simplifyRecipePrompt 
 } from './prompts'
 import { getDateForDayName } from '@/utils/mealPlanDates'
+import {
+  createMealPlanContext,
+  getEmbedPrompts,
+  fetchCandidateRecipesForMealType,
+  fetchRecipeDetailsByIds
+} from '@/services/mealPlanService'
 
 const INSTACART_API_URL = 'https://connect.dev.instacart.tools/idp/v1/products/products_link'
 const INSTACART_API_KEY = process.env.INSTACART_API_KEY
@@ -158,7 +167,105 @@ export async function createInstacartOrder(
 }
 
 /**
+ * Helper function to generate a single meal replacement using the meal plan generation API
+ */
+async function generateSingleMealReplacement(
+  mealPlanId: string,
+  mealType: 'breakfast' | 'lunch' | 'dinner'
+): Promise<{ success: boolean; error?: string; recipe?: { name: string; ingredients: RecipeInsert['ingredients']; steps: string[]; mealType: string } }> {
+  try {
+    console.log('[generateSingleMealReplacement] Starting generation', { mealPlanId, mealType })
+    // Prepare meal selection with 1 for the target meal type
+    const mealSelection = {
+      breakfast: mealType === 'breakfast' ? 1 : 0,
+      lunch: mealType === 'lunch' ? 1 : 0,
+      dinner: mealType === 'dinner' ? 1 : 0
+    }
+
+    // Prepare distinct recipe counts
+    const distinctRecipeCounts = {
+      breakfast: mealType === 'breakfast' ? 1 : 0,
+      lunch: mealType === 'lunch' ? 1 : 0,
+      dinner: mealType === 'dinner' ? 1 : 0
+    }
+
+    // Prepare selected slots (day doesn't matter since we're generating one recipe)
+    const selectedSlots = [{ day: 'Monday', mealType }]
+
+    // Call the meal plan generation API
+    // Use absolute URL for server-side fetch
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 
+      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000')
+    const apiUrl = `${baseUrl}/api/generate-meal-plan`
+    
+    // Get cookies from headers to pass authentication
+    const headersList = await headers()
+    const cookie = headersList.get('cookie') || ''
+    
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Cookie': cookie
+      },
+      body: JSON.stringify({
+        mealSelection,
+        mealPlanId,
+        distinctRecipeCounts,
+        selectedSlots
+      })
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error('[generateSingleMealReplacement] API error:', response.status, errorText)
+      return { success: false, error: `API error: ${response.status} ${errorText}` }
+    }
+    console.log('[generateSingleMealReplacement] API response OK, parsing stream...')
+
+    // Read and parse the streamed response using utility function
+    const parsedResponse = await readAndParseMealPlanStream(response)
+    
+    if (!parsedResponse) {
+      console.error('[generateSingleMealReplacement] Failed to parse response')
+      return { success: false, error: 'Failed to parse API response' }
+    }
+    console.log('[generateSingleMealReplacement] Parsed response:', {
+      recipeCount: parsedResponse.recipes.length
+    })
+
+    // Extract the recipe (should be exactly one)
+    if (parsedResponse.recipes.length === 0) {
+      console.error('[generateSingleMealReplacement] No recipes in parsed response')
+      return { success: false, error: 'No recipe generated' }
+    }
+
+    // Use the first recipe (should be the only one)
+    const generatedRecipe = parsedResponse.recipes[0]
+    console.log('[generateSingleMealReplacement] Recipe generated:', generatedRecipe.name)
+
+    return {
+      success: true,
+      recipe: {
+        name: generatedRecipe.name,
+        ingredients: generatedRecipe.ingredients,
+        steps: generatedRecipe.steps,
+        mealType: generatedRecipe.mealType || mealType
+      }
+    }
+  } catch (error) {
+    console.error('[generateSingleMealReplacement] Unexpected error:', error)
+    console.error('[generateSingleMealReplacement] Error stack:', error instanceof Error ? error.stack : 'No stack trace')
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to generate meal replacement'
+    }
+  }
+}
+
+/**
  * Feature 1: Replace individual recipe
+ * Replaces ALL occurrences of a recipe with a single new recipe generated using the meal plan generation API
  */
 export async function replaceRecipe(
   mealPlanId: string,
@@ -166,117 +273,402 @@ export async function replaceRecipe(
   mealType: string
 ): Promise<{ success: boolean; error?: string; newRecipeId?: string }> {
   try {
+    console.log('[replaceRecipe] Starting replacement', { mealPlanId, recipeId, mealType })
     const supabase = await createClient()
 
     // Get authenticated user
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError) {
+      console.error('[replaceRecipe] Auth error:', authError)
       return { success: false, error: 'User not authenticated' }
     }
+    if (!user) {
+      console.error('[replaceRecipe] No user found')
+      return { success: false, error: 'User not authenticated' }
+    }
+    console.log('[replaceRecipe] User authenticated:', user.id)
 
-    // Get meal plan with survey snapshot
-    const { data: mealPlan } = await supabase
+    // Get meal plan with survey snapshot and total_ingredients
+    const { data: mealPlan, error: mealPlanError } = await supabase
       .from('meal_plans')
-      .select('*, meal_plan_recipes(*, recipe:full_recipes_table(*)), grocery_items(*)')
+      .select('*, meal_plan_recipes(*, recipe:full_recipes_table(*))')
       .eq('id', mealPlanId)
       .eq('user_id', user.id)
       .single()
 
+    if (mealPlanError) {
+      console.error('[replaceRecipe] Meal plan fetch error:', mealPlanError)
+      return { success: false, error: `Meal plan fetch error: ${mealPlanError.message}` }
+    }
     if (!mealPlan) {
+      console.error('[replaceRecipe] Meal plan not found:', mealPlanId)
       return { success: false, error: 'Meal plan not found' }
     }
+    console.log('[replaceRecipe] Meal plan found:', mealPlan.id, 'with', mealPlan.meal_plan_recipes?.length || 0, 'recipes')
 
-    // Get the recipe being replaced
-    const { data: oldRecipe } = await supabase
-      .from('full_recipes_table')
+    // Find ALL meal_plan_recipes that use this recipe_id (either as recipe_id or updated_recipe_id)
+    const mealPlanRecipesToReplace = mealPlan.meal_plan_recipes.filter(
+      (mpr: any) => String(mpr.recipe_id) === String(recipeId) || String(mpr.updated_recipe_id) === String(recipeId)
+    )
+
+    console.log('[replaceRecipe] Found', mealPlanRecipesToReplace.length, 'meal plan recipes to replace')
+    if (mealPlanRecipesToReplace.length === 0) {
+      console.error('[replaceRecipe] No meal plan recipes found with recipe_id:', recipeId)
+      return { success: false, error: 'No meal plan recipes found with this recipe' }
+    }
+
+    // Get the recipe being replaced - check both recipes table and full_recipes_table
+    let oldRecipe: any = null
+    
+    // First check recipes table (updated_recipe_id)
+    const { data: recipeFromRecipes, error: recipesError } = await supabase
+      .from('recipes')
       .select('*')
       .eq('id', recipeId)
       .single()
+    
+    if (recipesError) {
+      console.log('[replaceRecipe] Recipe not found in recipes table, checking full_recipes_table:', recipesError.message)
+    }
+    
+    if (recipeFromRecipes) {
+      oldRecipe = recipeFromRecipes
+      console.log('[replaceRecipe] Found old recipe in recipes table:', recipeFromRecipes.name)
+    } else {
+      // Fallback to full_recipes_table (parent recipe)
+      const { data: recipeFromFull, error: fullRecipesError } = await supabase
+        .from('full_recipes_table')
+        .select('*')
+        .eq('recipe_id', recipeId)
+        .single()
+      
+      if (fullRecipesError) {
+        console.error('[replaceRecipe] Error fetching from full_recipes_table:', fullRecipesError)
+      }
+      
+      if (recipeFromFull) {
+        oldRecipe = recipeFromFull
+        console.log('[replaceRecipe] Found old recipe in full_recipes_table:', recipeFromFull.name)
+      }
+    }
 
     if (!oldRecipe) {
+      console.error('[replaceRecipe] Recipe not found in either table:', recipeId)
       return { success: false, error: 'Recipe not found' }
     }
 
-    // Get existing ingredients to maximize reuse
-    const existingIngredients = mealPlan.grocery_items.map((item: GroceryItem) => item.item_name)
+    // Determine meal type: use parameter if provided, otherwise from first occurrence, or default to 'dinner'
+    const targetMealType = (mealType || mealPlanRecipesToReplace[0]?.meal_type || 'dinner').toLowerCase() as 'breakfast' | 'lunch' | 'dinner'
+    console.log('[replaceRecipe] Target meal type:', targetMealType)
 
-    // Call AI to generate replacement recipe
-    const prompt = replaceRecipePrompt(
-      mealPlan.survey_snapshot || {},
-      mealType,
-      existingIngredients,
-      oldRecipe.name
+    // Get current total_ingredients from meal plan (handle both old and new formats)
+    let currentTotalIngredients: { items: Array<{ item: string; quantity: string }>; seasonings: Array<{ item: string; quantity: string }> }
+    if (Array.isArray(mealPlan.total_ingredients)) {
+      // Old format: convert to new structure
+      currentTotalIngredients = {
+        items: mealPlan.total_ingredients,
+        seasonings: []
+      }
+    } else if (mealPlan.total_ingredients && typeof mealPlan.total_ingredients === 'object' && ('items' in mealPlan.total_ingredients || 'seasonings' in mealPlan.total_ingredients)) {
+      // New format: use as-is
+      currentTotalIngredients = {
+        items: (mealPlan.total_ingredients as any).items || [],
+        seasonings: (mealPlan.total_ingredients as any).seasonings || []
+      }
+    } else {
+      // No total_ingredients: use empty structure
+      currentTotalIngredients = { items: [], seasonings: [] }
+    }
+    console.log('[replaceRecipe] Current total_ingredients - items:', currentTotalIngredients.items.length, 'seasonings:', currentTotalIngredients.seasonings.length)
+
+    // Get old recipe ingredients
+    const oldRecipeIngredients = (oldRecipe.ingredients || []) as Array<{ item: string; quantity: string }>
+    console.log('[replaceRecipe] Old recipe has', oldRecipeIngredients.length, 'ingredients')
+
+    // Get survey data for embedding and prompt
+    const surveyData = mealPlan.survey_snapshot || {}
+    if (!surveyData || Object.keys(surveyData).length === 0) {
+      console.error('[replaceRecipe] No survey snapshot found')
+      return { success: false, error: 'Meal plan missing survey data' }
+    }
+
+    // Reuse embedding and recipe fetching logic
+    console.log('[replaceRecipe] Creating meal plan context and fetching candidate recipe...')
+    const context = await createMealPlanContext()
+    const embedPrompts = await getEmbedPrompts(surveyData)
+    
+    // Get embedding prompt for the target meal type
+    const mealTypeEmbedPrompt = targetMealType === 'breakfast' 
+      ? embedPrompts.breakfast 
+      : targetMealType === 'lunch'
+      ? embedPrompts.lunch
+      : embedPrompts.dinner
+
+    // Fetch candidate recipe
+    const candidateIds = await fetchCandidateRecipesForMealType(
+      mealTypeEmbedPrompt,
+      context,
+      targetMealType === 'breakfast' ? 'breakfast' : 'lunch/dinner',
+      1
     )
 
-    const result = await callOpenAI<ReplacementRecipePayload>(
-      'You are an expert meal planner for GroceryGo. Generate a single replacement recipe in JSON format following all guidelines.',
+    if (candidateIds.length === 0) {
+      console.error('[replaceRecipe] No candidate recipes found')
+      return { success: false, error: 'No candidate recipes found for replacement' }
+    }
+
+    // Fetch recipe details
+    const candidateRecipes = await fetchRecipeDetailsByIds(context, candidateIds)
+    if (candidateRecipes.length === 0) {
+      console.error('[replaceRecipe] No recipe details found')
+      return { success: false, error: 'Failed to fetch recipe details' }
+    }
+
+    const candidateRecipe = candidateRecipes[0]
+    console.log('[replaceRecipe] Using candidate recipe:', candidateRecipe.name)
+
+    // Generate replacement recipe with total_ingredients update using new prompt
+    console.log('[replaceRecipe] Generating replacement recipe with total_ingredients update...')
+    const prompt = replaceRecipeWithTotalIngredientsPrompt(
+      surveyData as any,
+      targetMealType,
+      oldRecipe.name,
+      oldRecipeIngredients,
+      currentTotalIngredients,
+      candidateRecipe
+    )
+
+    const systemPrompt = `You are an expert meal planning assistant for GroceryGo.
+You must generate replacement recipes that align with user goals and accurately update the total ingredients list.
+CRITICAL: When updating total_ingredients, you MUST:
+- Remove ingredients from the old recipe (subtract quantities)
+- Add ingredients from the new recipe (add quantities)
+- Consolidate ingredients with matching names and units
+- Use consistent ingredient names
+- Return valid JSON only.`
+
+    const aiResult = await callOpenAI<{ recipe: { name: string; ingredients: Array<{ item: string; quantity: string }>; steps: string[] }; updated_total_ingredients: { items: Array<{ item: string; quantity: string }>; seasonings: Array<{ item: string; quantity: string }> } }>(
+      systemPrompt,
       prompt,
-      (response) => {
-        const jsonMatch = response.match(/```json\n?([\s\S]*?)\n?```/) || response.match(/```\n?([\s\S]*?)\n?```/)
-        const jsonStr = jsonMatch ? jsonMatch[1] : response
-        return JSON.parse(jsonStr)
+      (response: string) => {
+        // Extract JSON from response
+        const jsonMatch = response.match(/\{[\s\S]*\}/)
+        if (!jsonMatch) {
+          throw new Error('No JSON found in response')
+        }
+        
+        const parsed = JSON.parse(jsonMatch[0])
+        
+        if (!parsed.recipe || !parsed.updated_total_ingredients) {
+          throw new Error('Missing required fields in response')
+        }
+
+        // Handle both old array format and new nested structure from AI
+        let updatedTotalIngredients: { items: Array<{ item: string; quantity: string }>; seasonings: Array<{ item: string; quantity: string }> }
+        if (Array.isArray(parsed.updated_total_ingredients)) {
+          // Old format: convert to new structure
+          updatedTotalIngredients = {
+            items: parsed.updated_total_ingredients,
+            seasonings: []
+          }
+        } else if (parsed.updated_total_ingredients.items || parsed.updated_total_ingredients.seasonings) {
+          // New format: use as-is
+          updatedTotalIngredients = {
+            items: parsed.updated_total_ingredients.items || [],
+            seasonings: parsed.updated_total_ingredients.seasonings || []
+          }
+        } else {
+          throw new Error('Invalid updated_total_ingredients format')
+        }
+
+        return {
+          recipe: parsed.recipe,
+          updated_total_ingredients: updatedTotalIngredients
+        }
+      },
+      (data) => {
+        // Basic validation
+        return !!(
+          data.recipe &&
+          data.recipe.name &&
+          Array.isArray(data.recipe.ingredients) &&
+          Array.isArray(data.recipe.steps) &&
+          Array.isArray(data.updated_total_ingredients)
+        )
       }
     )
 
-    if (!result.success || !result.data) {
-      return { success: false, error: result.error || 'Failed to generate replacement recipe' }
+    if (!aiResult.success || !aiResult.data) {
+      console.error('[replaceRecipe] AI generation failed:', aiResult.error)
+      return { success: false, error: aiResult.error || 'Failed to generate replacement recipe' }
     }
 
-    const { recipe: newRecipeData, additional_grocery_items } = result.data
+    const { recipe: newRecipeData, updated_total_ingredients } = aiResult.data
+    console.log('[replaceRecipe] Recipe generated successfully:', newRecipeData.name)
+    console.log('[replaceRecipe] Updated total_ingredients - items:', updated_total_ingredients.items.length, 'seasonings:', updated_total_ingredients.seasonings.length)
 
-    // Create new recipe in database
+    // Create new recipe in recipes table (not full_recipes_table)
+    // Map ingredients to the correct format
+    const recipeInsert: RecipeInsert = {
+      name: newRecipeData.name,
+      ingredients: newRecipeData.ingredients.map(ing => ({
+        item: ing.item,
+        quantity: ing.quantity,
+        unit: ing.quantity.split(/\s+/).slice(1).join(' ') || undefined
+      })),
+      steps: newRecipeData.steps,
+      meal_type: targetMealType,
+      servings: 1 // Default servings, will be updated based on usage
+    }
+    
+    console.log('[replaceRecipe] Recipe insert data prepared:', {
+      name: recipeInsert.name,
+      ingredientCount: recipeInsert.ingredients.length,
+      stepCount: recipeInsert.steps.length
+    })
+
+    console.log('[replaceRecipe] Inserting new recipe into recipes table...')
     const { data: newRecipe, error: recipeError } = await supabase
-      .from('full_recipes_table')
-      .insert({
-        name: newRecipeData.name,
-        ingredients: newRecipeData.ingredients,
-        steps: newRecipeData.steps,
-        meal_type: mealType,
-        times_used: 1
-      } as RecipeInsert)
-      .select()
+      .from('recipes')
+      .insert(recipeInsert)
+      .select('id')
       .single()
 
-    if (recipeError || !newRecipe) {
-      return { success: false, error: 'Failed to create new recipe' }
+    if (recipeError) {
+      console.error('[replaceRecipe] Error inserting recipe:', recipeError)
+      return { success: false, error: `Failed to create new recipe: ${recipeError.message}` }
     }
+    if (!newRecipe) {
+      console.error('[replaceRecipe] Recipe insert returned no data')
+      return { success: false, error: 'Failed to create new recipe: No data returned' }
+    }
+    console.log('[replaceRecipe] New recipe created:', newRecipe.id)
 
-    // Update meal_plan_recipes junction table
-    await supabase
-      .from('meal_plan_recipes')
-      .update({ recipe_id: newRecipe.id })
-      .eq('meal_plan_id', mealPlanId)
-      .eq('recipe_id', recipeId)
+    // Update ALL meal_plan_recipes that use the old recipe
+    // recipe_id is an integer (references full_recipes_table)
+    // updated_recipe_id is a UUID (references recipes table)
+    // Check if recipeId is a UUID or integer to determine which field to match
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(recipeId)
+    const isInteger = /^\d+$/.test(recipeId)
+    
+    console.log('[replaceRecipe] Recipe ID type check:', { recipeId, isUUID, isInteger })
+    
+    let totalUpdated = 0
+    let updateError: any = null
+    
+    if (isUUID) {
+      // Recipe ID is a UUID, so it's from the recipes table (updated_recipe_id)
+      console.log('[replaceRecipe] Updating meal_plan_recipes with updated_recipe_id:', recipeId)
+      const { data: updated, error: error } = await supabase
+        .from('meal_plan_recipes')
+        .update({ updated_recipe_id: newRecipe.id })
+        .eq('meal_plan_id', mealPlanId)
+        .eq('updated_recipe_id', recipeId)
+        .select('id')
+      
+      totalUpdated = updated?.length || 0
+      updateError = error
+      console.log('[replaceRecipe] Updated', totalUpdated, 'records with updated_recipe_id match')
+    } else if (isInteger) {
+      // Recipe ID is an integer, so it's from full_recipes_table (recipe_id)
+      console.log('[replaceRecipe] Updating meal_plan_recipes with recipe_id:', recipeId)
+      const { data: updated, error: error } = await supabase
+        .from('meal_plan_recipes')
+        .update({ updated_recipe_id: newRecipe.id })
+        .eq('meal_plan_id', mealPlanId)
+        .eq('recipe_id', parseInt(recipeId, 10))
+        .select('id')
+      
+      totalUpdated = updated?.length || 0
+      updateError = error
+      console.log('[replaceRecipe] Updated', totalUpdated, 'records with recipe_id match')
+    } else {
+      // Try both - might be a string representation of an integer
+      console.log('[replaceRecipe] Recipe ID format unclear, trying both update methods')
+      
+      // Try as UUID first (updated_recipe_id)
+      const { data: updated1, error: error1 } = await supabase
+        .from('meal_plan_recipes')
+        .update({ updated_recipe_id: newRecipe.id })
+        .eq('meal_plan_id', mealPlanId)
+        .eq('updated_recipe_id', recipeId)
+        .select('id')
+      
+      // Try as integer (recipe_id) - only if first didn't work
+      let updated2: any[] = []
+      let error2: any = null
+      if (!updated1 || updated1.length === 0) {
+        const parsedInt = parseInt(recipeId, 10)
+        if (!isNaN(parsedInt)) {
+          const result = await supabase
+            .from('meal_plan_recipes')
+            .update({ updated_recipe_id: newRecipe.id })
+            .eq('meal_plan_id', mealPlanId)
+            .eq('recipe_id', parsedInt)
+            .select('id')
+          updated2 = result.data || []
+          error2 = result.error
+        }
+      }
+      
+      totalUpdated = (updated1?.length || 0) + (updated2?.length || 0)
+      updateError = error1 || error2
+      console.log('[replaceRecipe] Updated', totalUpdated, 'records total (tried both methods)')
+    }
+    
+    if (updateError) {
+      console.error('[replaceRecipe] Error updating meal_plan_recipes:', updateError)
+      return { success: false, error: `Failed to update meal plan recipes: ${updateError.message}` }
+    }
+    
+    if (totalUpdated === 0) {
+      console.error('[replaceRecipe] No records were updated')
+      return { success: false, error: 'No meal plan recipes were updated' }
+    }
+    
+    console.log('[replaceRecipe] Successfully updated', totalUpdated, 'meal_plan_recipes')
 
-    // Add new grocery items
-    if (additional_grocery_items && additional_grocery_items.length > 0) {
-      const newGroceryItems: GroceryItemInsert[] = additional_grocery_items.map((item) => ({
-        meal_plan_id: mealPlanId,
-        item_name: item.item,
-        quantity: parseQuantity(item.quantity),
-        unit: parseUnit(item.quantity),
-        purchased: false
-      }))
+    // Update meal plan's total_ingredients
+    console.log('[replaceRecipe] Updating meal plan total_ingredients...')
+    const { error: totalIngredientsError } = await supabase
+      .from('meal_plans')
+      .update({ total_ingredients: updated_total_ingredients })
+      .eq('id', mealPlanId)
 
-      await supabase
-        .from('grocery_items')
-        .insert(newGroceryItems)
+    if (totalIngredientsError) {
+      console.error('[replaceRecipe] Error updating total_ingredients:', totalIngredientsError)
+      // Don't fail the whole operation, but log the error
+    } else {
+      console.log('[replaceRecipe] Total ingredients updated successfully')
     }
 
     // Track action
-    await trackMealPlanAction(
-      mealPlanId,
-      user.id,
-      `User replaced recipe '${oldRecipe.name}' with a new ${mealType} recipe`
-    )
+    console.log('[replaceRecipe] Tracking action...')
+    try {
+      await trackMealPlanAction(
+        mealPlanId,
+        user.id,
+        `User replaced recipe '${oldRecipe.name}' with a new ${targetMealType} recipe (${mealPlanRecipesToReplace.length} occurrence${mealPlanRecipesToReplace.length === 1 ? '' : 's'})`
+      )
+      console.log('[replaceRecipe] Action tracked successfully')
+    } catch (trackError) {
+      console.warn('[replaceRecipe] Failed to track action:', trackError)
+      // Don't fail the whole operation if tracking fails
+    }
 
+    console.log('[replaceRecipe] Revalidating cache...')
     revalidateTag('meal-plan')
     revalidateTag('dashboard')
 
+    console.log('[replaceRecipe] Replacement completed successfully. New recipe ID:', newRecipe.id)
     return { success: true, newRecipeId: newRecipe.id }
   } catch (error) {
-    console.error('Error replacing recipe:', error)
-    return { success: false, error: 'An unexpected error occurred' }
+    console.error('[replaceRecipe] Unexpected error:', error)
+    console.error('[replaceRecipe] Error stack:', error instanceof Error ? error.stack : 'No stack trace')
+    return { 
+      success: false, 
+      error: `An unexpected error occurred: ${error instanceof Error ? error.message : String(error)}` 
+    }
   }
 }
 
@@ -726,7 +1118,7 @@ export async function saveCookingNote(
 
     // Get current recipe to append to cooking_notes
     const { data: recipe, error: fetchError } = await supabase
-      .from('full_recipes_table')
+      .from('recipes')
       .select('cooking_notes')
       .eq('id', recipeId)
       .single()
@@ -742,7 +1134,7 @@ export async function saveCookingNote(
 
     // Update recipe with new notes
     const { error: updateError } = await supabase
-      .from('full_recipes_table')
+      .from('recipes')
       .update({ cooking_notes: updatedNotes })
       .eq('id', recipeId)
 

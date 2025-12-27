@@ -41,6 +41,11 @@ interface GroceryListItem {
   quantity: string
 }
 
+interface GroceryListStructure {
+  items: Array<{ item: string; quantity: string }>
+  seasonings: Array<{ item: string; quantity: string }>
+}
+
 interface ScheduleEntry {
   slotLabel: string
   day: string
@@ -52,7 +57,7 @@ interface ScheduleEntry {
 export async function saveGeneratedRecipes(
   mealPlanId: string,
   recipes: SavedRecipe[],
-  groceryList: GroceryListItem[],
+  groceryList: GroceryListStructure,
   schedule: ScheduleEntry[] = []
 ) {
   try {
@@ -69,7 +74,7 @@ export async function saveGeneratedRecipes(
     await persistGeneratedMealPlan(context, {
       mealPlan,
       recipes: recipes as RecipeInput[],
-      groceryList: groceryList as GroceryItemInput[],
+      groceryList: groceryList as any, // Can be either array or nested structure
       schedule: schedule as ScheduleInput[]
     })
 

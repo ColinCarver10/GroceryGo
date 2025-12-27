@@ -131,6 +131,143 @@ ${MEASUREMENT_UNITS_PROMPT}
 Note: additional_grocery_items should only include NEW ingredients not in the existing list.`;
 };
 
+export const replaceRecipeWithTotalIngredientsPrompt = (
+  surveyData: SurveyResponse,
+  mealType: string,
+  recipeToReplace: string,
+  oldRecipeIngredients: Array<{ item: string; quantity: string }>,
+  currentTotalIngredients: Array<{ item: string; quantity: string }> | { items: Array<{ item: string; quantity: string }>; seasonings: Array<{ item: string; quantity: string }> },
+  candidateRecipe?: any
+) => {
+  // Extract favored and excluded ingredients
+  const favoredIngredients = surveyData.favored_ingredients as string[] || []
+  const excludedIngredients = surveyData.excluded_ingredients as string[] || []
+  
+  let ingredientPreferencesSection = ''
+  if (favoredIngredients.length > 0 || excludedIngredients.length > 0) {
+    ingredientPreferencesSection = '\n### Ingredient Preferences:\n'
+    
+    if (favoredIngredients.length > 0) {
+      ingredientPreferencesSection += `**Favored Ingredients (prioritize using these):** ${favoredIngredients.join(', ')}\n`
+    }
+    
+    if (excludedIngredients.length > 0) {
+      ingredientPreferencesSection += `**Excluded Ingredients (NEVER use these):** ${excludedIngredients.join(', ')}\n`
+    }
+  }
+  
+  // Check if protein requirement applies
+  const goals = surveyData['9'] || []
+  const priorities = surveyData['11'] || []
+  const requiresProtein = goals.includes('Eat healthier') || priorities[0] === 'Nutrition'
+  
+  let proteinRequirement = ''
+  if (requiresProtein) {
+    proteinRequirement = `\n### Protein Requirement:
+Since the user has "Eat healthier" as a goal or "Nutrition" as their #1 priority, this recipe MUST include a good quality protein source:
+- Animal proteins: chicken, turkey, beef, pork, fish, seafood, eggs, Greek yogurt, cottage cheese
+- Plant proteins: tofu, tempeh, legumes (beans, lentils, chickpeas), quinoa, nuts, seeds
+- For breakfast: eggs, Greek yogurt, cottage cheese, protein powder, nut butters
+- For lunch/dinner: include a substantial protein as the main component
+- Minimum 15-20g protein per serving\n`
+  }
+  
+  let candidateRecipeSection = ''
+  if (candidateRecipe) {
+    candidateRecipeSection = `\n### Candidate Recipe (base to modify):
+${JSON.stringify(candidateRecipe, null, 2)}
+
+**IMPORTANT**: You MUST modify this candidate recipe to align with user goals, just like the original meal plan generation does. Do NOT use it as-is.`
+  }
+
+  return `You are an expert meal planner generating a single replacement recipe and updating the total ingredients list.
+
+### Context:
+The user wants to replace the recipe "${recipeToReplace}" with a new ${mealType} recipe.
+
+### User Preferences:
+${JSON.stringify(surveyData, null, 2)}
+${ingredientPreferencesSection}${proteinRequirement}${candidateRecipeSection}
+
+### Old Recipe Ingredients (to be removed):
+${JSON.stringify(oldRecipeIngredients, null, 2)}
+
+### Current Total Ingredients List:
+${JSON.stringify(currentTotalIngredients, null, 2)}
+
+**Note**: The total ingredients list may be in one of two formats:
+- Old format: Array of items [{item: "...", quantity: "..."}, ...]
+- New format: Object with items and seasonings arrays {items: [...], seasonings: [...]}
+If you receive the old format, convert it to the new format by placing all items in items and an empty seasonings array.
+
+### Requirements:
+1. Generate EXACTLY 1 ${mealType} recipe that:
+   ${candidateRecipe ? '- MODIFY the provided candidate recipe to align with user goals (do NOT use it as-is)' : '- Create a new recipe'}
+   - Follows all dietary restrictions and preferences from the user data
+   - NEVER uses any excluded ingredients
+   - Prioritizes using favored ingredients when appropriate
+   - Matches the user's skill level and time constraints
+   - Is different from "${recipeToReplace}" - don't generate similar recipes
+   - ${requiresProtein ? 'MANDATORY: Includes a good quality protein source (see Protein Requirement above)' : 'Includes appropriate protein if suitable for the meal type'}
+   - Aligns with user goals (cost efficiency, nutrition, time saving, etc.)
+   ${candidateRecipe ? '- For cost efficiency goals: Modify to consolidate ingredients with the current_total_ingredients list when possible' : ''}
+
+2. Update the Total Ingredients List:
+   - Separate main ingredients from seasonings:
+     * Seasonings include: salt, pepper, spices (cayenne, paprika, cumin, turmeric, etc.), dried herbs (oregano, basil, thyme, etc.), spice blends, garlic powder, onion powder, etc.
+     * Main ingredients are everything else (produce, meat, dairy, grains, etc.)
+   - **IMPORTANT**: Do NOT include water in the grocery list. Water is assumed to be available and should not be listed as an ingredient.
+   - Remove ingredients from the old recipe (subtract quantities from the appropriate array: items or seasonings)
+   - Add ingredients from the new recipe (add quantities to the appropriate array: items or seasonings)
+   - CONSOLIDATE ingredients within each array: If the same ingredient appears multiple times with the same unit, sum the quantities
+   - If the same ingredient appears with different units, keep them separate
+   - Use consistent ingredient names (match existing names when possible)
+   - Ensure all quantities have valid units
+   - Maintain separation: items stay in items array, seasonings stay in seasonings array
+
+### Measurement Units:
+${MEASUREMENT_UNITS_PROMPT}
+
+### Output Format (JSON only, no explanation):
+{
+  "recipe": {
+    "name": "Recipe Name",
+    "ingredients": [
+      { "item": "Ingredient Name", "quantity": "Amount + Unit" }
+    ],
+    "steps": [
+      "Step 1",
+      "Step 2"
+    ]
+  },
+  "updated_total_ingredients": {
+    "items": [
+      { "item": "Ingredient Name", "quantity": "Total Amount + Unit" }
+    ],
+    "seasonings": [
+      { "item": "Spice/Seasoning Name", "quantity": "Total Amount + Unit" }
+    ]
+  }
+}
+
+### Critical Rules for updated_total_ingredients:
+1. Start with the current_total_ingredients list (convert to new format if needed)
+2. For each ingredient in old_recipe_ingredients:
+   - Determine if it's a seasoning or main ingredient
+   - Find matching ingredient in the appropriate array (items or seasonings) by name (case-insensitive) and unit
+   - Subtract the old recipe's quantity from the current quantity
+   - If result is 0 or negative, remove the ingredient from the list
+   - If result is positive, update the quantity
+3. For each ingredient in new recipe:
+   - Determine if it's a seasoning or main ingredient
+   - Find matching ingredient in the appropriate array (items or seasonings) by name (case-insensitive) and unit
+   - If found, add the new recipe's quantity to existing quantity
+   - If not found, add as new ingredient to the appropriate array
+4. Sort each array alphabetically by ingredient name
+5. Use EXACT same ingredient names as in current_total_ingredients when possible (for consistency)
+6. Always return the new format: {items: [...], seasonings: [...]}`;
+};
+
 export const bulkAdjustmentPrompt = (
   surveyData: SurveyResponse,
   adjustments: {
