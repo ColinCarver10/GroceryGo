@@ -52,9 +52,14 @@ export default async function Navbar() {
                 <LogoutButton />
               </div>
             ) : (
-              <Link href="/login" className="gg-btn-primary gg-btn-sm">
-                Log In
-              </Link>
+              <div className="flex items-center gap-3">
+                <Link href="/login" className="gg-btn-primary gg-btn-sm">
+                  Log In
+                </Link>
+                <Link href="/login" className="gg-btn-outline gg-btn-sm">
+                  Sign Up
+                </Link>
+              </div>
             )}
           </div>
         </div>
