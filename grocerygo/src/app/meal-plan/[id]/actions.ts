@@ -2,7 +2,6 @@
 
 import { createClient } from '@/utils/supabase/server'
 import { revalidateTag } from 'next/cache'
-import { headers } from 'next/headers'
 import { readAndParseMealPlanStream } from '@/utils/mealPlanStreamParser'
 import type {
   GroceryItem,
@@ -193,20 +192,11 @@ async function generateSingleMealReplacement(
     const selectedSlots = [{ day: 'Monday', mealType }]
 
     // Call the meal plan generation API
-    // Use absolute URL for server-side fetch
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 
-      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000')
-    const apiUrl = `${baseUrl}/api/generate-meal-plan`
-    
-    // Get cookies from headers to pass authentication
-    const headersList = await headers()
-    const cookie = headersList.get('cookie') || ''
-    
-    const response = await fetch(apiUrl, {
+    // Use relative URL - Next.js automatically handles this in server-side fetch
+    const response = await fetch('/api/generate-meal-plan', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Cookie': cookie
       },
       body: JSON.stringify({
         mealSelection,
