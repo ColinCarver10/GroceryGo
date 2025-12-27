@@ -38,6 +38,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
   const [isOrderingInstacart, setIsOrderingInstacart] = useState(false)
   const [instacartError, setInstacartError] = useState<string | null>(null)
   const [movedSeasonings, setMovedSeasonings] = useState<Map<string, { item: string; quantity: string }>>(new Map())
+  const [showInstacartModal, setShowInstacartModal] = useState(false)
   
   // COMMENTED OUT: Adjust plan functionality hidden temporarily
   // const [isAdjustPanelOpen, setIsAdjustPanelOpen] = useState(false)
@@ -268,7 +269,15 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
     }
   }
 
-  const handleOrderInstacart = async () => {
+  const handleOrderInstacart = () => {
+    // Show confirmation modal first
+    setShowInstacartModal(true)
+  }
+
+  const confirmOrderInstacart = async () => {
+    // Close modal
+    setShowInstacartModal(false)
+
     // Combine main items and moved seasonings
     const allItems = [
       ...totalIngredients.items.map((item, index) => ({ ...item, index, type: 'item' as const, itemId: `item-${index}` })),
@@ -1027,6 +1036,70 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
                 />
               </svg>
               <p className="text-gray-700 font-semibold">Updating your meal plan...</p>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Instacart Confirmation Modal */}
+      {showInstacartModal && (
+        <>
+          {/* Backdrop */}
+          <div 
+            className="fixed inset-0 bg-black opacity-40 z-50" 
+            onClick={() => setShowInstacartModal(false)}
+          />
+          
+          {/* Modal Content */}
+          <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none p-4">
+            <div className="bg-white rounded-xl shadow-2xl p-6 max-w-md w-full pointer-events-auto">
+              <div className="flex items-start gap-4 mb-4">
+                <div className="flex-shrink-0">
+                  <svg className="h-6 w-6 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">Beta Feature Notice</h3>
+                  <p className="text-sm text-gray-700 mb-4">
+                    Please double-check all item quantities and ingredients before ordering. This Instacart integration is currently in beta and may require manual adjustments.
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    Review your shopping list carefully to ensure accuracy before proceeding.
+                  </p>
+                </div>
+              </div>
+              
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={() => setShowInstacartModal(false)}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                >
+                  Close
+                </button>
+                <button
+                  onClick={confirmOrderInstacart}
+                  disabled={isOrderingInstacart}
+                  className="px-4 py-2 text-sm font-medium text-white bg-[var(--gg-primary)] rounded-lg hover:bg-[var(--gg-primary)]/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {isOrderingInstacart ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Creating Order...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
+                      </svg>
+                      Order from Instacart
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </>
