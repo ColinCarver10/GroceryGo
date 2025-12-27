@@ -722,11 +722,6 @@ export default function GeneratingView({
           <div className="mb-8">
             <h1 className="gg-heading-page mb-2">Your Meal Plan</h1>
             <p className="gg-text-subtitle">Week of {new Date(weekOf).toLocaleDateString()}</p>
-            {!isFetchingCandidates && candidateRecipes.length > 0 && (
-              <p className="text-sm text-gray-600 mt-2">
-                {statusMessages[currentStatusMessage]} ({currentRecipeIndex} of {totalUniqueRecipes} recipes optimized)
-              </p>
-            )}
           </div>
 
           {error && (
