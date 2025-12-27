@@ -95,7 +95,7 @@ body {
    ============================================ */
 
 .gg-btn-primary {
-  @apply inline-flex items-center justify-center px-8 py-4 text-lg font-semibold text-white rounded-xl shadow-md transition-all;
+  @apply inline-flex items-center justify-center px-4 py-2 text-lg font-semibold text-white rounded-xl shadow-md transition-all;
   background-color: var(--gg-primary);
 }
 
@@ -114,7 +114,7 @@ body {
 }
 
 .gg-btn-outline {
-  @apply inline-flex items-center justify-center px-8 py-4 text-lg font-semibold rounded-xl border-2 transition-all;
+  @apply inline-flex items-center justify-center px-4 py-2 text-lg font-semibold rounded-xl border-2 transition-all;
   color: var(--gg-primary);
   border-color: var(--gg-primary);
   background-color: transparent;

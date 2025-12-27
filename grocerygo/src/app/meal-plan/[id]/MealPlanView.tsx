@@ -739,7 +739,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
                             </div>
                             
                             <div className="flex-1">
-                              <p className={`font-medium ${checkedItems.has(itemId) ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
+                              <p className={`font-medium capitalize ${checkedItems.has(itemId) ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
                                 {item.item}
                               </p>
                               {item.quantity && (
@@ -789,7 +789,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
                             </div>
                             
                             <div className="flex-1">
-                              <p className={`font-medium ${checkedItems.has(itemId) ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
+                              <p className={`font-medium capitalize ${checkedItems.has(itemId) ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
                                 {item.item}
                               </p>
                               {item.quantity && (
@@ -852,7 +852,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
                               </div>
                               
                               <div className="flex-1">
-                                <p className="font-medium text-gray-600">
+                                <p className="font-medium capitalize text-gray-600">
                                   {item.item}
                                 </p>
                                 {item.quantity && (

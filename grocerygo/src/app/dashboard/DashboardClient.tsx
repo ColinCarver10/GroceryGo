@@ -644,14 +644,14 @@ export default function DashboardClient({
                                 <button
                                   onClick={() => handleEditSave(questionId)}
                                   disabled={isSaving}
-                                  className="gg-btn-primary flex-1 text-sm py-2"
+                                  className="gg-btn-primary flex-1"
                                 >
                                   {isSaving ? 'Saving...' : 'Save'}
                                 </button>
                                 <button
                                   onClick={handleEditCancel}
                                   disabled={isSaving}
-                                  className="gg-btn-outline flex-1 text-sm py-2"
+                                  className="gg-btn-outline flex-1"
                                 >
                                   Cancel
                                 </button>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -321,6 +321,7 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
   const [dateError, setDateError] = useState('')
   const [activeId, setActiveId] = useState<string | null>(null)
   const [draggedOverGroupId, setDraggedOverGroupId] = useState<string | null>(null)
+  const headerDescriptionRef = useRef<HTMLDivElement>(null)
 
   // Calculate days for the week based on start date
   const weekDays = useMemo(() => {
@@ -437,6 +438,13 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
       setMealGroups([])
     }
   }, [selectedSlots, currentStep])
+
+  // Scroll to header description when moving to step 2
+  useEffect(() => {
+    if (currentStep === 2 && headerDescriptionRef.current) {
+      headerDescriptionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }, [currentStep])
 
   // Helper function to get next recipe number for a meal type
   const getNextRecipeNumber = (mealType: MealType): number => {
@@ -931,7 +939,7 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
           <div className="gg-section">
             
             {/* Header */}
-            <div className="mb-8">
+            <div ref={headerDescriptionRef} className="mb-8">
               <Link 
                 href="/dashboard" 
                 className="gg-text-body text-sm mb-4 inline-flex items-center gap-2 hover:text-[var(--gg-primary)] transition-colors"
