@@ -213,6 +213,22 @@ export async function getUserDashboardData(userId: string, page: number = 1, pag
     return planDate.getMonth() === now.getMonth() && planDate.getFullYear() === now.getFullYear()
   }).length || 0
 
+  // Fetch feedback summary (only user feedback with rating >= 1, not system tracking)
+  const { data: feedbackData, error: feedbackError } = await supabase
+    .from('meal_plan_feedback')
+    .select('rating')
+    .eq('user_id', userId)
+    .gte('rating', 1)
+
+  if (feedbackError) {
+    console.error('Error fetching feedback summary:', feedbackError)
+  }
+
+  const ratedMealPlansCount = feedbackData?.length || 0
+  const averageRating = feedbackData && feedbackData.length > 0
+    ? feedbackData.reduce((sum, f) => sum + f.rating, 0) / feedbackData.length
+    : null
+
   return {
     surveyResponse: userData?.survey_response || null,
     email: userData?.email || '',
@@ -223,7 +239,11 @@ export async function getUserDashboardData(userId: string, page: number = 1, pag
     totalMealsPlanned,
     plansThisMonth,
     currentPage: page,
-    pageSize
+    pageSize,
+    feedbackSummary: {
+      ratedMealPlansCount,
+      averageRating: averageRating ? Math.round(averageRating * 10) / 10 : null // Round to 1 decimal place
+    }
   }
 }
 

@@ -10,6 +10,7 @@ import MealSlotCard from '@/components/MealSlotCard'
 import MealColumn, { mealTypeConfig } from '@/components/MealColumn'
 import ReplaceRecipeChoiceModal from '@/components/ReplaceRecipeChoiceModal'
 import SavedRecipeSelector from '@/components/SavedRecipeSelector'
+import MealPlanFeedback from '@/components/MealPlanFeedback'
 // import type { PlanAdjustments } from '@/components/AdjustPlanPanel' // COMMENTED OUT: Adjust plan functionality hidden temporarily
 import { getRecipeSteps, organizeMealsByWeek, type WeekDayMeals } from '@/utils/mealPlanUtils';
 import { 
@@ -29,9 +30,16 @@ interface MealPlanViewProps {
   mealPlan: MealPlanWithRecipes
   savedRecipeIds: string[]
   totalIngredients: { items: Array<{ item: string; quantity: string }>; seasonings: Array<{ item: string; quantity: string }> }
+  existingFeedback?: {
+    id: string
+    rating: number
+    feedback_text: string | null
+    would_make_again: boolean | null
+    created_at: string
+  } | null
 }
 
-export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredients }: MealPlanViewProps) {
+export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredients, existingFeedback }: MealPlanViewProps) {
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<'recipes' | 'shopping'>('recipes')
   const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set())
@@ -562,7 +570,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
             </Link>
             
             <div className="flex items-start justify-between">
-              <div>
+              <div className="flex-1">
                 <h1 className="gg-heading-page mb-2">
                   Meal Plan for {formatDateRange(organizedWeek.days)}
                 </h1>
@@ -570,19 +578,30 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
                   {mealPlan.total_meals} meal slot{mealPlan.total_meals === 1 ? '' : 's'} • {uniqueRecipeIds.size} unique recipe{uniqueRecipeIds.size === 1 ? '' : 's'} • Created {new Date(mealPlan.created_at).toLocaleDateString()}
                 </p>
               </div>
-              <div className="flex items-center gap-3">
-                {getStatusBadge(mealPlan.status)}
+              <div className="flex flex-col items-end gap-3">
+                <div className="flex items-center justify-end gap-3">
+                  {getStatusBadge(mealPlan.status)}
+                  
+                  {/* COMMENTED OUT: Adjust Plan Button - functionality hidden temporarily */}
+                  {/* <button
+                    onClick={() => setIsAdjustPanelOpen(true)}
+                    className="gg-btn-outline flex items-center gap-2"
+                  >
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                    </svg>
+                    Adjust Plan
+                  </button> */}
+                </div>
                 
-                {/* COMMENTED OUT: Adjust Plan Button - functionality hidden temporarily */}
-                {/* <button
-                  onClick={() => setIsAdjustPanelOpen(true)}
-                  className="gg-btn-outline flex items-center gap-2"
-                >
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-                  </svg>
-                  Adjust Plan
-                </button> */}
+                {/* Feedback Component */}
+                <div className="relative">
+                  <MealPlanFeedback 
+                    mealPlanId={mealPlan.id} 
+                    userId={mealPlan.user_id}
+                    existingFeedback={existingFeedback}
+                  />
+                </div>
               </div>
             </div>
           </div>

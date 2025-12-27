@@ -27,6 +27,10 @@ interface DashboardClientProps {
   currentPage: number
   pageSize: number
   firstLoginFlag: boolean | null
+  feedbackSummary: {
+    ratedMealPlansCount: number
+    averageRating: number | null
+  }
 }
 
 // Map questions to the config format expected by the dashboard
@@ -41,7 +45,8 @@ export default function DashboardClient({
   plansThisMonth,
   currentPage: initialPage,
   pageSize,
-  firstLoginFlag
+  firstLoginFlag,
+  feedbackSummary
 }: DashboardClientProps) {
   const router = useRouter()
   const [showSurveyDropdown, setShowSurveyDropdown] = useState(false)
@@ -736,6 +741,24 @@ export default function DashboardClient({
                       {plansThisMonth}
                     </span>
                   </div>
+                  {feedbackSummary.ratedMealPlansCount > 0 && (
+                    <div className="border-t border-gray-200 pt-4 mt-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="gg-text-body text-sm">Rated Meal Plans</span>
+                        <span className="text-2xl font-bold text-[var(--gg-primary)]">
+                          {feedbackSummary.ratedMealPlansCount}
+                        </span>
+                      </div>
+                      {feedbackSummary.averageRating !== null && (
+                        <div className="flex items-center justify-between">
+                          <span className="gg-text-body text-sm">Average Rating</span>
+                          <span className="text-2xl font-bold text-green-500">
+                            {feedbackSummary.averageRating.toFixed(1)} / 5
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

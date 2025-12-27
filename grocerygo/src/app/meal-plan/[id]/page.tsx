@@ -4,6 +4,7 @@ import MealPlanView from './MealPlanView'
 import { getMealPlanById } from '@/app/actions/mealPlans'
 import { getSavedRecipeIds } from '@/app/actions/userPreferences'
 import { updateMealPlanStatuses } from '@/app/dashboard/actions'
+import { getMealPlanFeedback } from '@/app/actions/feedbackHelper'
 
 export default async function MealPlanDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const supabase = await createClient()
@@ -51,6 +52,9 @@ export default async function MealPlanDetailPage({ params }: { params: Promise<{
   // Fetch user's saved recipe IDs
   const savedRecipeIds = await getSavedRecipeIds(user.id)
 
-  return <MealPlanView mealPlan={mealPlan} savedRecipeIds={savedRecipeIds} totalIngredients={totalIngredients} />
+  // Fetch existing feedback for this meal plan
+  const existingFeedback = await getMealPlanFeedback(id, user.id)
+
+  return <MealPlanView mealPlan={mealPlan} savedRecipeIds={savedRecipeIds} totalIngredients={totalIngredients} existingFeedback={existingFeedback} />
 }
 

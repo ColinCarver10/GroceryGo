@@ -33,6 +33,7 @@ export default async function DashboardPage() {
       currentPage={dashboardData.currentPage}
       pageSize={dashboardData.pageSize}
       firstLoginFlag={dashboardData.firstLoginFlag}
+      feedbackSummary={dashboardData.feedbackSummary}
     />
   )
 }
