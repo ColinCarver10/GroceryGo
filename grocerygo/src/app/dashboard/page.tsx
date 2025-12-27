@@ -32,6 +32,7 @@ export default async function DashboardPage() {
       plansThisMonth={dashboardData.plansThisMonth}
       currentPage={dashboardData.currentPage}
       pageSize={dashboardData.pageSize}
+      firstLoginFlag={dashboardData.firstLoginFlag}
     />
   )
 }

@@ -26,6 +26,7 @@ async function ensureUserExists(supabase: SupabaseServerClient, userId: string, 
     const newUser: UserInsert = {
       user_id: userId,
       email: email,
+      first_login_flag: true,
     }
     const { error: insertError } = await supabase
       .from('users')

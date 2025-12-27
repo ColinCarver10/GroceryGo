@@ -115,7 +115,7 @@ export async function getUserDashboardData(userId: string, page: number = 1, pag
   // Fetch user data with survey responses
   const { data: userData, error: userError } = await supabase
     .from('users')
-    .select('survey_response, email')
+    .select('survey_response, email, first_login_flag')
     .eq('user_id', userId)
     .single()
 
@@ -216,6 +216,7 @@ export async function getUserDashboardData(userId: string, page: number = 1, pag
   return {
     surveyResponse: userData?.survey_response || null,
     email: userData?.email || '',
+    firstLoginFlag: userData?.first_login_flag ?? null,
     mealPlans: (transformedMealPlans as MealPlanWithRecipes[]) || [],
     savedRecipes: savedRecipes || [],
     totalMealPlans: totalCount || 0,
@@ -301,6 +302,34 @@ export async function updateSurveyResponse(questionId: string, answer: string | 
   if (updateError) {
     console.error('Error updating survey response:', updateError)
     return { success: false, error: 'Failed to update preference' }
+  }
+
+  // Invalidate cache
+  invalidateDashboardCache()
+
+  return { success: true }
+}
+
+// Complete onboarding walkthrough
+export async function completeOnboardingWalkthrough() {
+  const supabase = await createClient()
+  
+  // Get current user
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  
+  if (authError || !user) {
+    return { success: false, error: 'Not authenticated' }
+  }
+
+  // Update first_login_flag to false
+  const { error: updateError } = await supabase
+    .from('users')
+    .update({ first_login_flag: false })
+    .eq('user_id', user.id)
+
+  if (updateError) {
+    console.error('Error updating first_login_flag:', updateError)
+    return { success: false, error: 'Failed to complete walkthrough' }
   }
 
   // Invalidate cache

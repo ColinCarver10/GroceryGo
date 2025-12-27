@@ -7,8 +7,10 @@ import type { MealPlanWithRecipes, Recipe, SurveyResponse } from '@/types/databa
 import RecipeModal from '@/components/RecipeModal'
 import Pagination from '@/components/Pagination'
 import GeneratingMealPlanModal from '@/components/GeneratingMealPlanModal'
-import { updateSurveyResponse, getPaginatedMealPlans } from './actions'
+import OnboardingWalkthrough from '@/components/OnboardingWalkthrough'
+import { updateSurveyResponse, getPaginatedMealPlans, completeOnboardingWalkthrough } from './actions'
 import { questions } from '@/app/schemas/userPreferenceQuestions'
+import { walkthroughSteps } from './walkthroughContent'
 
 interface DashboardClientProps {
   surveyResponse: SurveyResponse | null
@@ -24,6 +26,7 @@ interface DashboardClientProps {
   plansThisMonth: number
   currentPage: number
   pageSize: number
+  firstLoginFlag: boolean | null
 }
 
 // Map questions to the config format expected by the dashboard
@@ -37,7 +40,8 @@ export default function DashboardClient({
   totalMealsPlanned,
   plansThisMonth,
   currentPage: initialPage,
-  pageSize 
+  pageSize,
+  firstLoginFlag
 }: DashboardClientProps) {
   const router = useRouter()
   const [showSurveyDropdown, setShowSurveyDropdown] = useState(false)
@@ -55,6 +59,10 @@ export default function DashboardClient({
   
   // Generating modal state
   const [generatingModalPlanId, setGeneratingModalPlanId] = useState<string | null>(null)
+
+  // Walkthrough state
+  const [showWalkthrough, setShowWalkthrough] = useState(firstLoginFlag === true)
+  const [currentStep, setCurrentStep] = useState(0)
 
   // Toggle preferences dropdown and persist state
   const toggleSurveyDropdown = () => {
@@ -184,6 +192,30 @@ export default function DashboardClient({
 
   const handleCloseGeneratingModal = () => {
     setGeneratingModalPlanId(null)
+  }
+
+  // Walkthrough handlers
+  const handleNextStep = () => {
+    if (currentStep < walkthroughSteps.length - 1) {
+      setCurrentStep(currentStep + 1)
+    }
+  }
+
+  const handlePreviousStep = () => {
+    if (currentStep > 0) {
+      setCurrentStep(currentStep - 1)
+    }
+  }
+
+  const handleCompleteWalkthrough = async () => {
+    const result = await completeOnboardingWalkthrough()
+    if (result.success) {
+      setShowWalkthrough(false)
+      // Refresh the page to get updated data
+      router.refresh()
+    } else {
+      alert('Failed to complete walkthrough. Please try again.')
+    }
   }
 
   return (
@@ -728,6 +760,19 @@ export default function DashboardClient({
           isOpen={!!generatingModalPlanId}
           onClose={handleCloseGeneratingModal}
           onGenerationComplete={handleGenerationComplete}
+        />
+      )}
+
+      {/* Onboarding Walkthrough */}
+      {showWalkthrough && (
+        <OnboardingWalkthrough
+          isOpen={showWalkthrough}
+          currentStep={currentStep}
+          totalSteps={walkthroughSteps.length}
+          step={walkthroughSteps[currentStep]}
+          onNext={handleNextStep}
+          onPrevious={handlePreviousStep}
+          onComplete={handleCompleteWalkthrough}
         />
       )}
     </div>

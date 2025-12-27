@@ -9,12 +9,14 @@ export interface User {
   email: string
   survey_response: SurveyResponse | null
   user_id: string
+  first_login_flag?: boolean
 }
 
 export interface UserInsert {
   email: string
   user_id: string
   survey_response?: SurveyResponse | null
+  first_login_flag?: boolean
 }
 
 export interface Ingredient {
