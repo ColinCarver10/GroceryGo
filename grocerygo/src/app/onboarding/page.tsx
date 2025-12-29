@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { saveSurveyResponse } from './actions'
 import { onboardingSections, type QuestionSection } from '@/app/schemas/userPreferenceQuestions'
+import IngredientAutocomplete from '@/components/IngredientAutocomplete'
 
 const sections: QuestionSection[] = onboardingSections
 
@@ -57,9 +58,18 @@ export default function OnboardingPage() {
     setAnswers(prev => ({ ...prev, [questionId]: newRanking }))
   }
 
+  const handleAutocompleteIngredients = (questionId: string, ingredients: string[]) => {
+    setAnswers(prev => ({ ...prev, [questionId]: ingredients }))
+  }
+
   const canProceed = () => {
     return currentSectionData.questions.every(q => {
+      // Ranking questions are always valid
       if(q.type === 'ranking') {
+        return true;
+      }
+      // Autocomplete-ingredients questions are optional (can be empty)
+      if(q.type === 'autocomplete-ingredients') {
         return true;
       }
       const answer = answers[q.id]
@@ -257,6 +267,15 @@ export default function OnboardingPage() {
                           </div>
                         ))}
                       </div>
+                    )}
+
+                    {/* Autocomplete Ingredients */}
+                    {question.type === 'autocomplete-ingredients' && (
+                      <IngredientAutocomplete
+                        value={(answers[question.id] as string[]) || []}
+                        onChange={(ingredients) => handleAutocompleteIngredients(question.id, ingredients)}
+                        placeholder="Type to search ingredients..."
+                      />
                     )}
                   </div>
                 ))}

@@ -54,9 +54,10 @@ export const replaceRecipePrompt = (
   existingIngredients: string[],
   recipeToReplace: string
 ) => {
-  // Extract favored and excluded ingredients
-  const favoredIngredients = surveyData.favored_ingredients as string[] || []
-  const excludedIngredients = surveyData.excluded_ingredients as string[] || []
+  // Extract favored and excluded ingredients from questions '12' and '13'
+  // Fall back to old fields for backward compatibility
+  const favoredIngredients = (surveyData['12'] || surveyData.favored_ingredients || []) as string[]
+  const excludedIngredients = (surveyData['13'] || surveyData.excluded_ingredients || []) as string[]
   
   let ingredientPreferencesSection = ''
   if (favoredIngredients.length > 0 || excludedIngredients.length > 0) {
@@ -139,9 +140,10 @@ export const replaceRecipeWithTotalIngredientsPrompt = (
   currentTotalIngredients: Array<{ item: string; quantity: string }> | { items: Array<{ item: string; quantity: string }>; seasonings: Array<{ item: string; quantity: string }> },
   candidateRecipe?: any
 ) => {
-  // Extract favored and excluded ingredients
-  const favoredIngredients = surveyData.favored_ingredients as string[] || []
-  const excludedIngredients = surveyData.excluded_ingredients as string[] || []
+  // Extract favored and excluded ingredients from questions '12' and '13'
+  // Fall back to old fields for backward compatibility
+  const favoredIngredients = (surveyData['12'] || surveyData.favored_ingredients || []) as string[]
+  const excludedIngredients = (surveyData['13'] || surveyData.excluded_ingredients || []) as string[]
   
   let ingredientPreferencesSection = ''
   if (favoredIngredients.length > 0 || excludedIngredients.length > 0) {

@@ -53,8 +53,8 @@ You MAY reuse the same recipe across multiple meal slots (duplicate recipes acro
 ### Input:
 You will be given:
 1) user_survey (same schema as the example below)
-2) favored_ingredients (optional)
-3) excluded_ingredients (optional)
+   - Question '12' contains favored ingredients (Foods You Like)
+   - Question '13' contains excluded ingredients (Foods You Dislike)
 4) meal_slots: an array of requested schedule slots (day + mealType) that MUST be filled
 5) provided_recipes: exactly ONE recipe for each distinct meal type (e.g., if there are 2 distinct breakfasts needed, you'll receive 2 breakfast recipes; if 2 distinct lunches, you'll receive 2 lunch recipes, etc.). You MUST modify and use ALL provided recipes.
 
@@ -69,7 +69,6 @@ You will be given:
   "7": ["None"],
   "8": ["Savory", "Spicy", "Sweet"],
   "9": ["Eat healthier", "Learn new recipes", "Save money on groceries", "Reduce food waste"],
-  "10": ["Wednesday", "Sunday"],
   "11": ["Cost efficiency", "Nutrition", "Time saving"]
 }
 
@@ -90,7 +89,7 @@ Using the provided_recipes (one per distinct meal type):
 
 ### Hard Rules (must follow):
 A) Do NOT invent new recipes. Every recipe MUST be based on a provided_recipes entry. You MUST modify ALL provided recipes to align with user goals.
-B) Do NOT include any excluded ingredients (excluded_ingredients). If a provided recipe includes an excluded ingredient, you MUST remove or replace it.
+B) Do NOT include any excluded ingredients (Question '13' - Foods You Dislike). If a provided recipe includes an excluded ingredient, you MUST remove or replace it.
 C) Respect dietary restrictions (Question 6) and allergies (Question 7). Modify recipes to comply with all restrictions.
 D) Fill EVERY meal slot in meal_slots with a schedule entry.
 E) schedule.recipeId MUST reference an id in recipes[].

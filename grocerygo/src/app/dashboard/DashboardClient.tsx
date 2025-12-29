@@ -11,6 +11,7 @@ import OnboardingWalkthrough from '@/components/OnboardingWalkthrough'
 import { updateSurveyResponse, getPaginatedMealPlans, completeOnboardingWalkthrough } from './actions'
 import { questions } from '@/app/schemas/userPreferenceQuestions'
 import { walkthroughSteps } from './walkthroughContent'
+import IngredientAutocomplete from '@/components/IngredientAutocomplete'
 
 interface DashboardClientProps {
   surveyResponse: SurveyResponse | null
@@ -101,7 +102,7 @@ export default function DashboardClient({
     setEditingQuestion(questionId)
     // Ensure arrays are properly initialized for array-based types
     const config = questionConfigs[questionId]
-    if (config?.type === 'removable-list' || config?.type === 'multiple-select' || config?.type === 'ranking') {
+    if (config?.type === 'removable-list' || config?.type === 'multiple-select' || config?.type === 'ranking' || config?.type === 'autocomplete-ingredients') {
       setEditValue(Array.isArray(currentValue) ? currentValue : [])
     } else {
       setEditValue(currentValue)
@@ -475,10 +476,15 @@ export default function DashboardClient({
                   <div className="mt-6 space-y-4 border-t border-gray-200 pt-6">
                     {Object.entries({
                       ...surveyResponse,
-                      // Ensure ingredient lists are always included
-                      favored_ingredients: surveyResponse.favored_ingredients || [],
-                      excluded_ingredients: surveyResponse.excluded_ingredients || [],
-                    }).map(([questionId, answer]) => {
+                      // Map old fields to new question IDs for display (with fallback for migration)
+                      '12': surveyResponse['12'] || surveyResponse.favored_ingredients || [],
+                      '13': surveyResponse['13'] || surveyResponse.excluded_ingredients || [],
+                    })
+                    .filter(([questionId]) => {
+                      // Filter out old fields, only show question IDs and new fields
+                      return questionId !== 'favored_ingredients' && questionId !== 'excluded_ingredients'
+                    })
+                    .map(([questionId, answer]) => {
                       const config = questionConfigs[questionId]
                       const isEditing = editingQuestion === questionId
                       
@@ -505,9 +511,9 @@ export default function DashboardClient({
 
                           {!isEditing ? (
                             <div>
-                              {config.type === 'removable-list' && Array.isArray(answer) && answer.length === 0 ? (
+                              {(config.type === 'removable-list' || config.type === 'autocomplete-ingredients') && Array.isArray(answer) && answer.length === 0 ? (
                                 <p className="gg-text-body text-sm text-gray-400 italic">None</p>
-                              ) : config.type === 'removable-list' && Array.isArray(answer) ? (
+                              ) : (config.type === 'removable-list' || config.type === 'autocomplete-ingredients') && Array.isArray(answer) ? (
                                 <p className="gg-text-body text-sm">
                                   {answer.map(item => capitalizeWords(item)).join(', ')}
                                 </p>
@@ -674,6 +680,15 @@ export default function DashboardClient({
                                     </div>
                                   )}
                                 </div>
+                              )}
+
+                              {/* Autocomplete Ingredients */}
+                              {config.type === 'autocomplete-ingredients' && (
+                                <IngredientAutocomplete
+                                  value={(editValue as string[]) || []}
+                                  onChange={(ingredients) => setEditValue(ingredients)}
+                                  placeholder="Type to search ingredients..."
+                                />
                               )}
 
                               {/* Save/Cancel Buttons */}

@@ -307,10 +307,26 @@ export async function updateSurveyResponse(questionId: string, answer: string | 
     return { success: false, error: 'Failed to fetch current preferences' }
   }
 
+  // Validate ingredients for questions '12' and '13'
+  let validatedAnswer = answer
+  if (questionId === '12' || questionId === '13') {
+    if (Array.isArray(answer)) {
+      const { validateIngredients } = await import('@/config/ingredients')
+      validatedAnswer = validateIngredients(answer)
+    }
+  }
+
   // Update the specific question
   const updatedSurvey = {
     ...(userData.survey_response || {}),
-    [questionId]: answer
+    [questionId]: validatedAnswer
+  }
+
+  // Sync questions '12' and '13' to old fields for backward compatibility
+  if (questionId === '12') {
+    updatedSurvey.favored_ingredients = validatedAnswer
+  } else if (questionId === '13') {
+    updatedSurvey.excluded_ingredients = validatedAnswer
   }
 
   // Save back to database

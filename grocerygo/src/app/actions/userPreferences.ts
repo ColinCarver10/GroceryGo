@@ -6,7 +6,8 @@ import type { SavedRecipeInsert } from '@/types/database'
 
 /**
  * Add an ingredient to user's exclusion list
- * Stores in survey_response JSON field
+ * Stores in survey_response JSON field as question '13'
+ * Note: No validation is performed - any ingredient name can be added
  */
 export async function excludeIngredient(
   userId: string,
@@ -14,6 +15,9 @@ export async function excludeIngredient(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const supabase = await createClient()
+
+    // Use ingredient name as-is without validation
+    const validatedIngredient = ingredientName.trim()
 
     // Get current survey response
     const { data: userData, error: fetchError } = await supabase
@@ -27,14 +31,17 @@ export async function excludeIngredient(
     }
 
     const surveyResponse = userData.survey_response || {}
-    const excludedIngredients = surveyResponse.excluded_ingredients || []
+    // Use question '13' (Foods You Dislike), with fallback to old field for migration
+    const excludedIngredients = (surveyResponse['13'] || surveyResponse.excluded_ingredients || []) as string[]
 
     // Add if not already excluded
-    if (!excludedIngredients.includes(ingredientName)) {
-      excludedIngredients.push(ingredientName)
+    if (!excludedIngredients.includes(validatedIngredient)) {
+      excludedIngredients.push(validatedIngredient)
       
       const updatedSurvey = {
         ...surveyResponse,
+        '13': excludedIngredients,
+        // Also update old field for backward compatibility
         excluded_ingredients: excludedIngredients
       }
 
@@ -57,7 +64,8 @@ export async function excludeIngredient(
 
 /**
  * Add an ingredient to user's favorites list
- * Stores in survey_response JSON field
+ * Stores in survey_response JSON field as question '12'
+ * Note: No validation is performed - any ingredient name can be added
  */
 export async function favorIngredient(
   userId: string,
@@ -65,6 +73,9 @@ export async function favorIngredient(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const supabase = await createClient()
+
+    // Use ingredient name as-is without validation
+    const validatedIngredient = ingredientName.trim()
 
     // Get current survey response
     const { data: userData, error: fetchError } = await supabase
@@ -78,14 +89,17 @@ export async function favorIngredient(
     }
 
     const surveyResponse = userData.survey_response || {}
-    const favoredIngredients = surveyResponse.favored_ingredients || []
+    // Use question '12' (Foods You Like), with fallback to old field for migration
+    const favoredIngredients = (surveyResponse['12'] || surveyResponse.favored_ingredients || []) as string[]
 
     // Add if not already favored
-    if (!favoredIngredients.includes(ingredientName)) {
-      favoredIngredients.push(ingredientName)
+    if (!favoredIngredients.includes(validatedIngredient)) {
+      favoredIngredients.push(validatedIngredient)
       
       const updatedSurvey = {
         ...surveyResponse,
+        '12': favoredIngredients,
+        // Also update old field for backward compatibility
         favored_ingredients: favoredIngredients
       }
 
@@ -108,6 +122,7 @@ export async function favorIngredient(
 
 /**
  * Remove an ingredient from exclusion list
+ * Updates question '13' in survey_response
  */
 export async function removeExcludedIngredient(
   userId: string,
@@ -127,11 +142,14 @@ export async function removeExcludedIngredient(
     }
 
     const surveyResponse = userData.survey_response || {}
-    const excludedIngredients = (surveyResponse.excluded_ingredients || [])
+    // Use question '13' (Foods You Dislike), with fallback to old field for migration
+    const excludedIngredients = ((surveyResponse['13'] || surveyResponse.excluded_ingredients || []) as string[])
       .filter((ing: string) => ing !== ingredientName)
 
     const updatedSurvey = {
       ...surveyResponse,
+      '13': excludedIngredients,
+      // Also update old field for backward compatibility
       excluded_ingredients: excludedIngredients
     }
 

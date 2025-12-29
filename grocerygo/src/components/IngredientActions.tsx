@@ -88,10 +88,10 @@ export default function IngredientActions({
             </svg>
             <div>
               <p className="text-sm font-medium text-gray-900 group-hover:text-red-600">
-                Exclude This Ingredient
+                Add to Foods You Dislike
               </p>
               <p className="text-xs text-gray-500 group-hover:text-red-600">
-                Regenerate plan without this
+                Avoid this ingredient in future plans
               </p>
             </div>
           </button>
@@ -115,10 +115,10 @@ export default function IngredientActions({
             </svg>
             <div>
               <p className="text-sm font-medium text-gray-900 group-hover:text-green-600">
-                More Recipes Like This
+                Add to Foods You Like
               </p>
               <p className="text-xs text-gray-500 group-hover:text-green-600">
-                Prioritize this ingredient
+                Prioritize this ingredient in future plans
               </p>
             </div>
           </button>

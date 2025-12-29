@@ -117,12 +117,18 @@ export async function POST(request: NextRequest) {
       .join('\n')
 
     const surveyJson = surveyData ?? {}
+    // Use questions '12' (Foods You Like) and '13' (Foods You Dislike)
+    // Fall back to old fields for backward compatibility
     const favoredIngredients =
-      Array.isArray((surveyJson as Record<string, unknown>)?.favored_ingredients)
+      Array.isArray((surveyJson as Record<string, unknown>)?.['12'])
+        ? (surveyJson as Record<string, unknown>)['12']
+        : Array.isArray((surveyJson as Record<string, unknown>)?.favored_ingredients)
         ? (surveyJson as Record<string, unknown>).favored_ingredients
         : []
     const excludedIngredients =
-      Array.isArray((surveyJson as Record<string, unknown>)?.excluded_ingredients)
+      Array.isArray((surveyJson as Record<string, unknown>)?.['13'])
+        ? (surveyJson as Record<string, unknown>)['13']
+        : Array.isArray((surveyJson as Record<string, unknown>)?.excluded_ingredients)
         ? (surveyJson as Record<string, unknown>).excluded_ingredients
         : []
 
@@ -180,7 +186,7 @@ You MUST MODIFY and use ALL provided recipes:
 
 ### Critical modification rules
 1) You MUST modify ALL provided recipes to align with user goals. Do NOT use recipes as-is without modifications.
-2) If a provided recipe violates exclusions/restrictions (excluded_ingredients, allergies Q7, dietary restrictions Q6), you MUST modify it to remove or replace those ingredients.
+2) If a provided recipe violates exclusions/restrictions (Question '13' - excluded ingredients, allergies Q7, dietary restrictions Q6), you MUST modify it to remove or replace those ingredients.
 3) Recipes may be reused across multiple slots by referencing the same recipeId in the schedule (after modification).
 4) When cost efficiency is a priority, MODIFY recipes to consolidate ingredients - use the same ingredients across multiple recipes to maximize reuse.
 

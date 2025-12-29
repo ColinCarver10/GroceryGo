@@ -3,7 +3,7 @@
  * Used in both onboarding flow and dashboard preferences
  */
 
-export type QuestionType = 'multiple-choice' | 'multiple-select' | 'ranking' | 'removable-list'
+export type QuestionType = 'multiple-choice' | 'multiple-select' | 'ranking' | 'removable-list' | 'autocomplete-ingredients'
 
 export interface Question {
   id: string
@@ -125,22 +125,6 @@ export const questions: Record<string, Question> = {
       'Other',
     ],
   },
-  '10': {
-    id: '10',
-    type: 'multiple-select',
-    label: 'Preferred Delivery Days',
-    question: 'Preferred grocery delivery days: (Select up to 2)',
-    options: [
-      'Monday',
-      'Tuesday',
-      'Wednesday',
-      'Thursday',
-      'Friday',
-      'Saturday',
-      'Sunday'
-    ],
-    maxSelections: 2,
-  },
   '11': {
     id: '11',
     type: 'ranking',
@@ -153,19 +137,35 @@ export const questions: Record<string, Question> = {
       'Nutrition'
     ],
   },
+  '12': {
+    id: '12',
+    type: 'autocomplete-ingredients',
+    label: 'Foods You Like',
+    question: 'Select foods you enjoy (Type or select from list)',
+    description: 'Start typing to search for ingredients, or select from the dropdown',
+    options: [], // Options come from server-side ingredient list
+  },
+  '13': {
+    id: '13',
+    type: 'autocomplete-ingredients',
+    label: 'Foods You Dislike',
+    question: 'Select foods you dislike or want to avoid (Type or select from list)',
+    description: 'Start typing to search for ingredients, or select from the dropdown',
+    options: [], // Options come from server-side ingredient list
+  },
   'favored_ingredients': {
     id: 'favored_ingredients',
-    type: 'removable-list',
+    type: 'autocomplete-ingredients',
     label: 'Favored Ingredients',
     question: 'Favored Ingredients',
-    options: [], // Dynamic - comes from user's saved data
+    options: [], // Options come from server-side ingredient list
   },
   'excluded_ingredients': {
     id: 'excluded_ingredients',
-    type: 'removable-list',
+    type: 'autocomplete-ingredients',
     label: 'Excluded Ingredients',
     question: 'Excluded Ingredients',
-    options: [], // Dynamic - comes from user's saved data
+    options: [], // Options come from server-side ingredient list
   },
 }
 
@@ -192,13 +192,14 @@ export const onboardingSections: QuestionSection[] = [
       questions['6'],
       questions['7'],
       questions['8'],
+      questions['12'],
+      questions['13'],
     ],
   },
   {
     title: "Scheduling",
     questions: [
       questions['9'],
-      questions['10'],
     ],
   },
   {
