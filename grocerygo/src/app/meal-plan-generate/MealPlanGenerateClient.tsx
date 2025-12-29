@@ -1099,6 +1099,27 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
                         >
                           Dinners Only
                         </button>
+                        <button
+                          onClick={() => {
+                            if (weekDays.length === 0) return
+                            const allLunchDinnerSelected = weekDays.every(
+                              ({ dayName }) => selections[dayName]?.lunch && selections[dayName]?.dinner
+                            )
+                            setSelections(
+                              weekDays.reduce((acc, { dayName }) => ({
+                                ...acc,
+                                [dayName]: { 
+                                  breakfast: selections[dayName]?.breakfast ?? false,
+                                  lunch: !allLunchDinnerSelected,
+                                  dinner: !allLunchDinnerSelected
+                                }
+                              }), {})
+                            )
+                          }}
+                          className="inline-flex items-center justify-center px-4 py-1.5 text-sm font-medium rounded-lg border-2 transition-all text-[var(--gg-primary)] border-[var(--gg-primary)] bg-transparent hover:bg-[var(--gg-primary)] hover:text-white"
+                        >
+                          Toggle All Lunch & Dinner
+                        </button>
                       </div>
                     </div>
 
