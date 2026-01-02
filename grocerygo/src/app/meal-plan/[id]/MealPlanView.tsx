@@ -62,6 +62,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
   const [showSavedRecipeSelector, setShowSavedRecipeSelector] = useState(false)
   const [replaceRecipeContext, setReplaceRecipeContext] = useState<{ recipeId: string; mealType: string } | null>(null)
   const [replacingRecipeIds, setReplacingRecipeIds] = useState<Set<string>>(new Set())
+  const [copied, setCopied] = useState(false)
 
   const toggleItem = (itemId: string) => {
     setCheckedItems(prev => {
@@ -514,6 +515,54 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
 
   // Organize meals by week
   const organizedWeek = organizeMealsByWeek(mealPlan)
+
+  const handleCopyToClipboard = async () => {
+    // Combine all items (regular items + moved seasonings)
+    const allItems = [
+      ...totalIngredients.items.map((item, index) => ({ ...item, itemId: `item-${index}` })),
+      ...Array.from(movedSeasonings.values()).map((item, index) => ({ ...item, itemId: `moved-seasoning-${Array.from(movedSeasonings.keys())[index]}` }))
+    ]
+
+    // Filter out checked items
+    const uncheckedItems = allItems.filter(item => !checkedItems.has(item.itemId))
+
+    // Format as text
+    const groceryListText = uncheckedItems
+      .map(item => {
+        if (item.quantity) {
+          return `${item.item} (${item.quantity})`
+        }
+        return item.item
+      })
+      .join('\n')
+
+    // Add header if there are items
+    const fullText = uncheckedItems.length > 0
+      ? `Grocery List\n${formatDateRange(organizedWeek.days)}\n\n${groceryListText}`
+      : 'Grocery List\n(No items)'
+
+    try {
+      await navigator.clipboard.writeText(fullText)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch (error) {
+      // Fallback for older browsers
+      const textArea = document.createElement('textarea')
+      textArea.value = fullText
+      textArea.style.position = 'fixed'
+      textArea.style.left = '-999999px'
+      document.body.appendChild(textArea)
+      textArea.select()
+      try {
+        document.execCommand('copy')
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      } catch (err) {
+        // Handle error silently
+      }
+      document.body.removeChild(textArea)
+    }
+  }
 
   const handleRecipeClick = (recipe: Recipe, slots: MealPlanRecipe[]) => {
     setSelectedRecipe(recipe)
@@ -1015,6 +1064,35 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
                       </div>
                     )}
                   </div>
+                </div>
+
+                {/* Copy to Clipboard */}
+                <div className="gg-card">
+                  <button
+                    onClick={handleCopyToClipboard}
+                    disabled={totalIngredients.items.length === 0 && movedSeasonings.size === 0}
+                    className="w-full gg-btn-outline flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {copied ? (
+                      <>
+                        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        Copied!
+                      </>
+                    ) : (
+                      <>
+                        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                        Copy to Clipboard
+                      </>
+                    )}
+                  </button>
+                  
+                  <p className="mt-3 text-xs text-gray-500 text-center">
+                    Copy your shopping list to paste anywhere
+                  </p>
                 </div>
 
                 {/* Order from Instacart */}

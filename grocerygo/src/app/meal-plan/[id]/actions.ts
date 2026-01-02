@@ -385,14 +385,28 @@ export async function replaceRecipe(
     // Reuse embedding and recipe fetching logic
     console.log('[replaceRecipe] Creating meal plan context and fetching candidate recipe...')
     const context = await createMealPlanContext()
-    const embedPrompts = await getEmbedPrompts(surveyData)
+    
+    // Generate unique embedding prompt for replacement (1 for target meal type, 0 for others)
+    const embedPrompts = await getEmbedPrompts(surveyData, {
+      breakfast: targetMealType === 'breakfast' ? 1 : 0,
+      lunch: targetMealType === 'lunch' ? 1 : 0,
+      dinner: targetMealType === 'dinner' ? 1 : 0
+    }, {
+      name: oldRecipe.name,
+      ingredients: oldRecipeIngredients
+    }) as { breakfast: string[]; lunch: string[]; dinner: string[] }
     
     // Get embedding prompt for the target meal type
     const mealTypeEmbedPrompt = targetMealType === 'breakfast' 
-      ? embedPrompts.breakfast 
+      ? embedPrompts.breakfast[0]
       : targetMealType === 'lunch'
-      ? embedPrompts.lunch
-      : embedPrompts.dinner
+      ? embedPrompts.lunch[0]
+      : embedPrompts.dinner[0]
+
+    if (!mealTypeEmbedPrompt) {
+      console.error('[replaceRecipe] No embedding prompt generated for meal type:', targetMealType)
+      return { success: false, error: 'Failed to generate embedding prompt for replacement' }
+    }
 
     // Fetch candidate recipe
     const candidateIds = await fetchCandidateRecipesForMealType(

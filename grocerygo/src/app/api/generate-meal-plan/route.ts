@@ -58,15 +58,35 @@ export async function POST(request: NextRequest) {
         dinner: mealSelection.dinner
       }
 
-    // Generate all three embedding prompts in a single LLM call
-    const embedPrompts = await getEmbedPrompts(surveyData);
+    // Generate unique embedding prompts for each meal type based on distinct counts
+    const embedPrompts = await getEmbedPrompts(surveyData, {
+      breakfast: distinctCounts.breakfast,
+      lunch: distinctCounts.lunch,
+      dinner: distinctCounts.dinner
+    }) as { breakfast: string[]; lunch: string[]; dinner: string[] };
     
-    // Find breakfast, lunch, and dinner recipes using the generated prompts
-    const [breakfastIDs, lunchIDs, dinnerIDs] = await Promise.all([
-      fetchCandidateRecipesForMealType(embedPrompts.breakfast, context, 'breakfast', distinctCounts.breakfast),
-      fetchCandidateRecipesForMealType(embedPrompts.lunch, context, 'lunch/dinner', distinctCounts.lunch),
-      fetchCandidateRecipesForMealType(embedPrompts.dinner, context, 'lunch/dinner', distinctCounts.dinner)
-    ]);
+    // Fetch one recipe per prompt for each meal type
+    const breakfastIDs: string[] = [];
+    const lunchIDs: string[] = [];
+    const dinnerIDs: string[] = [];
+
+    // Fetch breakfast recipes - one per prompt
+    for (const prompt of embedPrompts.breakfast) {
+      const ids = await fetchCandidateRecipesForMealType(prompt, context, 'breakfast', 1);
+      breakfastIDs.push(...ids);
+    }
+
+    // Fetch lunch recipes - one per prompt
+    for (const prompt of embedPrompts.lunch) {
+      const ids = await fetchCandidateRecipesForMealType(prompt, context, 'lunch/dinner', 1);
+      lunchIDs.push(...ids);
+    }
+
+    // Fetch dinner recipes - one per prompt
+    for (const prompt of embedPrompts.dinner) {
+      const ids = await fetchCandidateRecipesForMealType(prompt, context, 'lunch/dinner', 1);
+      dinnerIDs.push(...ids);
+    }
 
     // Fetch full recipe details for each meal type
     const [breakfastRecipes, lunchRecipes, dinnerRecipes] = await Promise.all([
@@ -209,8 +229,15 @@ You MUST MODIFY and use ALL provided recipes:
    - Use the correct day + mealType from the slot label
    - recipeId must reference one of the modified recipes
    - portionMultiplier must be an integer >= 1 (default 1 unless user household needs more)
-4) Produce grocery_list with best-effort consolidated totals (this should be easier since you've consolidated ingredients across recipes).
-5) VALIDATE before returning (MANDATORY):
+4) Standardize ingredient names across ALL recipes:
+   - Use consistent names (e.g., always "eggs" not "egg", always "chicken breast" not variations)
+   - Consolidate similar ingredients (e.g., "chicken breast", "boneless chicken breast" → use "chicken breast")
+   - Use plural forms consistently for countable items
+5) Produce grocery_list with consolidated totals:
+   - Use the EXACT SAME ingredient names from recipes (no variations)
+   - Sum quantities for the same ingredient (e.g., if Recipe 1 has "2 cups eggs" and Recipe 2 has "1 cup eggs", grocery list should have "3 cups eggs")
+   - DO NOT create duplicate entries for the same ingredient
+6) VALIDATE before returning (MANDATORY):
    - ALL provided recipes are used and modified (one distinct modified recipe per provided recipe).
    - schedule length equals ${resolvedSlots.length} and covers every slot exactly once.
    - Every schedule entry references a valid recipe ID.
@@ -218,6 +245,7 @@ You MUST MODIFY and use ALL provided recipes:
    - Units comply (no "tbsp"; use "tbs" or "tb").
    - Protein requirement satisfied for every recipe when triggered (recipes must be modified to include quality protein sources).
    - If cost efficiency is a priority: ingredients are consolidated across recipes (same ingredients used in multiple recipes).
+   - **INGREDIENT CONSOLIDATION: All recipes use consistent ingredient names, grocery list uses same names and consolidates quantities (no duplicates).**
 
 ### Output (JSON only, no explanation)
 Return exactly the schema required above.`
@@ -235,14 +263,17 @@ Return exactly the schema required above.`
       - Fill every requested slot exactly once in the schedule.
       - recipes[].servings MUST equal the total portions assigned to that recipe across schedule (sum of portionMultiplier).
       - Follow measurement units strictly (NEVER "tbsp"; use "tbs" or "tb").
+      - **INGREDIENT CONSOLIDATION IS MANDATORY**: Use consistent ingredient names across all recipes (e.g., always "eggs" not "egg", always "chicken breast" not variations). Grocery list must use the same names and consolidate quantities.
       - Return JSON only.
 
       PROCESS:
       1) Modify: Update each provided recipe to align with user goals (add protein if needed, consolidate ingredients for cost efficiency, remove excluded ingredients, etc.).
-      2) Schedule: Map every slot to a modified recipeId (reuse allowed).
-      3) Set servings: For each recipe, set servings = sum of portionMultiplier in schedule for that recipeId.
-      4) Validate: Ensure all provided recipes are used, slot coverage, servings math, exclusions, unit rules, and goal alignment all pass.
-      5) Output: Return only if validation passes.`,
+      2) Standardize: Ensure all recipes use consistent ingredient names (no variations like "egg" vs "eggs" or "chicken" vs "chicken breast").
+      3) Schedule: Map every slot to a modified recipeId (reuse allowed).
+      4) Set servings: For each recipe, set servings = sum of portionMultiplier in schedule for that recipeId.
+      5) Consolidate grocery list: Use the same standardized ingredient names from recipes, sum quantities for the same ingredient, ensure no duplicate entries.
+      6) Validate: Ensure all provided recipes are used, slot coverage, servings math, exclusions, unit rules, ingredient consolidation, and goal alignment all pass.
+      7) Output: Return only if validation passes.`,
       prompt: enhancedPrompt,
     })
 
