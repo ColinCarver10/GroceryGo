@@ -16,7 +16,7 @@ export const REGULAR_MODEL = 'gpt-5.2'
 
 // Small model - used for generating embedding prompts
 // Options: 'gpt-4.1-nano', 'gpt-4o-mini', 'gpt-3.5-turbo', etc.
-export const SMALL_MODEL = 'gpt-4.1-nano'
+export const SMALL_MODEL = 'gpt-5.2'
 
 // Embedded model - used for generating embeddings
 // Options: 'text-embedding-3-small', 'text-embedding-3-large', 'text-embedding-ada-002', etc.

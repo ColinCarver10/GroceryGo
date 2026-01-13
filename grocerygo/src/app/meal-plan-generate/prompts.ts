@@ -199,6 +199,41 @@ ${MEASUREMENT_UNITS_PROMPT}
 
 **IMPORTANT**: Do NOT include water in the grocery list. Water is assumed to be available and should not be listed as an ingredient.
 
+### CRITICAL: Ingredient Consolidation and Naming Rules
+
+You MUST consolidate and standardize ingredient names across ALL recipes and the grocery list:
+
+1. **Use consistent ingredient names:**
+   - ALWAYS use the same name for the same ingredient across all recipes
+   - Use plural forms consistently (e.g., always "eggs" not "egg", always "tomatoes" not "tomato")
+   - Use standard names without unnecessary descriptors (e.g., use "chicken breast" consistently, not "boneless chicken breast" in one place and "chicken" in another)
+   - Examples of correct consolidation:
+     - ✅ "chicken breast" (used consistently everywhere)
+     - ✅ "eggs" (always plural)
+     - ✅ "tomatoes" (always plural)
+     - ❌ "chicken breast", "boneless chicken breast", "chicken" (inconsistent)
+     - ❌ "egg" and "eggs" (inconsistent pluralization)
+
+2. **Consolidate similar ingredients:**
+   - If multiple recipes use the same ingredient with slight variations, use ONE standard name
+   - Examples:
+     - "chicken breast", "boneless chicken breast", "skinless chicken breast" → consolidate to "chicken breast"
+     - "egg", "eggs", "large eggs" → consolidate to "eggs"
+     - "tomato", "tomatoes", "fresh tomatoes" → consolidate to "tomatoes"
+     - "onion", "yellow onion", "onions" → consolidate to "onions"
+
+3. **Grocery list consolidation:**
+   - The grocery_list MUST consolidate all ingredients from all recipes
+   - Use the SAME standardized ingredient names from the recipes
+   - Sum quantities for the same ingredient (e.g., if Recipe 1 uses "2 cups eggs" and Recipe 2 uses "1 cup eggs", grocery list should have "3 cups eggs" not separate entries)
+   - DO NOT create separate entries for the same ingredient with different names
+
+4. **Before finalizing, verify:**
+   - All recipes use consistent ingredient names (no variations of the same ingredient)
+   - Grocery list uses the exact same ingredient names as recipes
+   - Grocery list has consolidated quantities (no duplicate entries for the same ingredient)
+   - Pluralization is consistent (always plural for countable items like eggs, tomatoes, onions)
+
 ### Validation Checklist (must satisfy before output):
 1) schedule length === meal_slots length (every slot filled)
 2) Every schedule.recipeId exists in recipes[].id
@@ -210,6 +245,11 @@ ${MEASUREMENT_UNITS_PROMPT}
    - If nutrition/eat healthier: quality protein sources are present in all recipes
    - All other goals are addressed through modifications
 7) ALL provided recipes are used and modified (one distinct modified recipe per provided recipe)
+8) **INGREDIENT CONSOLIDATION VERIFIED:**
+   - All recipes use consistent ingredient names (no variations like "egg" vs "eggs" or "chicken" vs "chicken breast")
+   - Grocery list uses exact same ingredient names as recipes
+   - Grocery list has no duplicate entries for the same ingredient (quantities are summed)
+   - Pluralization is consistent (always plural for countable items)
 `;
 
 const embeddingSentencePrompt = `You are generating a semantic search query for a recipe database.
@@ -297,10 +337,110 @@ Return your response as a JSON object with this exact structure:
 
 Return ONLY the JSON object, no other text or explanation. Do not include 'JSON' or extra quotes. Begin and end your resonse with { and } respectively.`;
 
+const multipleEmbedPromptsSystemPrompt = `You are generating diverse semantic search queries for a recipe database.
+
+Your task is to create multiple unique, food-focused phrases for each meal type that will be used for vector similarity search. Each phrase must be DISTINCTLY different to ensure recipe diversity.
+
+CRITICAL DIVERSITY RULES:
+- Balance primary proteins/ingredients across prompts - distribute them evenly (e.g., if 7 prompts: 3 chicken, 3 beef, 1 shrimp)
+- It's okay to repeat the same main ingredient, but distribute it across multiple prompts rather than using it in every prompt
+- Rotate through different favored ingredients - distribute them across prompts rather than using the same ones in every prompt
+- Vary cooking methods (grilled, baked, stir-fried, roasted, steamed, sautéed, etc.) - even when using the same protein, use different methods
+- Vary cuisine types when possible (Italian, Asian, Mexican, Mediterranean, American, etc.)
+- Vary vegetable combinations - use different vegetables with the same protein
+- Vary flavor profiles (spicy, savory, sweet, tangy, herby, etc.) - use different flavors even with the same protein
+- Each prompt should feel distinct through different combinations of cooking method, cuisine, vegetables, or flavors
+
+Rules for each phrase:
+- 8-15 words in length
+- Focus on ingredients, meal type, and goals from the user survey
+- Prefer favored ingredients when possible, but ROTATE through them
+- Do not mention allergies, time limits, or nutrition numbers (those are handled by filters)
+- Avoid full sentences, explanations, or fluff
+- Use lowercase
+- Be concrete and food-focused
+- Each prompt should be meaningfully different from ALL other prompts for that meal type
+
+You must return your response as a valid JSON object with "breakfast", "lunch", and "dinner" fields. Each field should contain an array of strings (one string per prompt requested for that meal type).`;
+
+const multipleEmbedPromptsUserPromptTemplate = (surveyData: any, counts: { breakfast: number; lunch: number; dinner: number }, excludeRecipe?: { name?: string; ingredients?: Array<{ item: string }> }) => {
+  // Extract favored ingredients from survey data
+  const surveyJson = surveyData ?? {};
+  const favoredIngredients = Array.isArray((surveyJson as Record<string, unknown>)?.['12'])
+    ? (surveyJson as Record<string, unknown>)['12'] as string[]
+    : Array.isArray((surveyJson as Record<string, unknown>)?.favored_ingredients)
+    ? (surveyJson as Record<string, unknown>).favored_ingredients as string[]
+    : [];
+
+  const favoredIngredientsText = favoredIngredients.length > 0 
+    ? `\n\nFAVORED INGREDIENTS TO ROTATE THROUGH: ${favoredIngredients.join(', ')}\nIMPORTANT: Rotate through these ingredients across prompts - don't use the same ones in every prompt. Use different combinations.`
+    : '';
+
+  return `${embeddingSentencePrompt}
+
+User Survey: ${JSON.stringify(surveyData, null, 2)}${favoredIngredientsText}
+
+Generate unique embedding prompts for each meal type:
+- Breakfast: ${counts.breakfast} unique prompt(s)
+- Lunch: ${counts.lunch} unique prompt(s)
+- Dinner: ${counts.dinner} unique prompt(s)
+
+${excludeRecipe ? `IMPORTANT: You are replacing a recipe. Try to create prompts that will find recipes different from: "${excludeRecipe.name}" (which contains: ${excludeRecipe.ingredients?.map(i => i.item).slice(0, 5).join(', ') || 'various ingredients'}). Make the prompts distinct from this recipe.` : ''}
+
+CRITICAL: Balance and distribute ingredients across prompts for the same meal type.
+
+Diversity requirements:
+- Balance primary proteins/ingredients - distribute them evenly across prompts (e.g., if 7 dinner prompts: 3 chicken, 3 beef, 1 shrimp)
+- It's okay to repeat the same main ingredient, but distribute it across multiple prompts rather than using it excessively
+- Rotate through different favored ingredients - distribute them across prompts
+- Vary cooking methods (grilled, baked, stir-fry, roasted, steamed, etc.) - use different methods even with the same protein
+- Vary cuisine styles when appropriate (Italian, Asian, Mexican, Mediterranean, etc.)
+- Vary flavor profiles (spicy, savory, herby, tangy, etc.) - use different flavors even with the same protein
+- Use different vegetable combinations - vary vegetables even when using the same protein
+- Each prompt should feel distinct through different combinations of cooking method, cuisine, vegetables, or flavors
+
+Examples of GOOD balanced prompts for 7 dinner prompts (balanced distribution with variety):
+- "spicy grilled chicken dinner with tomatoes and garlic"
+- "baked chicken with roasted vegetables and herbs"
+- "italian chicken parmesan with marinara sauce"
+- "grilled beef steak with roasted potatoes"
+- "beef stir-fry with bell peppers and onions"
+- "mexican beef tacos with fresh salsa"
+- "garlic shrimp scampi with pasta"
+
+Examples of BAD prompts (unbalanced - too much repetition):
+- "spicy chicken breakfast with tomatoes and garlic"
+- "savory chicken breakfast with tomatoes and herbs"
+- "garlic chicken breakfast with fresh tomatoes"
+- "chicken breakfast with tomatoes"
+- "chicken breakfast with garlic tomatoes"
+
+All prompts must stay within the user's preferences, goals, and constraints, but use DIFFERENT combinations of those preferences.
+
+Return your response as a JSON object with this exact structure:
+{
+  "breakfast": ["first breakfast phrase", "second breakfast phrase", ...],
+  "lunch": ["first lunch phrase", "second lunch phrase", ...],
+  "dinner": ["first dinner phrase", "second dinner phrase", ...]
+}
+
+Note: If a meal type has count 0, return an empty array for that meal type.
+
+FINAL CHECK: Before returning, verify that:
+- Primary proteins/ingredients are balanced and distributed across prompts (not all the same, but some repetition is okay)
+- Cooking methods are varied across prompts (even when using the same protein)
+- Flavor profiles are varied across prompts (even when using the same protein)
+- Each prompt feels distinct through different combinations of method, cuisine, vegetables, or flavors
+
+Return ONLY the JSON object, no other text or explanation. Do not include 'JSON' or extra quotes. Begin and end your response with { and } respectively.`;
+};
+
 export { 
   MEASUREMENT_UNITS_PROMPT, 
   mealPlanFromSurveyPrompt, 
   embeddingSentencePrompt,
   embeddingPromptsSystemPrompt,
-  embeddingPromptsUserPromptTemplate
+  embeddingPromptsUserPromptTemplate,
+  multipleEmbedPromptsSystemPrompt,
+  multipleEmbedPromptsUserPromptTemplate
 };

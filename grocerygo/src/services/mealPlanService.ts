@@ -2,7 +2,9 @@ import { createClient } from '@/utils/supabase/server'
 import type { MealPlan, MealPlanInsert, MealPlanRecipeInsert, RecipeInsert, GroceryItemInsert, MatchRecipeResult } from '@/types/database'
 import { 
   embeddingPromptsSystemPrompt, 
-  embeddingPromptsUserPromptTemplate 
+  embeddingPromptsUserPromptTemplate,
+  multipleEmbedPromptsSystemPrompt,
+  multipleEmbedPromptsUserPromptTemplate
 } from '@/app/meal-plan-generate/prompts';
 import { generateText } from 'ai'
 import OpenAI from "openai";
@@ -540,13 +542,97 @@ const EmbeddingPromptsSchema = z.object({
 export type EmbeddingPrompts = z.infer<typeof EmbeddingPromptsSchema>;
 
 /**
- * Generates embedding prompts for breakfast, lunch, and dinner in a single LLM call.
+ * Generates embedding prompts for breakfast, lunch, and dinner.
+ * 
+ * @param surveyData - User survey data
+ * @param counts - Optional object with counts for each meal type. If provided, generates unique prompts for each meal type with specified counts.
+ * @param excludeRecipe - Optional recipe to avoid similarity with (for replacements)
+ * @returns If counts provided: object with arrays of prompts for each meal type. Otherwise: object with single prompt per meal type (backward compatible)
  */
-export async function getEmbedPrompts(surveyData: any): Promise<EmbeddingPrompts> {
+export async function getEmbedPrompts(
+  surveyData: any,
+  counts?: { breakfast: number; lunch: number; dinner: number },
+  excludeRecipe?: { name?: string; ingredients?: Array<{ item: string }> }
+): Promise<EmbeddingPrompts | { breakfast: string[]; lunch: string[]; dinner: string[] }> {
   const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY
   });
 
+  // If counts provided, use the new multiple prompts template
+  if (counts) {
+    const userPrompt = multipleEmbedPromptsUserPromptTemplate(surveyData, counts, excludeRecipe);
+
+    try {
+      const completion = await openai.chat.completions.create({
+        model: SMALL_MODEL,
+        messages: [
+          {
+            role: 'system',
+            content: multipleEmbedPromptsSystemPrompt,
+          },
+          {
+            role: 'user',
+            content: userPrompt,
+          },
+        ],
+      });
+
+      const response = completion.choices[0]?.message?.content;
+
+      if (!response) {
+        throw new Error('No response generated from AI');
+      }
+
+      // Parse the JSON response
+      let parsedData: unknown;
+      try {
+        parsedData = JSON.parse(response);
+      } catch (parseError) {
+        throw new Error(`Failed to parse AI response as JSON: ${parseError instanceof Error ? parseError.message : 'Unknown error'}`);
+      }
+
+      // Basic validation that we got an object with the expected structure
+      if (typeof parsedData !== 'object' || parsedData === null) {
+        throw new Error('AI response is not a valid object');
+      }
+
+      const data = parsedData as { breakfast?: string[]; lunch?: string[]; dinner?: string[] };
+
+      if (!data.breakfast || !data.lunch || !data.dinner) {
+        throw new Error('AI response is missing required fields (breakfast, lunch, or dinner)');
+      }
+
+      // Validate arrays and trim strings
+      const breakfastPrompts = Array.isArray(data.breakfast) ? data.breakfast.map(p => p.trim()).filter(p => p.length > 0) : [];
+      const lunchPrompts = Array.isArray(data.lunch) ? data.lunch.map(p => p.trim()).filter(p => p.length > 0) : [];
+      const dinnerPrompts = Array.isArray(data.dinner) ? data.dinner.map(p => p.trim()).filter(p => p.length > 0) : [];
+
+      // Validate counts match (allowing for 0 counts)
+      if (counts.breakfast > 0 && breakfastPrompts.length !== counts.breakfast) {
+        throw new Error(`Expected ${counts.breakfast} breakfast prompts but got ${breakfastPrompts.length}`);
+      }
+      if (counts.lunch > 0 && lunchPrompts.length !== counts.lunch) {
+        throw new Error(`Expected ${counts.lunch} lunch prompts but got ${lunchPrompts.length}`);
+      }
+      if (counts.dinner > 0 && dinnerPrompts.length !== counts.dinner) {
+        throw new Error(`Expected ${counts.dinner} dinner prompts but got ${dinnerPrompts.length}`);
+      }
+
+      return {
+        breakfast: breakfastPrompts,
+        lunch: lunchPrompts,
+        dinner: dinnerPrompts
+      };
+    } catch (error) {
+      console.error("An error occurred while generating multiple embed prompts:", {error, surveyData, counts});
+      throw new Error(
+        'CRITICAL: Failed to generate multiple embedding prompts. Meal plan generation aborted.',
+        { cause: error as Error }
+      );
+    }
+  }
+
+  // Backward compatible: generate single prompt for each meal type
   const userPrompt = embeddingPromptsUserPromptTemplate(surveyData);
 
   try {
