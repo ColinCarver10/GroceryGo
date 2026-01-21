@@ -26,7 +26,7 @@ import {
   fetchRecipeDetailsByIds
 } from '@/services/mealPlanService'
 
-const INSTACART_API_URL = process.env.INSTACART_API_URL
+const INSTACART_API_URL = process.env.INSTACART_API_URL || 'https://connect.dev.instacart.tools/idp/v1/products/products_link'
 const INSTACART_API_KEY = process.env.INSTACART_API_KEY
 
 type AdditionalGroceryItem = {
