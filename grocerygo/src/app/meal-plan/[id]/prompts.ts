@@ -77,15 +77,17 @@ export const replaceRecipePrompt = (
   const priorities = surveyData['11'] || []
   const requiresProtein = goals.includes('Eat healthier') || priorities[0] === 'Nutrition'
   
+  // Check if budget-conscious
+  const budgetResponse = surveyData['3'] || ''
+  const isBudgetConscious = goals.includes('Save money on groceries') || budgetResponse === '$50-100' || priorities[0] === 'Cost efficiency' || priorities[1] === 'Cost efficiency'
+  
   let proteinRequirement = ''
   if (requiresProtein) {
     proteinRequirement = `\n### Protein Requirement:
-Since the user has "Eat healthier" as a goal or "Nutrition" as their #1 priority, this recipe MUST include a good quality protein source:
-- Animal proteins: chicken, turkey, beef, pork, fish, seafood, eggs, Greek yogurt, cottage cheese
-- Plant proteins: tofu, tempeh, legumes (beans, lentils, chickpeas), quinoa, nuts, seeds
-- For breakfast: eggs, Greek yogurt, cottage cheese, protein powder, nut butters
-- For lunch/dinner: include a substantial protein as the main component
-- Minimum 15-20g protein per serving\n`
+- **TARGET: 0.5 lb (8 oz) protein TOTAL per recipe** (not per serving)
+- Animal: chicken, turkey, beef, pork, fish, seafood, eggs, Greek yogurt, cottage cheese
+- Plant: tofu, tempeh, legumes, quinoa, nuts, seeds
+${isBudgetConscious ? `- Budget proteins: chicken thighs, ground beef/turkey, pork shoulder, canned tuna, eggs, beans/lentils, tofu (avoid ribeye, salmon, shrimp, lamb)` : ''}\n`
   }
   
   return `You are an expert meal planner generating a single replacement recipe.
@@ -163,15 +165,17 @@ export const replaceRecipeWithTotalIngredientsPrompt = (
   const priorities = surveyData['11'] || []
   const requiresProtein = goals.includes('Eat healthier') || priorities[0] === 'Nutrition'
   
+  // Check if budget-conscious
+  const budgetResponse = surveyData['3'] || ''
+  const isBudgetConscious = goals.includes('Save money on groceries') || budgetResponse === '$50-100' || priorities[0] === 'Cost efficiency' || priorities[1] === 'Cost efficiency'
+  
   let proteinRequirement = ''
   if (requiresProtein) {
     proteinRequirement = `\n### Protein Requirement:
-Since the user has "Eat healthier" as a goal or "Nutrition" as their #1 priority, this recipe MUST include a good quality protein source:
-- Animal proteins: chicken, turkey, beef, pork, fish, seafood, eggs, Greek yogurt, cottage cheese
-- Plant proteins: tofu, tempeh, legumes (beans, lentils, chickpeas), quinoa, nuts, seeds
-- For breakfast: eggs, Greek yogurt, cottage cheese, protein powder, nut butters
-- For lunch/dinner: include a substantial protein as the main component
-- Minimum 15-20g protein per serving\n`
+- **TARGET: 0.5 lb (8 oz) protein TOTAL per recipe** (not per serving)
+- Animal: chicken, turkey, beef, pork, fish, seafood, eggs, Greek yogurt, cottage cheese
+- Plant: tofu, tempeh, legumes, quinoa, nuts, seeds
+${isBudgetConscious ? `- Budget proteins: chicken thighs, ground beef/turkey, pork shoulder, canned tuna, eggs, beans/lentils, tofu (avoid ribeye, salmon, shrimp, lamb)` : ''}\n`
   }
   
   let candidateRecipeSection = ''
@@ -253,20 +257,20 @@ ${MEASUREMENT_UNITS_PROMPT}
 }
 
 ### Critical Rules for updated_total_ingredients:
+**IMPORTANT - Quantity Calculation:**
+- Recipe ingredients show quantities for ONE serving (e.g., "0.5 lb chicken")
+- When adding to total, MULTIPLY recipe quantities by servings
+- Example: Recipe has "0.5 lb chicken" with 4 servings → add 2 lb to total
+
 1. Start with the current_total_ingredients list (convert to new format if needed)
-2. For each ingredient in old_recipe_ingredients:
-   - Determine if it's a seasoning or main ingredient
-   - Find matching ingredient in the appropriate array (items or seasonings) by name (case-insensitive) and unit
-   - Subtract the old recipe's quantity from the current quantity
-   - If result is 0 or negative, remove the ingredient from the list
-   - If result is positive, update the quantity
-3. For each ingredient in new recipe:
-   - Determine if it's a seasoning or main ingredient
-   - Find matching ingredient in the appropriate array (items or seasonings) by name (case-insensitive) and unit
-   - If found, add the new recipe's quantity to existing quantity
-   - If not found, add as new ingredient to the appropriate array
-4. Sort each array alphabetically by ingredient name
-5. Use EXACT same ingredient names as in current_total_ingredients when possible (for consistency)
+2. For each ingredient in old_recipe_ingredients (multiply by old recipe servings):
+   - Subtract the calculated quantity from the current quantity
+   - If result is 0 or negative, remove from list
+3. For each ingredient in new recipe (multiply by new recipe servings):
+   - If found, add the calculated quantity to existing
+   - If not found, add as new ingredient
+4. Sort each array alphabetically
+5. Use EXACT same ingredient names as in current_total_ingredients
 6. Always return the new format: {items: [...], seasonings: [...]}`;
 };
 
@@ -321,15 +325,17 @@ export const bulkAdjustmentPrompt = (
   const priorities = surveyData['11'] || []
   const requiresProtein = goals.includes('Eat healthier') || priorities[0] === 'Nutrition'
   
+  // Check if budget-conscious
+  const budgetResponse = surveyData['3'] || ''
+  const isBudgetConscious = goals.includes('Save money on groceries') || budgetResponse === '$50-100' || priorities[0] === 'Cost efficiency' || priorities[1] === 'Cost efficiency'
+  
   let proteinRequirement = ''
   if (requiresProtein) {
     proteinRequirement = `\n### Protein Requirement:
-Since the user has "Eat healthier" as a goal or "Nutrition" as their #1 priority, ALL recipes MUST include a good quality protein source:
-- Animal proteins: chicken, turkey, beef, pork, fish, seafood, eggs, Greek yogurt, cottage cheese
-- Plant proteins: tofu, tempeh, legumes (beans, lentils, chickpeas), quinoa, nuts, seeds
-- For breakfast: eggs, Greek yogurt, cottage cheese, protein powder, nut butters
-- For lunch/dinner: include a substantial protein as the main component
-- Minimum 15-20g protein per serving\n`
+- **TARGET: 0.5 lb (8 oz) protein TOTAL per recipe** (not per serving)
+- Animal: chicken, turkey, beef, pork, fish, seafood, eggs, Greek yogurt, cottage cheese
+- Plant: tofu, tempeh, legumes, quinoa, nuts, seeds
+${isBudgetConscious ? `- Budget proteins: chicken thighs, ground beef/turkey, pork shoulder, canned tuna, eggs, beans/lentils, tofu (avoid ribeye, salmon, shrimp, lamb)` : ''}\n`
   }
 
   /**
@@ -380,6 +386,11 @@ ${MEASUREMENT_UNITS_PROMPT}
     { "item": "Ingredient Name", "quantity": "Total Amount + Unit" }
   ]
 }
+
+**CRITICAL - Grocery List Quantity Calculation:**
+- Recipe ingredients show quantities for ONE serving (e.g., "0.5 lb chicken")
+- Grocery list must MULTIPLY recipe quantities by servings to get total needed
+- Example: Recipe has "0.5 lb chicken" with 4 servings → grocery list shows "2 lb chicken"
 
 **Important**: Every recipe MUST include a "mealType" field indicating the type of meal (Breakfast, Lunch, or Dinner).`;
 };

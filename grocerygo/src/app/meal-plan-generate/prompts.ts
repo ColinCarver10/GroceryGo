@@ -99,14 +99,22 @@ H) You MUST use ALL provided recipes. Each provided recipe becomes one distinct 
 
 ### Protein Requirements:
 If "Nutrition" is ranked #1 in priorities (Question 11) OR "Eat healthier" is included in goals (Question 9):
-- EVERY recipe MUST include a good quality protein source. You MUST MODIFY recipes to add or enhance protein if the provided recipe lacks adequate protein.
-  Examples of quality protein sources:
-  - Animal: chicken, turkey, beef, pork, fish/seafood, eggs, Greek yogurt, cottage cheese
-  - Plant: tofu, tempeh, beans/lentils/chickpeas, quinoa, nuts, seeds
-- Aim for 15–20g protein per serving for lunch/dinner.
-- Breakfast proteins: eggs, Greek yogurt, cottage cheese, protein powder, nut butters.
+- EVERY recipe MUST include a quality protein source
+- **TARGET: 0.5 lb (8 oz) protein TOTAL per recipe** (not per serving)
+- Animal: chicken, turkey, beef, pork, fish/seafood, eggs, Greek yogurt, cottage cheese
+- Plant: tofu, tempeh, beans/lentils/chickpeas, quinoa, nuts, seeds
+- Breakfast: eggs, Greek yogurt, cottage cheese, protein powder, nut butters
 
-CRITICAL: If a provided recipe lacks a protein source or has insufficient protein, you MUST modify it by adding a quality protein source that makes sense for the dish. Do not leave recipes without adequate protein when this requirement is triggered.
+**Budget-Conscious Protein:** If "Save money" goal OR "$50-100" budget OR high "Cost efficiency" priority:
+- USE: chicken thighs/drumsticks, ground beef/turkey, pork shoulder, canned tuna, eggs, beans/lentils, tofu
+- AVOID: ribeye, salmon, shrimp, lamb, premium cuts
+- Less protein diversity is acceptable when saving money
+
+### Ingredient Quantity Sanity Check:
+Before finalizing, verify each ingredient quantity makes sense for ONE serving:
+- Vegetables: 1-3 pieces per serving (e.g., 1 tomato, not 4)
+- Aromatics: reasonable amounts (2-3 garlic cloves, not 8)
+- If a quantity seems excessive for one person to eat, reduce it
 
 ### User Priorities (Question 11) — follow ranked order:
 - If Cost efficiency is #1:
@@ -189,15 +197,15 @@ ${MEASUREMENT_UNITS_PROMPT}
 
 ### Grocery List Structure:
 - **items**: Main ingredients (produce, meat, dairy, grains, etc.) - everything that is NOT a seasoning
-- **seasonings**: Spices, herbs, and seasonings including:
-  - Salt, pepper (black, white, cayenne, etc.)
-  - Spices: paprika, cumin, turmeric, cinnamon, nutmeg, etc.
-  - Dried herbs: oregano, basil, thyme, rosemary, etc.
-  - Spice blends: curry powder, chili powder, garam masala, etc.
-  - Powdered seasonings: garlic powder, onion powder, etc.
-  - Use your cooking knowledge to determine what counts as a seasoning vs. a main ingredient
+- **seasonings**: Spices, herbs, and seasonings (salt, pepper, spices, dried herbs, spice blends, garlic/onion powder)
 
-**IMPORTANT**: Do NOT include water in the grocery list. Water is assumed to be available and should not be listed as an ingredient.
+**CRITICAL - Grocery List Quantity Calculation:**
+- Recipe ingredients show quantities for ONE serving (e.g., "0.5 lb chicken")
+- Grocery list must MULTIPLY recipe quantities by servings to get total needed
+- Example: Recipe A has "0.5 lb chicken" with 3 servings, Recipe B has "0.5 lb chicken" with 4 servings
+  → Grocery list should show: "3.5 lb chicken" (0.5×3 + 0.5×4)
+
+**IMPORTANT**: Do NOT include water in the grocery list.
 
 ### CRITICAL: Ingredient Consolidation and Naming Rules
 
