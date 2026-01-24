@@ -172,37 +172,37 @@ export default function RecipeModal({
         onClick={onClose}
       />
 
-      {/* Modal */}
-      <div className="flex min-h-full items-center justify-center p-4">
+      {/* Modal - Full screen on mobile, centered modal on larger screens */}
+      <div className="flex min-h-full items-end sm:items-center justify-center sm:p-4">
         <div 
-          className="relative bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden"
+          className="relative bg-white sm:rounded-2xl shadow-2xl w-full sm:max-w-4xl h-[95vh] sm:h-auto sm:max-h-[90vh] overflow-hidden rounded-t-2xl"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="sticky top-0 bg-white border-b border-gray-200 px-8 py-6 flex items-start justify-between z-10">
-            <div className="flex-1 pr-8">
-              <h2 className="text-3xl font-bold text-gray-900 mb-3 capitalize">
+          <div className="sticky top-0 bg-white border-b border-gray-200 px-4 sm:px-8 py-4 sm:py-6 flex items-start justify-between z-10">
+            <div className="flex-1 pr-2 sm:pr-8 min-w-0">
+              <h2 className="text-xl sm:text-3xl font-bold text-gray-900 mb-2 sm:mb-3 capitalize line-clamp-2">
                 {recipe.name}
               </h2>
-              <div className="flex flex-wrap gap-4 text-sm text-gray-600">
+              <div className="flex flex-wrap gap-2 sm:gap-4 text-xs sm:text-sm text-gray-600">
                 {recipe.meal_type && (
-                  <span className="inline-flex items-center justify-center gap-2 px-3 py-1 rounded-full bg-[var(--gg-primary)]">
-                    <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <span className="inline-flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-3 py-0.5 sm:py-1 rounded-full bg-[var(--gg-primary)]">
+                    <svg className="h-3 w-3 sm:h-4 sm:w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
                     </svg>
                     <span className="font-semibold text-white capitalize">{recipe.meal_type}</span>
                   </span>
                 )}
                 {recipe.prep_time_minutes && (
-                  <span className="flex items-center gap-2">
-                    <svg className="h-5 w-5 text-[var(--gg-primary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <span className="flex items-center gap-1 sm:gap-2">
+                    <svg className="h-4 w-4 sm:h-5 sm:w-5 text-[var(--gg-primary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
-                    <span className="font-medium">{recipe.prep_time_minutes} minutes</span>
+                    <span className="font-medium">{recipe.prep_time_minutes}<span className="hidden sm:inline"> minutes</span><span className="sm:hidden">m</span></span>
                   </span>
                 )}
                 {plannedDays.length > 0 && (
-                  <span className="flex items-center gap-2">
+                  <span className="hidden sm:flex items-center gap-2">
                     <svg className="h-5 w-5 text-[var(--gg-primary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                     </svg>
@@ -210,8 +210,8 @@ export default function RecipeModal({
                   </span>
                 )}
                 {recipe.difficulty && (
-                  <span className="flex items-center gap-2">
-                    <svg className="h-5 w-5 text-[var(--gg-primary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <span className="flex items-center gap-1 sm:gap-2">
+                    <svg className="h-4 w-4 sm:h-5 sm:w-5 text-[var(--gg-primary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                     </svg>
                     <span className="font-medium capitalize">{recipe.difficulty}</span>
@@ -223,38 +223,38 @@ export default function RecipeModal({
             {/* Close Button */}
             <button
               onClick={onClose}
-              className="flex-shrink-0 p-2 rounded-full hover:bg-gray-100 transition-colors"
+              className="flex-shrink-0 p-2 rounded-full hover:bg-gray-100 transition-colors -mr-1 sm:mr-0"
               aria-label="Close modal"
             >
-              <svg className="h-6 w-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="h-5 w-5 sm:h-6 sm:w-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
           </div>
 
           {/* Content */}
-          <div className="px-8 py-6 pb-8 overflow-y-auto max-h-[calc(90vh-200px)]">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <div className="px-4 sm:px-8 py-4 sm:py-6 pb-6 sm:pb-8 overflow-y-auto max-h-[calc(95vh-120px)] sm:max-h-[calc(90vh-200px)]">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-8">
               
               {/* Ingredients */}
               <div>
-                <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-                  <svg className="h-6 w-6 text-[var(--gg-primary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <h3 className="text-lg sm:text-xl font-bold text-gray-900 mb-3 sm:mb-4 flex items-center gap-2">
+                  <svg className="h-5 w-5 sm:h-6 sm:w-6 text-[var(--gg-primary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                   </svg>
                   Ingredients
                 </h3>
-                <div className="space-y-3">
+                <div className="space-y-2 sm:space-y-3">
                   {getIngredients(recipe).map((ingredient: Ingredient, index: number) => (
                     <div 
                       key={index}
-                      className="flex items-start gap-3 p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors"
+                      className="flex items-start gap-2 sm:gap-3 p-2 sm:p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors"
                     >
-                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--gg-primary)] text-white text-xs font-bold flex-shrink-0">
+                      <div className="flex h-5 w-5 sm:h-6 sm:w-6 items-center justify-center rounded-full bg-[var(--gg-primary)] text-white text-xs font-bold flex-shrink-0">
                         {index + 1}
                       </div>
                       <div className="flex-1">
-                        <p className="font-medium text-gray-900">
+                        <p className="font-medium text-gray-900 text-sm sm:text-base">
                           {ingredient.ingredient}
                         </p>
                       </div>
@@ -265,22 +265,22 @@ export default function RecipeModal({
 
               {/* Instructions */}
               <div>
-                <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-                  <svg className="h-6 w-6 text-[var(--gg-primary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <h3 className="text-lg sm:text-xl font-bold text-gray-900 mb-3 sm:mb-4 flex items-center gap-2">
+                  <svg className="h-5 w-5 sm:h-6 sm:w-6 text-[var(--gg-primary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
                   Instructions
                 </h3>
-                <div className="space-y-4">
+                <div className="space-y-3 sm:space-y-4">
                   {getRecipeSteps(recipe).map((step: string, index: number) => (
                     <div 
                       key={index}
-                      className="flex items-start gap-4"
+                      className="flex items-start gap-2 sm:gap-4"
                     >
-                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--gg-primary)] text-white text-sm font-bold flex-shrink-0">
+                      <div className="flex h-6 w-6 sm:h-8 sm:w-8 items-center justify-center rounded-full bg-[var(--gg-primary)] text-white text-xs sm:text-sm font-bold flex-shrink-0">
                         {index + 1}
                       </div>
-                      <p className="flex-1 text-gray-700 leading-relaxed pt-1">
+                      <p className="flex-1 text-gray-700 leading-relaxed pt-0.5 sm:pt-1 text-sm sm:text-base">
                         {step}
                       </p>
                     </div>
@@ -413,32 +413,32 @@ export default function RecipeModal({
             )}
 
             {/* Cooking Assistant */}
-            <div className="mt-8 p-6 rounded-xl bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-200">
-              <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-                <svg className="h-6 w-6 text-[var(--gg-primary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <div className="mt-6 sm:mt-8 p-4 sm:p-6 rounded-xl bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-200">
+              <h3 className="text-lg sm:text-xl font-bold text-gray-900 mb-3 sm:mb-4 flex flex-wrap items-center gap-2">
+                <svg className="h-5 w-5 sm:h-6 sm:w-6 text-[var(--gg-primary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 Cooking Assistant
-                <span className="text-xs text-gray-500 font-normal ml-2">
-                  Ask questions about cooking this recipe
+                <span className="text-xs text-gray-500 font-normal sm:ml-2 w-full sm:w-auto">
+                  Ask questions about this recipe
                 </span>
               </h3>
 
               {/* Chat Messages */}
               {chatMessages.length > 0 && (
-                <div className="mb-4 space-y-3 max-h-60 overflow-y-auto">
+                <div className="mb-4 space-y-3 max-h-48 sm:max-h-60 overflow-y-auto">
                   {chatMessages.map((msg, index) => (
                     <div key={index} className="space-y-2">
                       {/* User Question */}
                       <div className="flex justify-end">
-                        <div className="max-w-[80%] p-3 rounded-lg bg-indigo-600 text-white">
-                          <p className="text-sm">{msg.question}</p>
+                        <div className="max-w-[85%] sm:max-w-[80%] p-2 sm:p-3 rounded-lg bg-indigo-600 text-white">
+                          <p className="text-xs sm:text-sm">{msg.question}</p>
                         </div>
                       </div>
                       {/* AI Answer */}
                       <div className="flex justify-start">
-                        <div className="max-w-[80%] p-3 rounded-lg bg-white border border-indigo-200">
-                          <p className="text-sm text-gray-700">{msg.answer}</p>
+                        <div className="max-w-[85%] sm:max-w-[80%] p-2 sm:p-3 rounded-lg bg-white border border-indigo-200">
+                          <p className="text-xs sm:text-sm text-gray-700">{msg.answer}</p>
                         </div>
                       </div>
                     </div>
@@ -448,8 +448,8 @@ export default function RecipeModal({
 
               {/* Error Message */}
               {askError && (
-                <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200">
-                  <p className="text-sm text-red-600">{askError}</p>
+                <div className="mb-4 p-2 sm:p-3 rounded-lg bg-red-50 border border-red-200">
+                  <p className="text-xs sm:text-sm text-red-600">{askError}</p>
                 </div>
               )}
 
@@ -464,14 +464,14 @@ export default function RecipeModal({
                       handleAskQuestion()
                     }
                   }}
-                  placeholder="Ask about ingredients, techniques, timing..."
-                  className="flex-1 px-4 py-3 rounded-lg border border-indigo-300 focus:outline-none focus:ring-2 focus:ring-[var(--gg-primary)] focus:border-transparent text-sm"
+                  placeholder="Ask about ingredients, timing..."
+                  className="flex-1 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg border border-indigo-300 focus:outline-none focus:ring-2 focus:ring-[var(--gg-primary)] focus:border-transparent text-sm"
                   disabled={isAsking}
                 />
                 <button
                   onClick={handleAskQuestion}
                   disabled={isAsking || !currentQuestion.trim()}
-                  className="px-6 py-3 rounded-lg bg-[var(--gg-primary)] text-white font-medium hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  className="px-4 sm:px-6 py-2.5 sm:py-3 rounded-lg bg-[var(--gg-primary)] text-white font-medium hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                 >
                   {isAsking ? (
                     <>
@@ -479,7 +479,7 @@ export default function RecipeModal({
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                       </svg>
-                      <span>Asking...</span>
+                      <span className="hidden sm:inline">Asking...</span>
                     </>
                   ) : (
                     <span>Ask</span>
@@ -487,7 +487,7 @@ export default function RecipeModal({
                 </button>
               </div>
               
-              <p className="mt-3 text-xs text-gray-500 italic">
+              <p className="mt-2 sm:mt-3 text-xs text-gray-500 italic hidden sm:block">
                 Note: This assistant only answers questions about cooking this specific recipe.
               </p>
             </div>

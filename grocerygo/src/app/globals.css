@@ -162,7 +162,7 @@ body {
 }
 
 .gg-section {
-  @apply py-12 sm:py-16 lg:py-20;
+  @apply py-8 sm:py-16 lg:py-20;
 }
 
 .gg-hero {

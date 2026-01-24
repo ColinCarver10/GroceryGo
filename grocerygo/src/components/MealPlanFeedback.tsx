@@ -167,7 +167,7 @@ export default function MealPlanFeedback({ mealPlanId, userId, existingFeedback 
       {isExpanded && (
         <div 
           ref={formRef}
-          className="absolute top-full right-0 mt-2 bg-white border-2 border-gray-200 rounded-lg shadow-lg p-6 z-50 min-w-[400px] max-w-[600px]"
+          className="fixed sm:absolute inset-x-4 sm:inset-x-auto top-1/2 sm:top-full -translate-y-1/2 sm:translate-y-0 sm:right-0 sm:mt-2 bg-white border-2 border-gray-200 rounded-xl shadow-xl p-4 sm:p-6 z-50 sm:min-w-[400px] sm:max-w-[600px] max-h-[85vh] overflow-y-auto"
         >
           <div className="space-y-4">
             <h3 className="gg-heading-section text-lg">Share Your Feedback</h3>

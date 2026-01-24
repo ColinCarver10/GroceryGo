@@ -230,17 +230,18 @@ export default function DashboardClient({
         <div className="gg-section">
           
           {/* Header */}
-          <div className="mb-8 flex items-center justify-between">
+          <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h1 className="gg-heading-page mb-2">My Dashboard</h1>
               <p className="gg-text-subtitle">Manage your meal plans and preferences</p>
             </div>
-            <Link href="/meal-plan-generate">
-              <button className="gg-btn-primary gap-2">
+            <Link href="/meal-plan-generate" className="w-full sm:w-auto">
+              <button className="gg-btn-primary gap-2 w-full sm:w-auto justify-center">
                 <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                 </svg>
-                Generate New Meal Plan
+                <span className="hidden sm:inline">Generate New Meal Plan</span>
+                <span className="sm:hidden">New Meal Plan</span>
               </button>
             </Link>
           </div>
@@ -266,13 +267,13 @@ export default function DashboardClient({
                         key={plan.id}
                         href={plan.status === 'generating' ? '#' : `/meal-plan/${plan.id}`}
                         onClick={(e) => handleMealPlanClick(e, plan)}
-                        className="block group rounded-xl border-2 border-gray-200 bg-white p-6 transition-all hover:border-[var(--gg-primary)] hover:shadow-md"
+                        className="block group rounded-xl border-2 border-gray-200 bg-white p-4 sm:p-6 transition-all hover:border-[var(--gg-primary)] hover:shadow-md"
                       >
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <div className="mb-2 flex items-center gap-3">
-                              <h3 className="gg-heading-card">Week of {formatWeekOf(plan.week_of)}</h3>
-                              <span className={`rounded-full px-3 py-1 text-xs font-medium ${
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="mb-2 flex flex-wrap items-center gap-2 sm:gap-3">
+                              <h3 className="gg-heading-card text-base sm:text-xl">Week of {formatWeekOf(plan.week_of)}</h3>
+                              <span className={`rounded-full px-2 sm:px-3 py-1 text-xs font-medium whitespace-nowrap ${
                                 plan.status === 'completed' 
                                   ? 'bg-green-100 text-green-800'
                                   : plan.status === 'in-progress'
@@ -287,28 +288,29 @@ export default function DashboardClient({
                               </span>
                             </div>
                             
-                            <div className="mb-3 flex items-center gap-4 text-sm text-gray-600">
+                            <div className="mb-3 flex flex-wrap items-center gap-2 sm:gap-4 text-xs sm:text-sm text-gray-600">
                               <div className="flex items-center gap-1">
-                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <svg className="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                 </svg>
-                                <span>Created {new Date(plan.created_at).toLocaleDateString()}</span>
+                                <span>{new Date(plan.created_at).toLocaleDateString()}</span>
                               </div>
                               <div className="flex items-center gap-1">
-                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <svg className="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" />
                                 </svg>
-                                <span>{plan.total_meals} meals planned</span>
+                                <span>{plan.total_meals} meals</span>
                               </div>
                             </div>
 
-                            <div className="text-sm text-gray-600">
-                              Click to view recipes and shopping list →
+                            <div className="text-xs sm:text-sm text-gray-600">
+                              <span className="hidden sm:inline">Click to view recipes and shopping list →</span>
+                              <span className="sm:hidden">Tap to view →</span>
                             </div>
                           </div>
 
                           <svg 
-                            className="h-6 w-6 text-gray-400 transition-transform group-hover:translate-x-1 group-hover:text-[var(--gg-primary)]" 
+                            className="h-5 w-5 sm:h-6 sm:w-6 text-gray-400 transition-transform group-hover:translate-x-1 group-hover:text-[var(--gg-primary)] flex-shrink-0" 
                             fill="none" 
                             viewBox="0 0 24 24" 
                             stroke="currentColor"
@@ -350,13 +352,14 @@ export default function DashboardClient({
               <div className="gg-card mt-8">
                 <button
                   onClick={() => setShowSavedRecipes(!showSavedRecipes)}
-                  className="flex w-full items-center justify-between"
+                  className="flex w-full items-center justify-between gap-2"
                 >
-                  <h2 className="gg-heading-section flex items-center gap-2">
-                    <svg className="h-6 w-6 text-[var(--gg-primary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <h2 className="gg-heading-section flex items-center gap-2 text-lg sm:text-2xl">
+                    <svg className="h-5 w-5 sm:h-6 sm:w-6 text-[var(--gg-primary)] flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
                     </svg>
-                    Saved Recipes ({savedRecipes.length})
+                    <span className="hidden sm:inline">Saved Recipes ({savedRecipes.length})</span>
+                    <span className="sm:hidden">Saved ({savedRecipes.length})</span>
                   </h2>
                   <svg 
                     className={`h-5 w-5 text-gray-600 transition-transform ${showSavedRecipes ? 'rotate-180' : ''}`}

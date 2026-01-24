@@ -608,7 +608,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
         <div className="gg-section">
           
           {/* Header */}
-          <div className="mb-8">
+          <div className="mb-6 sm:mb-8">
             <Link 
               href="/dashboard" 
               className="gg-text-body text-sm mb-4 inline-flex items-center gap-2 hover:text-[var(--gg-primary)] transition-colors"
@@ -616,32 +616,25 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
-              Back to Dashboard
+              <span className="hidden sm:inline">Back to Dashboard</span>
+              <span className="sm:hidden">Back</span>
             </Link>
             
-            <div className="flex items-start justify-between">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="flex-1">
-                <h1 className="gg-heading-page mb-2">
-                  Meal Plan for {formatDateRange(organizedWeek.days)}
+                <h1 className="gg-heading-page mb-2 text-xl sm:text-2xl lg:text-3xl">
+                  <span className="hidden sm:inline">Meal Plan for </span>
+                  <span className="sm:hidden">Plan: </span>
+                  {formatDateRange(organizedWeek.days)}
                 </h1>
-                <p className="gg-text-subtitle">
-                  {mealPlan.total_meals} meal slot{mealPlan.total_meals === 1 ? '' : 's'} • {uniqueRecipeIds.size} unique recipe{uniqueRecipeIds.size === 1 ? '' : 's'} • Created {new Date(mealPlan.created_at).toLocaleDateString()}
+                <p className="gg-text-subtitle text-xs sm:text-base">
+                  <span className="hidden sm:inline">{mealPlan.total_meals} meal slot{mealPlan.total_meals === 1 ? '' : 's'} • {uniqueRecipeIds.size} unique recipe{uniqueRecipeIds.size === 1 ? '' : 's'} • Created {new Date(mealPlan.created_at).toLocaleDateString()}</span>
+                  <span className="sm:hidden">{mealPlan.total_meals} meals • {uniqueRecipeIds.size} recipes</span>
                 </p>
               </div>
-              <div className="flex flex-col items-end gap-3">
-                <div className="flex items-center justify-end gap-3">
+              <div className="flex items-center sm:flex-col sm:items-end gap-2 sm:gap-3">
+                <div className="flex items-center gap-2 sm:gap-3">
                   {getStatusBadge(mealPlan.status)}
-                  
-                  {/* COMMENTED OUT: Adjust Plan Button - functionality hidden temporarily */}
-                  {/* <button
-                    onClick={() => setIsAdjustPanelOpen(true)}
-                    className="gg-btn-outline flex items-center gap-2"
-                  >
-                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-                    </svg>
-                    Adjust Plan
-                  </button> */}
                 </div>
                 
                 {/* Feedback Component */}
@@ -658,35 +651,39 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
 
           {/* Tabs */}
           <div className="mb-6 border-b border-gray-200">
-            <div className="flex gap-8">
+            <div className="flex gap-4 sm:gap-8">
               <button
                 onClick={() => setActiveTab('recipes')}
-                className={`pb-4 px-1 border-b-2 font-semibold transition-colors ${
+                className={`pb-3 sm:pb-4 px-1 border-b-2 font-semibold transition-colors text-sm sm:text-base ${
                   activeTab === 'recipes'
                     ? 'border-[var(--gg-primary)] text-[var(--gg-primary)]'
                     : 'border-transparent text-gray-600 hover:text-gray-900'
                 }`}
               >
-                <span className="flex items-center gap-2">
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <span className="flex items-center gap-1.5 sm:gap-2">
+                  <svg className="h-4 w-4 sm:h-5 sm:w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
                   </svg>
-                  Recipes ({mealPlan.total_meals})
+                  <span className="hidden sm:inline">Recipes</span>
+                  <span className="sm:hidden">Recipes</span>
+                  <span className="text-xs sm:text-sm">({mealPlan.total_meals})</span>
                 </span>
               </button>
               <button
                 onClick={() => setActiveTab('shopping')}
-                className={`pb-4 px-1 border-b-2 font-semibold transition-colors ${
+                className={`pb-3 sm:pb-4 px-1 border-b-2 font-semibold transition-colors text-sm sm:text-base ${
                   activeTab === 'shopping'
                     ? 'border-[var(--gg-primary)] text-[var(--gg-primary)]'
                     : 'border-transparent text-gray-600 hover:text-gray-900'
                 }`}
               >
-                <span className="flex items-center gap-2">
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <span className="flex items-center gap-1.5 sm:gap-2">
+                  <svg className="h-4 w-4 sm:h-5 sm:w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
                   </svg>
-                  Shopping List ({totalIngredients.items.length + movedSeasonings.size})
+                  <span className="hidden sm:inline">Shopping List</span>
+                  <span className="sm:hidden">Shopping</span>
+                  <span className="text-xs sm:text-sm">({totalIngredients.items.length + movedSeasonings.size})</span>
                 </span>
               </button>
             </div>
@@ -864,15 +861,64 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
           ) : (
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
               <div className="lg:col-span-2">
+                {/* Mobile-only: Order from Instacart at top */}
+                <div className="gg-card mb-4 lg:hidden">
+                  <button
+                    onClick={handleOrderInstacart}
+                    disabled={isOrderingInstacart || (totalIngredients.items.length === 0 && movedSeasonings.size === 0) || (totalIngredients.items.every((_, index) => checkedItems.has(`item-${index}`)) && Array.from(movedSeasonings.keys()).every(id => checkedItems.has(`moved-seasoning-${id}`)))}
+                    className="w-full flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg font-medium transition-all duration-200 cursor-pointer hover:scale-[1.01] hover:shadow-lg active:scale-[0.98]"
+                    style={{
+                      height: '46px',
+                      paddingTop: '16px',
+                      paddingBottom: '16px',
+                      paddingLeft: '18px',
+                      paddingRight: '18px',
+                      backgroundColor: '#003D29',
+                      color: '#FAF1E5',
+                    }}
+                  >
+                    {isOrderingInstacart ? (
+                      <>
+                        <svg className="animate-spin" style={{ width: '22px', height: '22px' }} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Creating Order...
+                      </>
+                    ) : (
+                      <>
+                        <Image
+                          src="/Instacart_Carrot.png"
+                          alt="Instacart"
+                          width={22}
+                          height={22}
+                          className="flex-shrink-0"
+                        />
+                        Get Recipe Ingredients
+                      </>
+                    )}
+                  </button>
+                  
+                  {instacartError && (
+                    <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                      <p className="text-sm text-red-800">{instacartError}</p>
+                    </div>
+                  )}
+                  
+                  <p className="mt-2 text-xs text-gray-500 text-center">
+                    Opens in Instacart to complete your order
+                  </p>
+                </div>
+
                 <div className="gg-card">
                   <h2 className="gg-heading-section mb-4">Shopping List</h2>
                   
                   {/* Description */}
-                  <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                    <p className="text-sm text-gray-700 mb-2">
-                      <strong>How it works:</strong> Click anywhere on an item to check it off your list. Use the menu (⋮) to exclude ingredients from future meal plans or mark them as favorites.
+                  <div className="mb-4 sm:mb-6 p-3 sm:p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <p className="text-xs sm:text-sm text-gray-700 mb-2">
+                      <strong>How it works:</strong> <span className="hidden sm:inline">Click anywhere on an item to check it off your list. Use the menu (⋮) to exclude ingredients from future meal plans or mark them as favorites.</span><span className="sm:hidden">Tap items to check off. Use ⋮ menu for more options.</span>
                     </p>
-                    <p className="text-sm text-gray-600">
+                    <p className="text-xs sm:text-sm text-gray-600 hidden sm:block">
                       Items are automatically consolidated from all recipes in your meal plan. Checked items are excluded when ordering from Instacart.
                     </p>
                   </div>
@@ -887,14 +933,14 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
                           <div
                             key={itemId}
                             onClick={() => toggleItem(itemId)}
-                            className={`flex items-center gap-4 rounded-lg border-2 p-4 transition-all cursor-pointer ${
+                            className={`flex items-center gap-2 sm:gap-4 rounded-lg border-2 p-3 sm:p-4 transition-all cursor-pointer ${
                               checkedItems.has(itemId)
                                 ? 'border-gray-200 bg-gray-50'
                                 : 'border-gray-200 bg-white hover:border-gray-300'
                             }`}
                           >
                             <div
-                              className={`flex h-6 w-6 items-center justify-center rounded border-2 transition-all flex-shrink-0 ${
+                              className={`flex h-5 w-5 sm:h-6 sm:w-6 items-center justify-center rounded border-2 transition-all flex-shrink-0 ${
                                 checkedItems.has(itemId)
                                   ? 'border-[var(--gg-primary)] bg-[var(--gg-primary)]'
                                   : 'border-gray-300'
@@ -1067,8 +1113,8 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
                   </div>
                 </div>
 
-                {/* Order from Instacart */}
-                <div className="gg-card">
+                {/* Order from Instacart - Desktop only (mobile version is above shopping list) */}
+                <div className="gg-card hidden lg:block">
                   <button
                     onClick={handleOrderInstacart}
                     disabled={isOrderingInstacart || (totalIngredients.items.length === 0 && movedSeasonings.size === 0) || (totalIngredients.items.every((_, index) => checkedItems.has(`item-${index}`)) && Array.from(movedSeasonings.keys()).every(id => checkedItems.has(`moved-seasoning-${id}`)))}

@@ -831,42 +831,51 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
 
           {/* Step Indicator */}
           <div className="mb-6 flex flex-col items-center">
-            <div className="flex items-center gap-2 max-w-[75%] w-full">
+            <div className="flex items-center gap-1 sm:gap-2 max-w-full sm:max-w-[85%] lg:max-w-[75%] w-full px-2">
               <div className="flex flex-col items-center">
-                <div className={`flex items-center justify-center w-10 h-10 rounded-full font-semibold ${
+                <div className={`flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded-full font-semibold text-sm sm:text-base ${
                   currentStep >= 1 
                     ? 'bg-[var(--gg-primary)] text-white' 
                     : 'bg-gray-200 text-gray-600'
                 }`}>
                   1
                 </div>
-                <span className="mt-2 text-sm text-gray-600">Select Meals</span>
+                <span className="mt-1 sm:mt-2 text-xs sm:text-sm text-gray-600 text-center">
+                  <span className="hidden sm:inline">Select Meals</span>
+                  <span className="sm:hidden">Meals</span>
+                </span>
               </div>
               <div className={`flex-1 h-1 ${
                 currentStep >= 2 ? 'bg-[var(--gg-primary)]' : 'bg-gray-200'
               }`} />
               <div className="flex flex-col items-center">
-                <div className={`flex items-center justify-center w-10 h-10 rounded-full font-semibold ${
+                <div className={`flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded-full font-semibold text-sm sm:text-base ${
                   currentStep >= 2 
                     ? 'bg-[var(--gg-primary)] text-white' 
                     : 'bg-gray-200 text-gray-600'
                 }`}>
                   2
                 </div>
-                <span className="mt-2 text-sm text-gray-600">Recipe Variety</span>
+                <span className="mt-1 sm:mt-2 text-xs sm:text-sm text-gray-600 text-center">
+                  <span className="hidden sm:inline">Recipe Variety</span>
+                  <span className="sm:hidden">Variety</span>
+                </span>
               </div>
               <div className={`flex-1 h-1 ${
                 loading ? 'bg-[var(--gg-primary)]' : 'bg-gray-200'
               }`} />
               <div className="flex flex-col items-center">
-                <div className={`flex items-center justify-center w-10 h-10 rounded-full font-semibold ${
+                <div className={`flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded-full font-semibold text-sm sm:text-base ${
                   loading 
                     ? 'bg-[var(--gg-primary)] text-white' 
                     : 'bg-gray-200 text-gray-600'
                 }`}>
                   3
                 </div>
-                <span className="mt-2 text-sm text-gray-600">Generate Meal Plan</span>
+                <span className="mt-1 sm:mt-2 text-xs sm:text-sm text-gray-600 text-center">
+                  <span className="hidden sm:inline">Generate Plan</span>
+                  <span className="sm:hidden">Generate</span>
+                </span>
               </div>
             </div>
           </div>
@@ -875,16 +884,17 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
           {currentStep === 1 && (
             <div className="mb-8">
               <div className="gg-card">
-                <label htmlFor="start-date" className="block text-sm font-semibold text-gray-900 mb-3">
+                <span className="block text-sm font-semibold text-gray-900 mb-3">
                   Select Start Date
-                </label>
+                </span>
                 <input
                   type="date"
                   id="start-date"
                   value={startDate}
                   onChange={(e) => handleDateChange(e.target.value)}
+                  onClick={(e) => (e.target as HTMLInputElement).showPicker?.()}
                   min={new Date().toISOString().split('T')[0]}
-                  className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:border-[var(--gg-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--gg-primary)] focus:ring-opacity-20 text-gray-900"
+                  className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:border-[var(--gg-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--gg-primary)] focus:ring-opacity-20 text-gray-900 cursor-pointer"
                 />
                 {dateError && (
                   <p className="mt-2 text-sm text-red-600">{dateError}</p>
@@ -920,7 +930,7 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
                   {/* Quick Actions */}
                   <div className="mb-6 pb-6 border-b border-gray-200">
                     <p className="text-sm text-gray-600 mb-3">Quick actions:</p>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
                       <button
                         onClick={() => {
                           if (weekDays.length === 0) return
@@ -934,7 +944,7 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
                             }), {})
                           )
                         }}
-                        className="inline-flex items-center justify-center px-4 py-1.5 text-sm font-medium rounded-lg border-2 transition-all text-[var(--gg-primary)] border-[var(--gg-primary)] bg-transparent hover:bg-[var(--gg-primary)] hover:text-white"
+                        className="inline-flex items-center justify-center px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium rounded-lg border-2 transition-all text-[var(--gg-primary)] border-[var(--gg-primary)] bg-transparent hover:bg-[var(--gg-primary)] hover:text-white active:scale-95 active:bg-[var(--gg-primary-hover)] active:text-white active:border-[var(--gg-primary-hover)]"
                       >
                         Toggle All
                       </button>
@@ -953,9 +963,9 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
                             }), {})
                           )
                         }}
-                        className="inline-flex items-center justify-center px-4 py-1.5 text-sm font-medium rounded-lg border-2 transition-all text-[var(--gg-primary)] border-[var(--gg-primary)] bg-transparent hover:bg-[var(--gg-primary)] hover:text-white"
+                        className="inline-flex items-center justify-center px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium rounded-lg border-2 transition-all text-[var(--gg-primary)] border-[var(--gg-primary)] bg-transparent hover:bg-[var(--gg-primary)] hover:text-white active:scale-95 active:bg-[var(--gg-primary-hover)] active:text-white active:border-[var(--gg-primary-hover)]"
                       >
-                        Weekday Lunches Only
+                        Weekday Lunches
                       </button>
                       <button
                         onClick={() => {
@@ -967,7 +977,7 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
                             }), {})
                           )
                         }}
-                        className="inline-flex items-center justify-center px-4 py-1.5 text-sm font-medium rounded-lg border-2 transition-all text-[var(--gg-primary)] border-[var(--gg-primary)] bg-transparent hover:bg-[var(--gg-primary)] hover:text-white"
+                        className="inline-flex items-center justify-center px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium rounded-lg border-2 transition-all text-[var(--gg-primary)] border-[var(--gg-primary)] bg-transparent hover:bg-[var(--gg-primary)] hover:text-white active:scale-95 active:bg-[var(--gg-primary-hover)] active:text-white active:border-[var(--gg-primary-hover)]"
                       >
                         Dinners Only
                       </button>
@@ -988,25 +998,25 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
                             }), {})
                           )
                         }}
-                        className="inline-flex items-center justify-center px-4 py-1.5 text-sm font-medium rounded-lg border-2 transition-all text-[var(--gg-primary)] border-[var(--gg-primary)] bg-transparent hover:bg-[var(--gg-primary)] hover:text-white"
+                        className="inline-flex items-center justify-center px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium rounded-lg border-2 transition-all text-[var(--gg-primary)] border-[var(--gg-primary)] bg-transparent hover:bg-[var(--gg-primary)] hover:text-white active:scale-95 active:bg-[var(--gg-primary-hover)] active:text-white active:border-[var(--gg-primary-hover)]"
                       >
-                        Toggle All Lunch & Dinner
+                        Lunch & Dinner
                       </button>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
                     {weekDays.map(({ dayName, dateDisplay }) => (
                       <div
                         key={dayName}
-                        className="gg-card p-6 border-2 border-gray-200 hover:border-[var(--gg-primary)] transition-colors"
+                        className="gg-card p-3 sm:p-6 border-2 border-gray-200 hover:border-[var(--gg-primary)] transition-colors"
                       >
-                        <div className="mb-4">
-                          <h3 className="text-xl font-bold text-gray-900 mb-1">{dayName}</h3>
-                          <p className="text-sm text-gray-600">{dateDisplay}</p>
+                        <div className="mb-3 sm:mb-4">
+                          <h3 className="text-base sm:text-xl font-bold text-gray-900 mb-0.5 sm:mb-1">{dayName}</h3>
+                          <p className="text-xs sm:text-sm text-gray-600">{dateDisplay}</p>
                         </div>
 
-                        <div className="space-y-3">
+                        <div className="space-y-2 sm:space-y-3">
                           {(['breakfast', 'lunch', 'dinner'] as MealType[]).map((mealType) => {
                             const isSelected = selections[dayName]?.[mealType] ?? false
                             const mealEmoji = mealType === 'breakfast' ? '🍳' : mealType === 'lunch' ? '🥗' : '🍽️'
@@ -1015,17 +1025,17 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
                               <button
                                 key={mealType}
                                 onClick={() => toggleMeal(dayName, mealType)}
-                                className={`w-full py-2 px-3 rounded-lg font-medium text-sm transition-all ${
+                                className={`w-full py-1.5 sm:py-2 px-2 sm:px-3 rounded-lg font-medium text-xs sm:text-sm transition-all ${
                                   isSelected
                                     ? 'bg-[var(--gg-primary)] text-white shadow-md hover:bg-[var(--gg-primary-hover)]'
                                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border-2 border-transparent hover:border-gray-300'
                                 }`}
                               >
-                                <div className="flex items-center justify-center gap-1.5">
-                                  <span className="text-lg">{mealEmoji}</span>
+                                <div className="flex items-center justify-center gap-1 sm:gap-1.5">
+                                  <span className="text-sm sm:text-lg">{mealEmoji}</span>
                                   <span className="capitalize">{mealType}</span>
                                   {isSelected && (
-                                    <svg className="h-3.5 w-3.5 ml-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <svg className="h-3 w-3 sm:h-3.5 sm:w-3.5 ml-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                                     </svg>
                                   )}

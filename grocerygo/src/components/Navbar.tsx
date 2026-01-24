@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { createClient } from '@/utils/supabase/server'
 import LogoutButton from '@/components/LogoutButton'
+import MobileNav from '@/components/MobileNav'
 
 export default async function Navbar() {
   const supabase = await createClient()
@@ -13,12 +14,12 @@ export default async function Navbar() {
           
           {/* Logo */}
           <Link href="/" className="flex items-center">
-            <h1 className="text-2xl font-bold text-[var(--gg-primary)] transition-opacity hover:opacity-80">
+            <h1 className="text-xl sm:text-2xl font-bold text-[var(--gg-primary)] transition-opacity hover:opacity-80">
               GroceryGo
             </h1>
           </Link>
 
-          {/* Navigation Links */}
+          {/* Desktop Navigation Links */}
           {user && (
             <div className="hidden md:flex items-center gap-6">
               <Link 
@@ -37,26 +38,40 @@ export default async function Navbar() {
           )}
 
           {/* Right Side - User Profile or Login */}
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-4">
             {user ? (
-              <div className="flex items-center gap-3">
-                {/* User Avatar */}
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--gg-primary)] text-white font-semibold">
-                  {user.email?.charAt(0).toUpperCase() || 'U'}
+              <>
+                {/* Desktop User Info */}
+                <div className="hidden md:flex items-center gap-3">
+                  {/* User Avatar */}
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--gg-primary)] text-white font-semibold">
+                    {user.email?.charAt(0).toUpperCase() || 'U'}
+                  </div>
+                  {/* User Email */}
+                  <span className="hidden lg:block gg-text-body text-sm">
+                    {user.email}
+                  </span>
+                  {/* Logout Button */}
+                  <LogoutButton />
                 </div>
-                {/* User Email */}
-                <span className="hidden sm:block gg-text-body text-sm">
-                  {user.email}
-                </span>
-                {/* Logout Button */}
-                <LogoutButton />
-              </div>
+
+                {/* Mobile: User Avatar + Hamburger Menu */}
+                <div className="flex md:hidden items-center gap-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--gg-primary)] text-white font-semibold text-sm">
+                    {user.email?.charAt(0).toUpperCase() || 'U'}
+                  </div>
+                  <MobileNav 
+                    userEmail={user.email || null} 
+                    userInitial={user.email?.charAt(0).toUpperCase() || 'U'} 
+                  />
+                </div>
+              </>
             ) : (
-              <div className="flex items-center gap-3">
-                <Link href="/login" className="gg-btn-primary gg-btn-sm">
+              <div className="flex items-center gap-2 sm:gap-3">
+                <Link href="/login" className="gg-btn-primary gg-btn-sm text-sm">
                   Log In
                 </Link>
-                <Link href="/login" className="gg-btn-outline gg-btn-sm">
+                <Link href="/login" className="gg-btn-outline gg-btn-sm text-sm hidden sm:inline-flex">
                   Sign Up
                 </Link>
               </div>
@@ -67,4 +82,3 @@ export default async function Navbar() {
     </nav>
   )
 }
-
