@@ -181,7 +181,7 @@ export default function RecipeModal({
           {/* Header */}
           <div className="sticky top-0 bg-white border-b border-gray-200 px-8 py-6 flex items-start justify-between z-10">
             <div className="flex-1 pr-8">
-              <h2 className="text-3xl font-bold text-gray-900 mb-3">
+              <h2 className="text-3xl font-bold text-gray-900 mb-3 capitalize">
                 {recipe.name}
               </h2>
               <div className="flex flex-wrap gap-4 text-sm text-gray-600">

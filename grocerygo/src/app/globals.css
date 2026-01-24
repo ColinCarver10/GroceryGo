@@ -355,3 +355,71 @@ body {
   border-radius: 4px;
   background: transparent;
 }
+
+/* ============================================
+   Recipe Variety Slider
+   ============================================ */
+
+.gg-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 8px;
+  border-radius: 9999px;
+  background: linear-gradient(to right, var(--gg-primary), #E5E7EB);
+  outline: none;
+  cursor: pointer;
+}
+
+.gg-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--gg-primary);
+  cursor: pointer;
+  border: 3px solid white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.gg-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.gg-slider::-webkit-slider-thumb:active {
+  transform: scale(0.95);
+}
+
+.gg-slider::-moz-range-thumb {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--gg-primary);
+  cursor: pointer;
+  border: 3px solid white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.gg-slider::-moz-range-thumb:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.gg-slider::-moz-range-track {
+  width: 100%;
+  height: 8px;
+  border-radius: 9999px;
+  background: #E5E7EB;
+}
+
+.gg-slider:focus {
+  outline: none;
+}
+
+.gg-slider:focus::-webkit-slider-thumb {
+  box-shadow: 0 0 0 4px rgba(45, 190, 96, 0.2);
+}

@@ -1,22 +1,8 @@
 'use client'
 
-import { useEffect, useMemo, useState, useRef } from 'react'
+import { useEffect, useMemo, useState, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import {
-  DndContext,
-  DragOverlay,
-  closestCenter,
-  type DragEndEvent,
-  type DragStartEvent,
-  type DragOverEvent,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  useDroppable,
-  useDraggable,
-} from '@dnd-kit/core'
-import { CSS } from '@dnd-kit/utilities'
 import {
   generateMealPlanFromPreferences,
   replaceExistingMealPlan,
@@ -49,13 +35,6 @@ interface MealSlot {
   mealNumber: number
 }
 
-interface MealGroup {
-  id: string
-  mealType: MealType
-  mealSlots: MealSlot[]
-  recipeCount: number
-}
-
 interface MealPlanGenerateClientProps {
   surveyResponse: SurveyResponse
 }
@@ -64,31 +43,28 @@ function isErrorResponse(response: GenerateMealPlanResponse): response is Genera
   return 'error' in response
 }
 
-function parseLunchPreference(preference?: string, totalSlots?: number) {
-  if (!preference || !totalSlots || totalSlots === 0) return undefined
-
-  const numberMatch = preference.match(/\d+/)
-  if (!numberMatch) return undefined
-
-  const parsed = parseInt(numberMatch[0], 10)
-  if (Number.isNaN(parsed) || parsed <= 0) return undefined
-
-  return Math.min(parsed, totalSlots)
-}
-
-function deriveBaseDistinct(totalSlots: number, leftoverPreference?: string) {
+function deriveBaseDistinct(totalSlots: number, surveyResponse?: SurveyResponse) {
   if (totalSlots === 0) return 0
 
-  switch (leftoverPreference) {
-    case 'Prefer unique meals every time':
-      return totalSlots
-    case 'Happy to eat leftovers once more':
-      return Math.max(1, Math.ceil(totalSlots / 2))
-    case 'Comfortable repeating meals multiple times':
-      return Math.max(1, Math.ceil(totalSlots / 3))
-    default:
-      return Math.max(1, Math.ceil(totalSlots / 2))
+  // Check user preferences to bias toward lower variety (batch cooking)
+  const priorities = surveyResponse?.['11'] as string[] | undefined
+  const goals = surveyResponse?.['9'] as string[] | undefined
+  const budget = surveyResponse?.['3'] as string | undefined
+
+  // Strong bias toward batch cooking if budget-conscious or time-saving
+  const isBudgetConscious = budget === '$50-100' || 
+    (priorities && priorities[0] === 'Cost efficiency') ||
+    (goals && goals.includes('Save money on groceries'))
+  
+  const isTimeSaving = priorities && priorities[0] === 'Time saving'
+
+  if (isBudgetConscious || isTimeSaving) {
+    // Very low variety: 1-2 recipes
+    return Math.max(1, Math.min(2, Math.ceil(totalSlots / 4)))
   }
+
+  // Default: moderate variety (~50% of total)
+  return Math.max(1, Math.ceil(totalSlots / 2))
 }
 
 function clampDistinctCounts(
@@ -160,151 +136,271 @@ function getDayShortName(dayName: string): string {
   return dayMap[dayName] || dayName.substring(0, 3)
 }
 
-// Draggable Meal Chip Component
-function MealChip({ mealSlot, isDragging }: { mealSlot: MealSlot; isDragging?: boolean }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-  } = useDraggable({
-    id: mealSlot.id,
-    data: {
-      mealSlot,
-    },
+// Auto-distribute meals to recipes evenly
+function autoDistributeMeals(
+  mealSlots: MealSlot[],
+  mealType: MealType,
+  recipeCount: number
+): Map<string, number> {
+  const slotsForType = mealSlots.filter(s => s.mealType === mealType)
+  const assignments = new Map<string, number>()
+  
+  if (slotsForType.length === 0 || recipeCount === 0) return assignments
+  
+  // Distribute evenly, preferring consecutive days together
+  const slotsPerRecipe = Math.ceil(slotsForType.length / recipeCount)
+  
+  slotsForType.forEach((slot, index) => {
+    const recipeIndex = Math.min(
+      Math.floor(index / slotsPerRecipe),
+      recipeCount - 1
+    )
+    assignments.set(slot.id, recipeIndex)
   })
+  
+  return assignments
+}
 
-  const style = {
-    transform: CSS.Translate.toString(transform),
-    opacity: isDragging ? 0.5 : 1,
+// Calculate time and money savings from batch cooking
+function calculateSavings(currentRecipes: number, maxRecipes: number) {
+  const recipesReduced = maxRecipes - currentRecipes
+  return {
+    timeSavedMinutes: recipesReduced * 40, // ~40 min per recipe
+    moneySaved: recipesReduced * 8 // ~$8 saved per recipe reduced
   }
+}
 
-  const mealTypeLabel = mealSlot.mealType.charAt(0).toUpperCase() + mealSlot.mealType.slice(1)
+function formatTimeSaved(minutes: number): string {
+  if (minutes <= 0) return ''
+  if (minutes < 60) return `${minutes} min`
+  const hours = minutes / 60
+  if (hours === Math.floor(hours)) return `${hours} hr${hours > 1 ? 's' : ''}`
+  return `${hours.toFixed(1)} hrs`
+}
+
+// Tappable Meal Chip Component
+function MealChip({ 
+  mealSlot, 
+  isSelected, 
+  onTap 
+}: { 
+  mealSlot: MealSlot
+  isSelected: boolean
+  onTap: () => void
+}) {
+  return (
+    <button
+      onClick={onTap}
+      className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+        isSelected
+          ? 'bg-[var(--gg-primary)] text-white ring-2 ring-[var(--gg-primary)] ring-offset-2'
+          : 'bg-white border border-gray-200 text-gray-900 hover:border-[var(--gg-primary)] hover:shadow-sm'
+      }`}
+    >
+      {getDayShortName(mealSlot.day)}
+    </button>
+  )
+}
+
+// Recipe Box Component - tappable target
+function RecipeBox({
+  recipeIndex,
+  mealType,
+  assignedSlots,
+  selectedMealId,
+  hasSelectedMeal,
+  onMealTap,
+  onBoxTap,
+}: {
+  recipeIndex: number
+  mealType: MealType
+  assignedSlots: MealSlot[]
+  selectedMealId: string | null
+  hasSelectedMeal: boolean
+  onMealTap: (mealSlotId: string) => void
+  onBoxTap: () => void
+}) {
+  const isTargetable = hasSelectedMeal && !assignedSlots.some(s => s.id === selectedMealId)
 
   return (
     <div
-      ref={setNodeRef}
-      style={style}
-      {...listeners}
-      {...attributes}
-      className={`px-4 py-3 bg-white border-2 border-gray-200 rounded-lg cursor-grab active:cursor-grabbing hover:border-[var(--gg-primary)] hover:shadow-md transition-all ${
-        isDragging ? 'shadow-lg scale-105' : ''
+      onClick={isTargetable ? onBoxTap : undefined}
+      className={`border-2 rounded-xl p-4 transition-all bg-gray-50 ${
+        isTargetable
+          ? 'border-[var(--gg-primary)] cursor-pointer'
+          : 'border-gray-200'
       }`}
     >
-      <div className="flex items-center gap-2">
-        <span className="font-semibold text-gray-900 capitalize">{mealTypeLabel} #{mealSlot.mealNumber}</span>
+      <div className="flex items-center justify-between mb-3">
+        <h4 className="font-semibold text-gray-900">Recipe {recipeIndex + 1}</h4>
+        {isTargetable && (
+          <span className="text-xs text-[var(--gg-primary)] font-medium">Tap to move here</span>
+        )}
+      </div>
+
+      <div className="min-h-[44px]">
+        {assignedSlots.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {assignedSlots.map(slot => (
+              <MealChip
+                key={slot.id}
+                mealSlot={slot}
+                isSelected={selectedMealId === slot.id}
+                onTap={() => onMealTap(slot.id)}
+              />
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-400 italic">No meals assigned</p>
+        )}
       </div>
     </div>
   )
 }
 
-// Recipe Box Component
-function RecipeBox({
-  group,
+// Meal Type Slider Card Component
+function MealTypeSliderCard({
+  mealType,
   mealSlots,
-  onDeleteGroup,
-  onRemoveMeal,
-  isOver,
-  isDragging,
+  recipeCount,
+  recommendedCount,
+  mealAssignments,
+  selectedMealId,
+  onSliderChange,
+  onMealTap,
+  onRecipeBoxTap,
 }: {
-  group: MealGroup
+  mealType: MealType
   mealSlots: MealSlot[]
-  onDeleteGroup: (groupId: string) => void
-  onRemoveMeal: (groupId: string, mealSlotId: string) => void
-  isOver: boolean
-  isDragging: boolean
+  recipeCount: number
+  recommendedCount: number
+  mealAssignments: Map<string, number>
+  selectedMealId: string | null
+  onSliderChange: (value: number) => void
+  onMealTap: (mealSlotId: string) => void
+  onRecipeBoxTap: (mealType: MealType, recipeIndex: number) => void
 }) {
-  const { setNodeRef: setDroppableRef, isOver: isOverDroppable } = useDroppable({
-    id: `recipe-${group.mealType}-${group.id}`,
-    data: {
-      mealType: group.mealType,
-      groupId: group.id,
-    },
-  })
+  const slotsForType = mealSlots.filter(s => s.mealType === mealType)
+  const totalMeals = slotsForType.length
+  const mealEmoji = mealType === 'breakfast' ? '🍳' : mealType === 'lunch' ? '🥗' : '🍽️'
 
-  const {
-    attributes,
-    listeners,
-    setNodeRef: setDraggableRef,
-    transform,
-  } = useDraggable({
-    id: `recipe-box-${group.id}`,
-    data: {
-      type: 'recipe-box',
-      group,
-    },
-  })
-
-  // Combine refs for both draggable and droppable
-  const setNodeRef = (node: HTMLElement | null) => {
-    setDroppableRef(node)
-    setDraggableRef(node)
+  // Group slots by recipe index
+  const recipeGroups: MealSlot[][] = []
+  for (let i = 0; i < recipeCount; i++) {
+    recipeGroups[i] = slotsForType.filter(slot => mealAssignments.get(slot.id) === i)
   }
 
-  const style = {
-    transform: CSS.Translate.toString(transform),
-  }
+  // Check if any meal of this type is selected
+  const hasSelectedMealOfType = selectedMealId !== null && 
+    slotsForType.some(s => s.id === selectedMealId)
 
-  const groupMealSlots = mealSlots.filter(slot => 
-    group.mealSlots.some(ms => ms.id === slot.id)
-  )
+  if (totalMeals === 0) return null
 
   return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      {...listeners}
-      {...attributes}
-      className={`border-2 rounded-xl p-4 transition-all cursor-grab active:cursor-grabbing bg-gray-50 ${
-        isDragging
-          ? 'border-green-500'
-          : (isOver || isOverDroppable)
-          ? 'border-[var(--gg-primary)] bg-[var(--gg-primary)] bg-opacity-5'
-          : 'border-gray-300'
-      }`}
-    >
-      <div className="flex items-center justify-between mb-3">
-        <h4 className="font-semibold text-gray-900">{group.id}</h4>
-        <button
-          onClick={() => onDeleteGroup(group.id)}
-          className="text-gray-400 hover:text-red-600 transition-colors"
-          aria-label="Delete recipe"
-        >
-          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
+    <div className="mb-8 last:mb-0">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <span className="text-3xl">{mealEmoji}</span>
+          <h3 className="text-xl font-bold text-gray-900 capitalize">{mealType}</h3>
+        </div>
+        <span className="text-sm text-gray-500">
+          {totalMeals} meal{totalMeals === 1 ? '' : 's'}
+        </span>
       </div>
 
-      <div className="min-h-[60px]">
-        {groupMealSlots.length > 0 ? (
-          <div className="flex flex-wrap gap-2">
-            {groupMealSlots.map(slot => {
-              const mealTypeLabel = slot.mealType.charAt(0).toUpperCase() + slot.mealType.slice(1)
-              
-              return (
-                <div
-                  key={slot.id}
-                  className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm flex items-center gap-2"
-                >
-                  <span className="font-medium text-gray-900 capitalize">{mealTypeLabel} #{slot.mealNumber}</span>
-                  <button
-                    onClick={() => onRemoveMeal(group.id, slot.id)}
-                    className="ml-1 text-gray-400 hover:text-red-600 transition-colors"
-                    aria-label="Remove meal"
-                  >
-                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
+      {/* Slider Section */}
+      {totalMeals > 1 && (() => {
+        const savings = calculateSavings(recipeCount, totalMeals)
+        const timeSavedFormatted = formatTimeSaved(savings.timeSavedMinutes)
+        
+        return (
+          <div className="mb-5">
+            <div className="flex items-center justify-between mb-2 px-1">
+              <label className="text-sm font-medium text-gray-700">Unique Recipes</label>
+              <span className="text-lg font-bold text-[var(--gg-primary)]">{recipeCount}</span>
+            </div>
+
+            {/* Recommended Indicator - Always visible with arrow pointing down */}
+            <div className="relative h-8 mb-1">
+              <div 
+                className="absolute transition-all duration-200"
+                style={{ 
+                  left: `calc(${((recommendedCount - 1) / (totalMeals - 1)) * 100}% + 12px - ${((recommendedCount - 1) / (totalMeals - 1)) * 12}px)`,
+                  transform: 'translateX(-50%)'
+                }}
+              >
+                <div className="flex flex-col items-center">
+                  <span className={`text-xs px-2 py-0.5 rounded-full whitespace-nowrap ${
+                    recipeCount === recommendedCount 
+                      ? 'bg-[var(--gg-primary)] text-white' 
+                      : 'bg-gray-100 text-gray-600 border border-gray-300'
+                  }`}>
+                    ✨ Recommended
+                  </span>
+                  <svg className="w-3 h-3 text-[var(--gg-primary)] -mt-0.5" viewBox="0 0 12 8" fill="currentColor">
+                    <path d="M6 8L0 0H12L6 8Z" />
+                  </svg>
                 </div>
-              )
-            })}
+              </div>
+            </div>
+            
+            <div className="relative px-1">
+              <input
+                type="range"
+                min={1}
+                max={totalMeals}
+                value={recipeCount}
+                onChange={(e) => onSliderChange(parseInt(e.target.value, 10))}
+                className="gg-slider w-full"
+              />
+              
+              {/* Slider Labels */}
+              <div className="flex justify-between mt-1 text-xs text-gray-500">
+                <span>Batch Cook</span>
+                <span>Max Variety</span>
+              </div>
+            </div>
+
+            {/* Savings Badges */}
+            {recipeCount < totalMeals && (
+              <div className="flex items-center justify-center gap-4 mt-3">
+                <span className="text-sm text-green-600 font-medium">
+                  💰 Save ~${savings.moneySaved}
+                </span>
+                {timeSavedFormatted && (
+                  <span className="text-sm text-blue-600 font-medium">
+                    ⏱️ Save ~{timeSavedFormatted}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
-        ) : (
-          <p className="text-sm text-gray-400 italic">Drag meals here</p>
-        )}
+        )
+      })()}
+
+      {/* Recipe Boxes */}
+      <div className="space-y-3">
+        {recipeGroups.map((slots, index) => (
+          <RecipeBox
+            key={`${mealType}-recipe-${index}`}
+            recipeIndex={index}
+            mealType={mealType}
+            assignedSlots={slots}
+            selectedMealId={selectedMealId}
+            hasSelectedMeal={hasSelectedMealOfType}
+            onMealTap={onMealTap}
+            onBoxTap={() => onRecipeBoxTap(mealType, index)}
+          />
+        ))}
       </div>
+
+      {/* Helper Text */}
+      {totalMeals > 1 && (
+        <p className="mt-3 text-xs text-gray-500 text-center">
+          💡 Tap a day to select, then tap a recipe box to move it
+        </p>
+      )}
     </div>
   )
 }
@@ -319,9 +415,10 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
   const [conflictData, setConflictData] = useState<Pick<GenerateMealPlanConflict, 'existingPlanId' | 'weekOf'> | null>(null)
   const [startDate, setStartDate] = useState<string>('')
   const [dateError, setDateError] = useState('')
-  const [activeId, setActiveId] = useState<string | null>(null)
-  const [draggedOverGroupId, setDraggedOverGroupId] = useState<string | null>(null)
   const headerDescriptionRef = useRef<HTMLDivElement>(null)
+
+  // Tap-to-swap state
+  const [selectedMealId, setSelectedMealId] = useState<string | null>(null)
 
   // Calculate days for the week based on start date
   const weekDays = useMemo(() => {
@@ -344,9 +441,6 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
       setSelections({})
     }
   }, [startDate, weekDays])
-
-  const leftoverPreference = surveyResponse?.['12'] as string ?? surveyResponse?.[12] as string
-  const lunchPreference = surveyResponse?.['13'] as string ?? surveyResponse?.[13] as string
 
   const totals = useMemo(() => {
     let breakfast = 0
@@ -402,28 +496,26 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
     })
   }, [selectedSlots])
 
-  // Meal groups state
-  const [mealGroups, setMealGroups] = useState<MealGroup[]>([])
+  // Recipe count state (slider values)
+  const [recipeCount, setRecipeCount] = useState<DistinctCounts>(() => ({
+    breakfast: deriveBaseDistinct(totals.breakfast, surveyResponse),
+    lunch: deriveBaseDistinct(totals.lunch, surveyResponse),
+    dinner: deriveBaseDistinct(totals.dinner, surveyResponse)
+  }))
 
-  // Initialize distinct counts based on preferences
-  const [distinctCounts, setDistinctCounts] = useState<DistinctCounts>(() => {
-    const baseCounts: DistinctCounts = {
-      breakfast: deriveBaseDistinct(totals.breakfast, leftoverPreference),
-      lunch: deriveBaseDistinct(totals.lunch, leftoverPreference),
-      dinner: deriveBaseDistinct(totals.dinner, leftoverPreference)
-    }
+  // Recommended counts (smart defaults)
+  const recommendedCounts = useMemo<DistinctCounts>(() => ({
+    breakfast: deriveBaseDistinct(totals.breakfast, surveyResponse),
+    lunch: deriveBaseDistinct(totals.lunch, surveyResponse),
+    dinner: deriveBaseDistinct(totals.dinner, surveyResponse)
+  }), [totals.breakfast, totals.lunch, totals.dinner, surveyResponse])
 
-    const parsedLunch = parseLunchPreference(lunchPreference, totals.lunch)
-    if (parsedLunch !== undefined) {
-      baseCounts.lunch = Math.max(1, parsedLunch)
-    }
+  // Meal assignments: maps mealSlotId to recipeIndex
+  const [mealAssignments, setMealAssignments] = useState<Map<string, number>>(new Map())
 
-    return clampDistinctCounts(baseCounts, totals)
-  })
-
-  // Update distinct counts when totals change
+  // Update recipe counts when totals change
   useEffect(() => {
-    setDistinctCounts(prev =>
+    setRecipeCount(prev =>
       clampDistinctCounts(prev, {
         breakfast: totals.breakfast,
         lunch: totals.lunch,
@@ -432,12 +524,37 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
     )
   }, [totals.breakfast, totals.lunch, totals.dinner])
 
-  // Reset groups when selections change
+  // Auto-distribute meals when recipe count or meal slots change
+  useEffect(() => {
+    const newAssignments = new Map<string, number>()
+    
+    ;(['breakfast', 'lunch', 'dinner'] as MealType[]).forEach(mealType => {
+      const typeAssignments = autoDistributeMeals(mealSlots, mealType, recipeCount[mealType])
+      typeAssignments.forEach((value, key) => {
+        newAssignments.set(key, value)
+      })
+    })
+    
+    setMealAssignments(newAssignments)
+  }, [mealSlots, recipeCount])
+
+  // Reset selection when step changes
   useEffect(() => {
     if (currentStep === 1) {
-      setMealGroups([])
+      setSelectedMealId(null)
     }
-  }, [selectedSlots, currentStep])
+  }, [currentStep])
+
+  // Sync recipeCount to recommended values when entering Step 2
+  useEffect(() => {
+    if (currentStep === 2) {
+      setRecipeCount({
+        breakfast: deriveBaseDistinct(totals.breakfast, surveyResponse),
+        lunch: deriveBaseDistinct(totals.lunch, surveyResponse),
+        dinner: deriveBaseDistinct(totals.dinner, surveyResponse)
+      })
+    }
+  }, [currentStep, totals.breakfast, totals.lunch, totals.dinner, surveyResponse])
 
   // Scroll to header description when moving to step 2
   useEffect(() => {
@@ -445,43 +562,6 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
       headerDescriptionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }
   }, [currentStep])
-
-  // Helper function to get next recipe number for a meal type
-  const getNextRecipeNumber = (mealType: MealType): number => {
-    const groupsForType = mealGroups.filter(g => g.mealType === mealType)
-    if (groupsForType.length === 0) return 1
-    
-    // Extract numbers from existing recipe IDs and find the max
-    const numbers = groupsForType
-      .map(g => {
-        const match = g.id.match(/Recipe (\d+)/)
-        return match ? parseInt(match[1], 10) : 0
-      })
-      .filter(n => n > 0)
-    
-    return numbers.length > 0 ? Math.max(...numbers) + 1 : 1
-  }
-
-  // Helper function to renumber recipes for a meal type
-  const renumberRecipesForMealType = (mealType: MealType, groups: MealGroup[]): MealGroup[] => {
-    const groupsForType = groups.filter(g => g.mealType === mealType)
-    const otherGroups = groups.filter(g => g.mealType !== mealType)
-    
-    // Sort by current number to maintain order
-    const sorted = [...groupsForType].sort((a, b) => {
-      const numA = parseInt(a.id.match(/Recipe (\d+)/)?.[1] || '0', 10)
-      const numB = parseInt(b.id.match(/Recipe (\d+)/)?.[1] || '0', 10)
-      return numA - numB
-    })
-    
-    // Renumber sequentially
-    const renumbered = sorted.map((g, index) => ({
-      ...g,
-      id: `Recipe ${index + 1}`
-    }))
-    
-    return [...otherGroups, ...renumbered]
-  }
 
   const toggleMeal = (day: string, mealType: MealType) => {
     setSelections(prev => ({
@@ -513,126 +593,9 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
     setError('')
   }
 
-  // Drag and drop handlers
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 8,
-      },
-    })
-  )
-
-  const handleDragStart = (event: DragStartEvent) => {
-    setActiveId(event.active.id as string)
-  }
-
-  const handleDragOver = (event: DragOverEvent) => {
-    const { active, over } = event
-    if (over && typeof over.id === 'string' && over.id.startsWith('recipe-')) {
-      // Get the meal type of the dragged meal
-      const mealSlotId = active.id as string
-      const mealSlot = active.data?.current?.mealSlot || mealSlots.find(ms => ms.id === mealSlotId)
-      
-      if (mealSlot) {
-        // Get meal type from droppable data or parse from ID
-        const droppableData = over.data?.current
-        const droppableMealType = droppableData?.mealType as MealType | undefined
-        
-        if (droppableMealType && droppableMealType === mealSlot.mealType) {
-          const groupId = droppableData?.groupId as string | undefined
-          if (groupId) {
-            setDraggedOverGroupId(groupId)
-          } else {
-            setDraggedOverGroupId(null)
-          }
-        } else {
-          setDraggedOverGroupId(null)
-        }
-      } else {
-        setDraggedOverGroupId(null)
-      }
-    } else {
-      setDraggedOverGroupId(null)
-    }
-  }
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event
-    setActiveId(null)
-    setDraggedOverGroupId(null)
-
-    if (!over) return
-
-    const mealSlotId = active.id as string
-    const mealSlot = active.data?.current?.mealSlot || mealSlots.find(ms => ms.id === mealSlotId)
-    if (!mealSlot) return
-
-    // Find if meal is already in a group
-    const existingGroupIndex = mealGroups.findIndex(g =>
-      g.mealSlots.some(ms => ms.id === mealSlotId)
-    )
-
-    // Remove from existing group if present
-    if (existingGroupIndex !== -1) {
-      const existingGroup = mealGroups[existingGroupIndex]
-      const updatedMealSlots = existingGroup.mealSlots.filter(ms => ms.id !== mealSlotId)
-      
-      if (updatedMealSlots.length === 0) {
-        // Remove empty group
-        setMealGroups(prev => prev.filter((_, i) => i !== existingGroupIndex))
-      } else {
-        // Update group
-        setMealGroups(prev => prev.map((g, i) =>
-          i === existingGroupIndex
-            ? { ...g, mealSlots: updatedMealSlots, recipeCount: Math.min(g.recipeCount, updatedMealSlots.length) }
-            : g
-        ))
-      }
-    }
-
-    // Add to new recipe group
-    if (typeof over.id === 'string' && over.id.startsWith('recipe-')) {
-      // Get meal type and group ID from droppable data
-      const droppableData = over.data?.current
-      const droppableMealType = droppableData?.mealType as MealType | undefined
-      const targetGroupId = droppableData?.groupId as string | undefined
-      
-      // Only proceed if meal types match
-      if (!droppableMealType || droppableMealType !== mealSlot.mealType || !targetGroupId) return
-      
-      const targetGroupIndex = mealGroups.findIndex(g => g.id === targetGroupId && g.mealType === droppableMealType)
-
-      if (targetGroupIndex !== -1) {
-        const targetGroup = mealGroups[targetGroupIndex]
-        // Only add if meal is not already in this group
-        if (!targetGroup.mealSlots.some(ms => ms.id === mealSlotId)) {
-          // Add to existing recipe group
-          setMealGroups(prev => prev.map((g, i) =>
-            i === targetGroupIndex
-              ? {
-                  ...g,
-                  mealSlots: [...g.mealSlots, mealSlot],
-                  recipeCount: Math.min(g.recipeCount + 1, g.mealSlots.length + 1)
-                }
-              : g
-          ))
-        }
-      } else {
-        // Create new recipe group
-        const nextNumber = getNextRecipeNumber(mealSlot.mealType)
-        const newGroup: MealGroup = {
-          id: `Recipe ${nextNumber}`,
-          mealType: mealSlot.mealType,
-          mealSlots: [mealSlot],
-          recipeCount: 1
-        }
-        setMealGroups(prev => [...prev, newGroup])
-      }
-    }
-  }
-
-  const updateDistinctCount = (mealType: MealType, value: number) => {
-    setDistinctCounts(prev => {
+  // Slider change handler
+  const handleSliderChange = useCallback((mealType: MealType, value: number) => {
+    setRecipeCount(prev => {
       const updated = { ...prev, [mealType]: value }
       return clampDistinctCounts(updated, {
         breakfast: totals.breakfast,
@@ -640,99 +603,31 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
         dinner: totals.dinner
       })
     })
-  }
+    // Clear selection when slider changes
+    setSelectedMealId(null)
+  }, [totals.breakfast, totals.lunch, totals.dinner])
 
-  const handleUpdateGroupRecipeCount = (groupId: string, count: number) => {
-    setMealGroups(prev => prev.map(g =>
-      g.id === groupId ? { ...g, recipeCount: count } : g
-    ))
-  }
+  // Tap-to-swap handlers
+  const handleMealTap = useCallback((mealSlotId: string) => {
+    setSelectedMealId(prev => prev === mealSlotId ? null : mealSlotId)
+  }, [])
 
-  const handleDeleteGroup = (groupId: string) => {
-    setMealGroups(prev => {
-      const deletedGroup = prev.find(g => g.id === groupId)
-      if (!deletedGroup) return prev
-      
-      // Remove the group
-      const filtered = prev.filter(g => g.id !== groupId)
-      
-      // Renumber recipes for the same meal type
-      return renumberRecipesForMealType(deletedGroup.mealType, filtered)
+  const handleRecipeBoxTap = useCallback((mealType: MealType, targetRecipeIndex: number) => {
+    if (!selectedMealId) return
+
+    const selectedSlot = mealSlots.find(s => s.id === selectedMealId)
+    if (!selectedSlot || selectedSlot.mealType !== mealType) return
+
+    // Move the selected meal to the target recipe
+    setMealAssignments(prev => {
+      const next = new Map(prev)
+      next.set(selectedMealId, targetRecipeIndex)
+      return next
     })
-  }
 
-  const handleRemoveMealFromGroup = (groupId: string, mealSlotId: string) => {
-    setMealGroups(prev => {
-      const groupToUpdate = prev.find(g => g.id === groupId)
-      if (!groupToUpdate) return prev
-      
-      const updated = prev.map(g => {
-        if (g.id === groupId) {
-          const updatedMealSlots = g.mealSlots.filter(ms => ms.id !== mealSlotId)
-          if (updatedMealSlots.length === 0) {
-            // Return null to filter out empty groups
-            return null
-          }
-          return { ...g, mealSlots: updatedMealSlots, recipeCount: Math.min(g.recipeCount, updatedMealSlots.length) }
-        }
-        return g
-      }).filter((g): g is MealGroup => g !== null)
-      
-      // If a group was deleted, renumber recipes for that meal type
-      if (updated.length < prev.length) {
-        return renumberRecipesForMealType(groupToUpdate.mealType, updated)
-      }
-      
-      return updated
-    })
-  }
-
-  // Get ungrouped meals by meal type
-  const getUngroupedMeals = (mealType: MealType): MealSlot[] => {
-    const groupedMealIds = new Set(
-      mealGroups
-        .filter(g => g.mealType === mealType)
-        .flatMap(g => g.mealSlots.map(ms => ms.id))
-    )
-    return mealSlots.filter(ms => ms.mealType === mealType && !groupedMealIds.has(ms.id))
-  }
-
-  // Get groups by meal type
-  const getGroupsByMealType = (mealType: MealType): MealGroup[] => {
-    return mealGroups.filter(g => g.mealType === mealType)
-  }
-
-  // Calculate final distinct counts for generation
-  const getFinalDistinctCounts = (): DistinctCounts => {
-    // Calculate distinct counts based on recipe groups and ungrouped meals
-    const groupedMealIds = new Set(
-      mealGroups.flatMap(g => g.mealSlots.map(ms => ms.id))
-    )
-    
-    const counts: DistinctCounts = {
-      breakfast: 0,
-      lunch: 0,
-      dinner: 0
-    }
-    
-    // For each meal type, count: number of recipe groups + number of ungrouped meals
-    ;(['breakfast', 'lunch', 'dinner'] as MealType[]).forEach(mealType => {
-      // Count recipe groups for this meal type
-      const groupsForType = mealGroups.filter(g => g.mealType === mealType)
-      const groupCount = groupsForType.length
-      
-      // Count ungrouped meals for this meal type (each ungrouped meal is its own recipe)
-      const ungroupedForType = mealSlots.filter(
-        ms => ms.mealType === mealType && !groupedMealIds.has(ms.id)
-      )
-      const ungroupedCount = ungroupedForType.length
-      
-      // Total unique recipes = groups + ungrouped meals
-      counts[mealType] = groupCount + ungroupedCount
-    })
-    
-    return counts
-  }
+    // Clear selection
+    setSelectedMealId(null)
+  }, [selectedMealId, mealSlots])
 
   const handleGenerate = async () => {
     if (!startDate) {
@@ -759,7 +654,6 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
 
     try {
       const weekOf = startDate
-      const finalDistinctCounts = getFinalDistinctCounts()
 
       const result = await generateMealPlanFromPreferences(
         weekOf,
@@ -768,7 +662,7 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
           lunch: totals.lunch,
           dinner: totals.dinner
         },
-        finalDistinctCounts,
+        recipeCount,
         selectedSlots
       )
 
@@ -795,7 +689,7 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
         setError('Failed to create meal plan. Please try again.')
         setLoading(false)
       }
-    } catch (err) {
+    } catch {
       setError('An unexpected error occurred. Please try again.')
       setLoading(false)
     }
@@ -810,8 +704,6 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
     setShowReplaceDialog(false)
 
     try {
-      const finalDistinctCounts = getFinalDistinctCounts()
-
       const result = await replaceExistingMealPlan(
         conflictData.existingPlanId,
         conflictData.weekOf,
@@ -820,7 +712,7 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
           lunch: totals.lunch,
           dinner: totals.dinner
         },
-        finalDistinctCounts,
+        recipeCount,
         selectedSlots
       )
 
@@ -837,7 +729,7 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
         setError('Failed to create meal plan. Please try again.')
         setLoading(false)
       }
-    } catch (err) {
+    } catch {
       setError('An unexpected error occurred. Please try again.')
       setLoading(false)
     }
@@ -850,25 +742,6 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
 
   // Meal Summary Component
   const MealSummary = () => {
-    const recipeCounts = useMemo(() => {
-      // Calculate ungrouped meals for each type
-      const groupedMealIds = new Set(
-        mealGroups.flatMap(g => g.mealSlots.map(ms => ms.id))
-      )
-      const ungroupedMealsByType = {
-        breakfast: mealSlots.filter(ms => ms.mealType === 'breakfast' && !groupedMealIds.has(ms.id)).length,
-        lunch: mealSlots.filter(ms => ms.mealType === 'lunch' && !groupedMealIds.has(ms.id)).length,
-        dinner: mealSlots.filter(ms => ms.mealType === 'dinner' && !groupedMealIds.has(ms.id)).length,
-      }
-      
-      // Total unique recipes = recipe groups + ungrouped meals (each ungrouped meal is its own recipe)
-      return {
-        breakfast: mealGroups.filter(g => g.mealType === 'breakfast').length + ungroupedMealsByType.breakfast,
-        lunch: mealGroups.filter(g => g.mealType === 'lunch').length + ungroupedMealsByType.lunch,
-        dinner: mealGroups.filter(g => g.mealType === 'dinner').length + ungroupedMealsByType.dinner,
-      }
-    }, [mealGroups, mealSlots])
-
     return (
       <div className="gg-card">
         <h2 className="gg-heading-section mb-6">Meal Summary</h2>
@@ -883,9 +756,11 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
                 {totals.breakfast}
               </span>
             </div>
-            <div className="text-sm text-gray-600 ml-9">
-              {recipeCounts.breakfast} unique recipe{recipeCounts.breakfast !== 1 ? 's' : ''}
-            </div>
+            {totals.breakfast > 0 && (
+              <div className="text-sm text-gray-600 ml-9">
+                {recipeCount.breakfast} unique recipe{recipeCount.breakfast !== 1 ? 's' : ''}
+              </div>
+            )}
           </div>
           <div className="py-3 border-b border-gray-100">
             <div className="flex items-center justify-between mb-1">
@@ -897,9 +772,11 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
                 {totals.lunch}
               </span>
             </div>
-            <div className="text-sm text-gray-600 ml-9">
-              {recipeCounts.lunch} unique recipe{recipeCounts.lunch !== 1 ? 's' : ''}
-            </div>
+            {totals.lunch > 0 && (
+              <div className="text-sm text-gray-600 ml-9">
+                {recipeCount.lunch} unique recipe{recipeCount.lunch !== 1 ? 's' : ''}
+              </div>
+            )}
           </div>
           <div className="py-3 border-b border-gray-100">
             <div className="flex items-center justify-between mb-1">
@@ -911,9 +788,11 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
                 {totals.dinner}
               </span>
             </div>
-            <div className="text-sm text-gray-600 ml-9">
-              {recipeCounts.dinner} unique recipe{recipeCounts.dinner !== 1 ? 's' : ''}
-            </div>
+            {totals.dinner > 0 && (
+              <div className="text-sm text-gray-600 ml-9">
+                {recipeCount.dinner} unique recipe{recipeCount.dinner !== 1 ? 's' : ''}
+              </div>
+            )}
           </div>
           <div className="flex items-center justify-between py-3 bg-opacity-10 rounded-lg px-4">
             <span className="font-semibold text-gray-900 text-2xl">Total Meals</span>
@@ -927,493 +806,421 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
   }
 
   return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={closestCenter}
-      onDragStart={handleDragStart}
-      onDragOver={handleDragOver}
-      onDragEnd={handleDragEnd}
-    >
-      <div className="gg-bg-page min-h-screen">
-        <div className="gg-container">
-          <div className="gg-section">
-            
-            {/* Header */}
-            <div ref={headerDescriptionRef} className="mb-8">
-              <Link 
-                href="/dashboard" 
-                className="gg-text-body text-sm mb-4 inline-flex items-center gap-2 hover:text-[var(--gg-primary)] transition-colors"
-              >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
-                Back to Dashboard
-              </Link>
-              <h1 className="gg-heading-page mb-2">Generate Meal Plan</h1>
-              <p className="gg-text-subtitle">
-                {currentStep === 1 
-                  ? 'Select the meals you\'d like us to plan for you this week'
-                  : 'Group meals and choose how many unique recipes you want'}
-              </p>
-            </div>
+    <div className="gg-bg-page min-h-screen">
+      <div className="gg-container">
+        <div className="gg-section">
+          
+          {/* Header */}
+          <div ref={headerDescriptionRef} className="mb-8">
+            <Link 
+              href="/dashboard" 
+              className="gg-text-body text-sm mb-4 inline-flex items-center gap-2 hover:text-[var(--gg-primary)] transition-colors"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              Back to Dashboard
+            </Link>
+            <h1 className="gg-heading-page mb-2">Generate Meal Plan</h1>
+            <p className="gg-text-subtitle">
+              {currentStep === 1 
+                ? 'Select the meals you\'d like us to plan for you this week'
+                : 'Choose how many unique recipes you want for each meal type'}
+            </p>
+          </div>
 
-            {/* Step Indicator */}
-            <div className="mb-6 flex flex-col items-center">
-              <div className="flex items-center gap-2 max-w-[75%] w-full">
-                <div className="flex flex-col items-center">
-                  <div className={`flex items-center justify-center w-10 h-10 rounded-full font-semibold ${
-                    currentStep >= 1 
-                      ? 'bg-[var(--gg-primary)] text-white' 
-                      : 'bg-gray-200 text-gray-600'
-                  }`}>
-                    1
-                  </div>
-                  <span className="mt-2 text-sm text-gray-600">Select Meals</span>
+          {/* Step Indicator */}
+          <div className="mb-6 flex flex-col items-center">
+            <div className="flex items-center gap-2 max-w-[75%] w-full">
+              <div className="flex flex-col items-center">
+                <div className={`flex items-center justify-center w-10 h-10 rounded-full font-semibold ${
+                  currentStep >= 1 
+                    ? 'bg-[var(--gg-primary)] text-white' 
+                    : 'bg-gray-200 text-gray-600'
+                }`}>
+                  1
                 </div>
-                <div className={`flex-1 h-1 ${
-                  currentStep >= 2 ? 'bg-[var(--gg-primary)]' : 'bg-gray-200'
-                }`} />
-                <div className="flex flex-col items-center">
-                  <div className={`flex items-center justify-center w-10 h-10 rounded-full font-semibold ${
-                    currentStep >= 2 
-                      ? 'bg-[var(--gg-primary)] text-white' 
-                      : 'bg-gray-200 text-gray-600'
-                  }`}>
-                    2
-                  </div>
-                  <span className="mt-2 text-sm text-gray-600">Choose Recipes</span>
+                <span className="mt-2 text-sm text-gray-600">Select Meals</span>
+              </div>
+              <div className={`flex-1 h-1 ${
+                currentStep >= 2 ? 'bg-[var(--gg-primary)]' : 'bg-gray-200'
+              }`} />
+              <div className="flex flex-col items-center">
+                <div className={`flex items-center justify-center w-10 h-10 rounded-full font-semibold ${
+                  currentStep >= 2 
+                    ? 'bg-[var(--gg-primary)] text-white' 
+                    : 'bg-gray-200 text-gray-600'
+                }`}>
+                  2
                 </div>
-                <div className={`flex-1 h-1 ${
-                  loading ? 'bg-[var(--gg-primary)]' : 'bg-gray-200'
-                }`} />
-                <div className="flex flex-col items-center">
-                  <div className={`flex items-center justify-center w-10 h-10 rounded-full font-semibold ${
-                    loading 
-                      ? 'bg-[var(--gg-primary)] text-white' 
-                      : 'bg-gray-200 text-gray-600'
-                  }`}>
-                    3
-                  </div>
-                  <span className="mt-2 text-sm text-gray-600">Generate Meal Plan</span>
+                <span className="mt-2 text-sm text-gray-600">Recipe Variety</span>
+              </div>
+              <div className={`flex-1 h-1 ${
+                loading ? 'bg-[var(--gg-primary)]' : 'bg-gray-200'
+              }`} />
+              <div className="flex flex-col items-center">
+                <div className={`flex items-center justify-center w-10 h-10 rounded-full font-semibold ${
+                  loading 
+                    ? 'bg-[var(--gg-primary)] text-white' 
+                    : 'bg-gray-200 text-gray-600'
+                }`}>
+                  3
                 </div>
+                <span className="mt-2 text-sm text-gray-600">Generate Meal Plan</span>
               </div>
             </div>
+          </div>
 
-            {/* Date Picker - Only show on Step 1 */}
-            {currentStep === 1 && (
-              <div className="mb-8">
+          {/* Date Picker - Only show on Step 1 */}
+          {currentStep === 1 && (
+            <div className="mb-8">
+              <div className="gg-card">
+                <label htmlFor="start-date" className="block text-sm font-semibold text-gray-900 mb-3">
+                  Select Start Date
+                </label>
+                <input
+                  type="date"
+                  id="start-date"
+                  value={startDate}
+                  onChange={(e) => handleDateChange(e.target.value)}
+                  min={new Date().toISOString().split('T')[0]}
+                  className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:border-[var(--gg-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--gg-primary)] focus:ring-opacity-20 text-gray-900"
+                />
+                {dateError && (
+                  <p className="mt-2 text-sm text-red-600">{dateError}</p>
+                )}
+                {startDate && !dateError && (
+                  <p className="mt-2 text-sm text-gray-600">
+                    Meal plan will start on {new Date(startDate + 'T00:00:00').toLocaleDateString('en-US', { 
+                      weekday: 'long', 
+                      year: 'numeric', 
+                      month: 'long', 
+                      day: 'numeric' 
+                    })}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {!startDate && currentStep === 1 ? (
+            <div className="gg-card text-center py-12">
+              <svg className="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              <p className="text-gray-600 text-lg">Please select a start date above to begin selecting your meals</p>
+            </div>
+          ) : currentStep === 1 ? (
+            <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+              {/* Step 1: Meal Selection Cards */}
+              <div className="lg:col-span-2">
                 <div className="gg-card">
-                  <label htmlFor="start-date" className="block text-sm font-semibold text-gray-900 mb-3">
-                    Select Start Date
-                  </label>
-                  <input
-                    type="date"
-                    id="start-date"
-                    value={startDate}
-                    onChange={(e) => handleDateChange(e.target.value)}
-                    min={new Date().toISOString().split('T')[0]}
-                    className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:border-[var(--gg-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--gg-primary)] focus:ring-opacity-20 text-gray-900"
-                  />
-                  {dateError && (
-                    <p className="mt-2 text-sm text-red-600">{dateError}</p>
-                  )}
-                  {startDate && !dateError && (
-                    <p className="mt-2 text-sm text-gray-600">
-                      Meal plan will start on {new Date(startDate + 'T00:00:00').toLocaleDateString('en-US', { 
-                        weekday: 'long', 
-                        year: 'numeric', 
-                        month: 'long', 
-                        day: 'numeric' 
-                      })}
-                    </p>
-                  )}
+                  <h2 className="gg-heading-section mb-6">Select Your Meals</h2>
+
+                  {/* Quick Actions */}
+                  <div className="mb-6 pb-6 border-b border-gray-200">
+                    <p className="text-sm text-gray-600 mb-3">Quick actions:</p>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={() => {
+                          if (weekDays.length === 0) return
+                          const allSelected = weekDays.every(
+                            ({ dayName }) => selections[dayName]?.breakfast && selections[dayName]?.lunch && selections[dayName]?.dinner
+                          )
+                          setSelections(
+                            weekDays.reduce((acc, { dayName }) => ({
+                              ...acc,
+                              [dayName]: { breakfast: !allSelected, lunch: !allSelected, dinner: !allSelected }
+                            }), {})
+                          )
+                        }}
+                        className="inline-flex items-center justify-center px-4 py-1.5 text-sm font-medium rounded-lg border-2 transition-all text-[var(--gg-primary)] border-[var(--gg-primary)] bg-transparent hover:bg-[var(--gg-primary)] hover:text-white"
+                      >
+                        Toggle All
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (weekDays.length === 0) return
+                          const weekdayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
+                          setSelections(
+                            weekDays.reduce((acc, { dayName }) => ({
+                              ...acc,
+                              [dayName]: { 
+                                breakfast: false, 
+                                lunch: weekdayNames.includes(dayName), 
+                                dinner: false 
+                              }
+                            }), {})
+                          )
+                        }}
+                        className="inline-flex items-center justify-center px-4 py-1.5 text-sm font-medium rounded-lg border-2 transition-all text-[var(--gg-primary)] border-[var(--gg-primary)] bg-transparent hover:bg-[var(--gg-primary)] hover:text-white"
+                      >
+                        Weekday Lunches Only
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (weekDays.length === 0) return
+                          setSelections(
+                            weekDays.reduce((acc, { dayName }) => ({
+                              ...acc,
+                              [dayName]: { breakfast: false, lunch: false, dinner: true }
+                            }), {})
+                          )
+                        }}
+                        className="inline-flex items-center justify-center px-4 py-1.5 text-sm font-medium rounded-lg border-2 transition-all text-[var(--gg-primary)] border-[var(--gg-primary)] bg-transparent hover:bg-[var(--gg-primary)] hover:text-white"
+                      >
+                        Dinners Only
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (weekDays.length === 0) return
+                          const allLunchDinnerSelected = weekDays.every(
+                            ({ dayName }) => selections[dayName]?.lunch && selections[dayName]?.dinner
+                          )
+                          setSelections(
+                            weekDays.reduce((acc, { dayName }) => ({
+                              ...acc,
+                              [dayName]: { 
+                                breakfast: selections[dayName]?.breakfast ?? false,
+                                lunch: !allLunchDinnerSelected,
+                                dinner: !allLunchDinnerSelected
+                              }
+                            }), {})
+                          )
+                        }}
+                        className="inline-flex items-center justify-center px-4 py-1.5 text-sm font-medium rounded-lg border-2 transition-all text-[var(--gg-primary)] border-[var(--gg-primary)] bg-transparent hover:bg-[var(--gg-primary)] hover:text-white"
+                      >
+                        Toggle All Lunch & Dinner
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {weekDays.map(({ dayName, dateDisplay }) => (
+                      <div
+                        key={dayName}
+                        className="gg-card p-6 border-2 border-gray-200 hover:border-[var(--gg-primary)] transition-colors"
+                      >
+                        <div className="mb-4">
+                          <h3 className="text-xl font-bold text-gray-900 mb-1">{dayName}</h3>
+                          <p className="text-sm text-gray-600">{dateDisplay}</p>
+                        </div>
+
+                        <div className="space-y-3">
+                          {(['breakfast', 'lunch', 'dinner'] as MealType[]).map((mealType) => {
+                            const isSelected = selections[dayName]?.[mealType] ?? false
+                            const mealEmoji = mealType === 'breakfast' ? '🍳' : mealType === 'lunch' ? '🥗' : '🍽️'
+                            
+                            return (
+                              <button
+                                key={mealType}
+                                onClick={() => toggleMeal(dayName, mealType)}
+                                className={`w-full py-2 px-3 rounded-lg font-medium text-sm transition-all ${
+                                  isSelected
+                                    ? 'bg-[var(--gg-primary)] text-white shadow-md hover:bg-[var(--gg-primary-hover)]'
+                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border-2 border-transparent hover:border-gray-300'
+                                }`}
+                              >
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <span className="text-lg">{mealEmoji}</span>
+                                  <span className="capitalize">{mealType}</span>
+                                  {isSelected && (
+                                    <svg className="h-3.5 w-3.5 ml-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                  )}
+                                </div>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
-            )}
 
-            {!startDate && currentStep === 1 ? (
-              <div className="gg-card text-center py-12">
-                <svg className="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-                <p className="text-gray-600 text-lg">Please select a start date above to begin selecting your meals</p>
-              </div>
-            ) : currentStep === 1 ? (
-              <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
-                {/* Step 1: Meal Selection Cards */}
-                <div className="lg:col-span-2">
-                  <div className="gg-card">
-                    <h2 className="gg-heading-section mb-6">Select Your Meals</h2>
+              {/* Sidebar - Summary */}
+              <div className="space-y-6">
+                <MealSummary />
 
-                    {/* Quick Actions */}
-                    <div className="mb-6 pb-6 border-b border-gray-200">
-                      <p className="text-sm text-gray-600 mb-3">Quick actions:</p>
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          onClick={() => {
-                            if (weekDays.length === 0) return
-                            const allSelected = weekDays.every(
-                              ({ dayName }) => selections[dayName]?.breakfast && selections[dayName]?.lunch && selections[dayName]?.dinner
-                            )
-                            setSelections(
-                              weekDays.reduce((acc, { dayName }) => ({
-                                ...acc,
-                                [dayName]: { breakfast: !allSelected, lunch: !allSelected, dinner: !allSelected }
-                              }), {})
-                            )
-                          }}
-                          className="inline-flex items-center justify-center px-4 py-1.5 text-sm font-medium rounded-lg border-2 transition-all text-[var(--gg-primary)] border-[var(--gg-primary)] bg-transparent hover:bg-[var(--gg-primary)] hover:text-white"
-                        >
-                          Toggle All
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (weekDays.length === 0) return
-                            const weekdayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
-                            setSelections(
-                              weekDays.reduce((acc, { dayName }) => ({
-                                ...acc,
-                                [dayName]: { 
-                                  breakfast: false, 
-                                  lunch: weekdayNames.includes(dayName), 
-                                  dinner: false 
-                                }
-                              }), {})
-                            )
-                          }}
-                          className="inline-flex items-center justify-center px-4 py-1.5 text-sm font-medium rounded-lg border-2 transition-all text-[var(--gg-primary)] border-[var(--gg-primary)] bg-transparent hover:bg-[var(--gg-primary)] hover:text-white"
-                        >
-                          Weekday Lunches Only
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (weekDays.length === 0) return
-                            setSelections(
-                              weekDays.reduce((acc, { dayName }) => ({
-                                ...acc,
-                                [dayName]: { breakfast: false, lunch: false, dinner: true }
-                              }), {})
-                            )
-                          }}
-                          className="inline-flex items-center justify-center px-4 py-1.5 text-sm font-medium rounded-lg border-2 transition-all text-[var(--gg-primary)] border-[var(--gg-primary)] bg-transparent hover:bg-[var(--gg-primary)] hover:text-white"
-                        >
-                          Dinners Only
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (weekDays.length === 0) return
-                            const allLunchDinnerSelected = weekDays.every(
-                              ({ dayName }) => selections[dayName]?.lunch && selections[dayName]?.dinner
-                            )
-                            setSelections(
-                              weekDays.reduce((acc, { dayName }) => ({
-                                ...acc,
-                                [dayName]: { 
-                                  breakfast: selections[dayName]?.breakfast ?? false,
-                                  lunch: !allLunchDinnerSelected,
-                                  dinner: !allLunchDinnerSelected
-                                }
-                              }), {})
-                            )
-                          }}
-                          className="inline-flex items-center justify-center px-4 py-1.5 text-sm font-medium rounded-lg border-2 transition-all text-[var(--gg-primary)] border-[var(--gg-primary)] bg-transparent hover:bg-[var(--gg-primary)] hover:text-white"
-                        >
-                          Toggle All Lunch & Dinner
-                        </button>
-                      </div>
-                    </div>
+                {/* Next Button */}
+                <button
+                  onClick={handleNext}
+                  disabled={totals.total === 0 || !startDate}
+                  className={`gg-btn-primary w-full flex items-center justify-center gap-2 ${
+                    (totals.total === 0 || !startDate) ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
+                >
+                  Next Step
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {weekDays.map(({ dayName, dateDisplay }) => (
-                        <div
-                          key={dayName}
-                          className="gg-card p-6 border-2 border-gray-200 hover:border-[var(--gg-primary)] transition-colors"
-                        >
-                          <div className="mb-4">
-                            <h3 className="text-xl font-bold text-gray-900 mb-1">{dayName}</h3>
-                            <p className="text-sm text-gray-600">{dateDisplay}</p>
-                          </div>
-
-                          <div className="space-y-3">
-                            {(['breakfast', 'lunch', 'dinner'] as MealType[]).map((mealType) => {
-                              const isSelected = selections[dayName]?.[mealType] ?? false
-                              const mealEmoji = mealType === 'breakfast' ? '🍳' : mealType === 'lunch' ? '🥗' : '🍽️'
-                              
-                              return (
-                                <button
-                                  key={mealType}
-                                  onClick={() => toggleMeal(dayName, mealType)}
-                                  className={`w-full py-2 px-3 rounded-lg font-medium text-sm transition-all ${
-                                    isSelected
-                                      ? 'bg-[var(--gg-primary)] text-white shadow-md hover:bg-[var(--gg-primary-hover)]'
-                                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border-2 border-transparent hover:border-gray-300'
-                                  }`}
-                                >
-                                  <div className="flex items-center justify-center gap-1.5">
-                                    <span className="text-lg">{mealEmoji}</span>
-                                    <span className="capitalize">{mealType}</span>
-                                    {isSelected && (
-                                      <svg className="h-3.5 w-3.5 ml-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                                      </svg>
-                                    )}
-                                  </div>
-                                </button>
-                              )
-                            })}
-                          </div>
-                        </div>
-                      ))}
+                {/* Info Card */}
+                <div className="gg-card bg-blue-50 border-blue-200">
+                  <div className="flex gap-3">
+                    <svg className="h-6 w-6 text-blue-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <div>
+                      <p className="text-sm font-semibold text-blue-900 mb-1">
+                        Personalized for You
+                      </p>
+                      <p className="text-sm text-blue-800">
+                        We&apos;ll use your survey preferences to create a customized meal plan that fits your dietary needs, budget, and cooking style.
+                      </p>
                     </div>
                   </div>
                 </div>
+              </div>
+            </div>
+          ) : (
+            /* Step 2: Recipe Variety with Sliders */
+            <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+              <div className="lg:col-span-2">
+                <div className="gg-card mb-6">
+                  <h2 className="gg-heading-section mb-4">How Much Variety Do You Want?</h2>
+                  <p className="text-gray-600 mb-6">
+                    Fewer unique recipes means easier batch cooking and grocery savings. 
+                    Use the sliders to choose how many recipes you want, then optionally tap days to customize which meals share recipes.
+                  </p>
 
-                {/* Sidebar - Summary */}
-                <div className="space-y-6">
-                  <MealSummary />
+                  {(['breakfast', 'lunch', 'dinner'] as MealType[]).map((mealType) => (
+                    <MealTypeSliderCard
+                      key={mealType}
+                      mealType={mealType}
+                      mealSlots={mealSlots}
+                      recipeCount={recipeCount[mealType]}
+                      recommendedCount={recommendedCounts[mealType]}
+                      mealAssignments={mealAssignments}
+                      selectedMealId={selectedMealId}
+                      onSliderChange={(value) => handleSliderChange(mealType, value)}
+                      onMealTap={handleMealTap}
+                      onRecipeBoxTap={handleRecipeBoxTap}
+                    />
+                  ))}
+                </div>
+              </div>
 
-                  {/* Next Button */}
+              {/* Sidebar */}
+              <div className="space-y-6">
+                <MealSummary />
+
+                {/* Navigation Buttons */}
+                <div className="flex gap-3">
                   <button
-                    onClick={handleNext}
-                    disabled={totals.total === 0 || !startDate}
-                    className={`gg-btn-primary w-full flex items-center justify-center gap-2 ${
-                      (totals.total === 0 || !startDate) ? 'opacity-50 cursor-not-allowed' : ''
+                    onClick={handleBack}
+                    disabled={loading}
+                    className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg border-2 transition-all text-[var(--gg-primary)] border-[var(--gg-primary)] bg-transparent hover:bg-[var(--gg-primary)] hover:text-white flex-1 gap-2 disabled:opacity-50"
+                  >
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                    Back
+                  </button>
+                  <button
+                    onClick={handleGenerate}
+                    disabled={loading || totals.total === 0 || !startDate}
+                    className={`inline-flex items-center justify-center px-4 py-2 text-sm font-semibold text-white rounded-lg shadow-md transition-all bg-[var(--gg-primary)] hover:bg-[var(--gg-primary-hover)] flex-1 gap-2 ${
+                      (loading || totals.total === 0 || !startDate) ? 'opacity-50 cursor-not-allowed' : ''
                     }`}
                   >
-                    Next Step
-                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
+                    {loading ? (
+                      <>
+                        <svg 
+                          className="animate-spin h-4 w-4" 
+                          xmlns="http://www.w3.org/2000/svg" 
+                          fill="none" 
+                          viewBox="0 0 24 24"
+                        >
+                          <circle 
+                            className="opacity-25" 
+                            cx="12" 
+                            cy="12" 
+                            r="10" 
+                            stroke="currentColor" 
+                            strokeWidth="4"
+                          />
+                          <path 
+                            className="opacity-75" 
+                            fill="currentColor" 
+                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                          />
+                        </svg>
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                        Generate Meal Plan
+                      </>
+                    )}
                   </button>
-
-                  {/* Info Card */}
-                  <div className="gg-card bg-blue-50 border-blue-200">
-                    <div className="flex gap-3">
-                      <svg className="h-6 w-6 text-blue-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      <div>
-                        <p className="text-sm font-semibold text-blue-900 mb-1">
-                          Personalized for You
-                        </p>
-                        <p className="text-sm text-blue-800">
-                          We&apos;ll use your survey preferences to create a customized meal plan that fits your dietary needs, budget, and cooking style.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              /* Step 2: Recipe Selection with Grouping */
-              <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
-                <div className="lg:col-span-2">
-                  <div className="gg-card mb-6">
-                    <h2 className="gg-heading-section mb-4">Choose Recipe Variety</h2>
-                    <p className="text-gray-600 mb-6">
-                      Group meals together to share the same recipes. Drag meals into recipe boxes to organize them. Each meal will get its own recipe if not grouped.
-                    </p>
-
-                    {(['breakfast', 'lunch', 'dinner'] as MealType[]).map((mealType) => {
-                      const ungroupedMeals = getUngroupedMeals(mealType)
-                      const groups = getGroupsByMealType(mealType)
-                      const mealEmoji = mealType === 'breakfast' ? '🍳' : mealType === 'lunch' ? '🥗' : '🍽️'
-
-                      if (totals[mealType] === 0) return null
-
-                      return (
-                        <div key={mealType} className="mb-8 last:mb-0">
-                          <div className="flex items-center gap-3 mb-4">
-                            <span className="text-3xl">{mealEmoji}</span>
-                            <h3 className="text-xl font-bold text-gray-900 capitalize">{mealType}</h3>
-                            <span className="text-sm text-gray-500">
-                              ({totals[mealType]} meal{totals[mealType] === 1 ? '' : 's'})
-                            </span>
-                          </div>
-
-                          {/* Available Meals */}
-                          {ungroupedMeals.length > 0 && (
-                            <div className="mb-4">
-                              <p className="text-sm font-semibold text-gray-700 mb-2">Available Meals:</p>
-                              <div className="flex flex-wrap gap-2">
-                                {ungroupedMeals.map(mealSlot => (
-                                  <MealChip
-                                    key={mealSlot.id}
-                                    mealSlot={mealSlot}
-                                    isDragging={activeId === mealSlot.id}
-                                  />
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Recipe Groups */}
-                          {groups.length > 0 && (
-                            <div className="mb-4">
-                              <p className="text-sm font-semibold text-gray-700 mb-3">Recipes:</p>
-                              <div className="space-y-4">
-                                {groups.map(group => (
-                                  <RecipeBox
-                                    key={group.id}
-                                    group={group}
-                                    mealSlots={mealSlots}
-                                    onDeleteGroup={handleDeleteGroup}
-                                    onRemoveMeal={handleRemoveMealFromGroup}
-                                    isOver={draggedOverGroupId === group.id}
-                                    isDragging={activeId === `recipe-box-${group.id}`}
-                                  />
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Create Recipe Button */}
-                          {totals[mealType] > 1 && groups.length < totals[mealType] && ungroupedMeals.length > 0 && (
-                            <button
-                              onClick={() => {
-                                const nextNumber = getNextRecipeNumber(mealType)
-                                const newGroup: MealGroup = {
-                                  id: `Recipe ${nextNumber}`,
-                                  mealType,
-                                  mealSlots: [],
-                                  recipeCount: 1
-                                }
-                                setMealGroups(prev => [...prev, newGroup])
-                              }}
-                              className="mt-4 px-4 py-2 text-sm font-medium text-[var(--gg-primary)] border-2 border-[var(--gg-primary)] rounded-lg hover:bg-[var(--gg-primary)] hover:text-white transition-colors"
-                            >
-                              + Create New Recipe
-                            </button>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
                 </div>
 
-                {/* Sidebar */}
-                <div className="space-y-6">
-                  <MealSummary />
-
-                  {/* Navigation Buttons */}
+                {/* Batch Cooking Tip */}
+                <div className="gg-card bg-green-50 border-green-200">
                   <div className="flex gap-3">
-                    <button
-                      onClick={handleBack}
-                      disabled={loading}
-                      className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg border-2 transition-all text-[var(--gg-primary)] border-[var(--gg-primary)] bg-transparent hover:bg-[var(--gg-primary)] hover:text-white flex-1 gap-2 disabled:opacity-50"
-                    >
-                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                      </svg>
-                      Back
-                    </button>
-                    <button
-                      onClick={handleGenerate}
-                      disabled={loading || totals.total === 0 || !startDate}
-                      className={`inline-flex items-center justify-center px-4 py-2 text-sm font-semibold text-white rounded-lg shadow-md transition-all bg-[var(--gg-primary)] hover:bg-[var(--gg-primary-hover)] flex-1 gap-2 ${
-                        (loading || totals.total === 0 || !startDate) ? 'opacity-50 cursor-not-allowed' : ''
-                      }`}
-                    >
-                      {loading ? (
-                        <>
-                          <svg 
-                            className="animate-spin h-4 w-4" 
-                            xmlns="http://www.w3.org/2000/svg" 
-                            fill="none" 
-                            viewBox="0 0 24 24"
-                          >
-                            <circle 
-                              className="opacity-25" 
-                              cx="12" 
-                              cy="12" 
-                              r="10" 
-                              stroke="currentColor" 
-                              strokeWidth="4"
-                            />
-                            <path 
-                              className="opacity-75" 
-                              fill="currentColor" 
-                              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                            />
-                          </svg>
-                          Generating...
-                        </>
-                      ) : (
-                        <>
-                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                          </svg>
-                          Generate Meal Plan
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Error Message */}
-            {error && (
-              <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-                <p className="text-red-800">
-                  <span className="font-semibold">Error: </span>
-                  {error}
-                </p>
-              </div>
-            )}
-
-            {/* Success Message */}
-            {success && (
-              <div className="mt-6 p-6 bg-green-50 border border-green-200 rounded-xl">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
-                      <svg className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                    </div>
+                    <span className="text-2xl">💡</span>
                     <div>
-                      <p className="text-green-900 font-semibold text-lg">
-                        Meal Plan Created Successfully!
+                      <p className="text-sm font-semibold text-green-900 mb-1">
+                        Batch Cooking Tip
                       </p>
-                      <p className="text-green-800 text-sm mt-1">
-                        Your {totals.total} meals are ready to view with recipes and shopping list.
+                      <p className="text-sm text-green-800">
+                        Fewer recipes means you can cook once and enjoy leftovers throughout the week — saving time and money!
                       </p>
                     </div>
                   </div>
-                  <button
-                    onClick={() => router.push('/dashboard')}
-                    className="gg-btn-primary"
-                  >
-                    View Dashboard
-                  </button>
                 </div>
               </div>
-            )}
+            </div>
+          )}
 
-          </div>
+          {/* Error Message */}
+          {error && (
+            <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-red-800">
+                <span className="font-semibold">Error: </span>
+                {error}
+              </p>
+            </div>
+          )}
+
+          {/* Success Message */}
+          {success && (
+            <div className="mt-6 p-6 bg-green-50 border border-green-200 rounded-xl">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
+                    <svg className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="text-green-900 font-semibold text-lg">
+                      Meal Plan Created Successfully!
+                    </p>
+                    <p className="text-green-800 text-sm mt-1">
+                      Your {totals.total} meals are ready to view with recipes and shopping list.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => router.push('/dashboard')}
+                  className="gg-btn-primary"
+                >
+                  View Dashboard
+                </button>
+              </div>
+            </div>
+          )}
+
         </div>
       </div>
-
-      {/* Drag Overlay */}
-      <DragOverlay>
-        {activeId ? (
-          (() => {
-            const mealSlot = mealSlots.find(ms => ms.id === activeId)
-            if (!mealSlot) return null
-            
-            const mealTypeLabel = mealSlot.mealType.charAt(0).toUpperCase() + mealSlot.mealType.slice(1)
-            
-            return (
-              <div className="px-4 py-3 bg-white border-2 border-[var(--gg-primary)] rounded-lg shadow-lg opacity-90">
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold text-gray-900 capitalize">{mealTypeLabel} #{mealSlot.mealNumber}</span>
-                </div>
-              </div>
-            )
-          })()
-        ) : null}
-      </DragOverlay>
 
       {/* Replace Meal Plan Dialog */}
       {showReplaceDialog && (
@@ -1447,6 +1254,6 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
           </div>
         </>
       )}
-    </DndContext>
+    </div>
   )
 }
