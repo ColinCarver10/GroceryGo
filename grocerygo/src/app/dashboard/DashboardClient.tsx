@@ -8,6 +8,7 @@ import RecipeModal from '@/components/RecipeModal'
 import Pagination from '@/components/Pagination'
 import GeneratingMealPlanModal from '@/components/GeneratingMealPlanModal'
 import OnboardingWalkthrough from '@/components/OnboardingWalkthrough'
+import MealPlanCardSkeleton from '@/components/MealPlanCardSkeleton'
 import { updateSurveyResponse, getPaginatedMealPlans, completeOnboardingWalkthrough, invalidateDashboardCache } from './actions'
 import { questions } from '@/app/schemas/userPreferenceQuestions'
 import { walkthroughSteps } from './walkthroughContent'
@@ -315,9 +316,10 @@ export default function DashboardClient({
                 <h2 className="gg-heading-section mb-6">Previous Meal Plans</h2>
                 
                 {isLoadingPage ? (
-                  <div className="py-12 text-center">
-                    <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-4 border-gray-200 border-t-[var(--gg-primary)]"></div>
-                    <p className="text-gray-600">Loading meal plans...</p>
+                  <div className="space-y-4">
+                    {[1, 2, 3, 4, 5].map((i) => (
+                      <MealPlanCardSkeleton key={i} />
+                    ))}
                   </div>
                 ) : mealPlans.length > 0 ? (
                   <>
