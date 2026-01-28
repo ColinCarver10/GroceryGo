@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import type { MealPlanWithRecipes, Recipe, MealPlanRecipe } from '@/types/database'
@@ -26,6 +26,7 @@ import {
 } from './actions'
 import { excludeIngredient, favorIngredient, saveRecipe, unsaveRecipe } from '@/app/actions/userPreferences'
 import { useRouter } from 'next/navigation'
+import { invalidateDashboardCache } from '@/app/dashboard/actions'
 
 interface MealPlanViewProps {
   mealPlan: MealPlanWithRecipes
@@ -57,6 +58,11 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
   const [favoriteRecipes, setFavoriteRecipes] = useState<Set<string>>(new Set(savedRecipeIds))
   const [isProcessing, setIsProcessing] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
+  
+  // Sync favoriteRecipes state when props change (e.g., after router.refresh())
+  useEffect(() => {
+    setFavoriteRecipes(new Set(savedRecipeIds))
+  }, [savedRecipeIds])
   
   // Replace recipe flow state
   const [showReplaceChoiceModal, setShowReplaceChoiceModal] = useState(false)
@@ -212,6 +218,10 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
             return newSet
           })
           setActionError(result.error || 'Failed to save recipe')
+        } else {
+          // Invalidate cache and refresh page data to ensure consistency
+          await invalidateDashboardCache()
+          router.refresh()
         }
       } else {
         const result = await unsaveRecipe(mealPlan.user_id, recipeId, recipeName, mealPlan.id)
@@ -223,6 +233,10 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
             return newSet
           })
           setActionError(result.error || 'Failed to unsave recipe')
+        } else {
+          // Invalidate cache and refresh page data to ensure consistency
+          await invalidateDashboardCache()
+          router.refresh()
         }
       }
     } catch (error) {

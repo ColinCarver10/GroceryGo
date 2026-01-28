@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { MealPlanWithRecipes, Recipe, SurveyResponse } from '@/types/database'
@@ -8,12 +8,14 @@ import RecipeModal from '@/components/RecipeModal'
 import Pagination from '@/components/Pagination'
 import GeneratingMealPlanModal from '@/components/GeneratingMealPlanModal'
 import OnboardingWalkthrough from '@/components/OnboardingWalkthrough'
-import { updateSurveyResponse, getPaginatedMealPlans, completeOnboardingWalkthrough } from './actions'
+import { updateSurveyResponse, getPaginatedMealPlans, completeOnboardingWalkthrough, invalidateDashboardCache } from './actions'
 import { questions } from '@/app/schemas/userPreferenceQuestions'
 import { walkthroughSteps } from './walkthroughContent'
 import IngredientAutocomplete from '@/components/IngredientAutocomplete'
+import { unsaveRecipe } from '@/app/actions/userPreferences'
 
 interface DashboardClientProps {
+  userId: string
   surveyResponse: SurveyResponse | null
   mealPlans: MealPlanWithRecipes[]
   savedRecipes: Array<{
@@ -38,9 +40,10 @@ interface DashboardClientProps {
 const questionConfigs = questions
 
 export default function DashboardClient({ 
+  userId,
   surveyResponse, 
   mealPlans: initialMealPlans, 
-  savedRecipes,
+  savedRecipes: initialSavedRecipes,
   totalMealPlans: initialTotal,
   totalMealsPlanned,
   plansThisMonth,
@@ -56,6 +59,18 @@ export default function DashboardClient({
   const [editingQuestion, setEditingQuestion] = useState<string | null>(null)
   const [editValue, setEditValue] = useState<string | string[]>('')
   const [isSaving, setIsSaving] = useState(false)
+  const [savedRecipes, setSavedRecipes] = useState(initialSavedRecipes)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [recipeToRemove, setRecipeToRemove] = useState<{
+    savedRecipeId: string
+    recipeId: string
+    recipeName: string
+  } | null>(null)
+  
+  // Sync savedRecipes state when props change (e.g., after router.refresh())
+  useEffect(() => {
+    setSavedRecipes(initialSavedRecipes)
+  }, [initialSavedRecipes])
   
   // Pagination state
   const [mealPlans, setMealPlans] = useState(initialMealPlans)
@@ -224,6 +239,52 @@ export default function DashboardClient({
     }
   }
 
+  const handleUnsaveRecipeClick = (savedRecipeId: string, recipeId: string, recipeName: string) => {
+    setRecipeToRemove({ savedRecipeId, recipeId, recipeName })
+  }
+
+  const handleConfirmUnsave = async () => {
+    if (!recipeToRemove) return
+
+    const { savedRecipeId, recipeId, recipeName } = recipeToRemove
+    
+    // Optimistically remove recipe from UI
+    const recipeToRestore = savedRecipes.find(sr => sr.id === savedRecipeId)
+    setSavedRecipes(prev => prev.filter(sr => sr.id !== savedRecipeId))
+    setActionError(null)
+    setRecipeToRemove(null)
+
+    try {
+      const result = await unsaveRecipe(userId, recipeId, recipeName)
+      if (!result.success) {
+        // Revert on error
+        if (recipeToRestore) {
+          setSavedRecipes(prev => [...prev, recipeToRestore].sort((a, b) => 
+            new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+          ))
+        }
+        setActionError(result.error || 'Failed to remove saved recipe')
+      } else {
+        // Invalidate cache and refresh page data to ensure consistency
+        await invalidateDashboardCache()
+        router.refresh()
+      }
+    } catch (error) {
+      // Revert on error
+      if (recipeToRestore) {
+        setSavedRecipes(prev => [...prev, recipeToRestore].sort((a, b) => 
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        ))
+      }
+      setActionError('An unexpected error occurred')
+      console.error('Error unsaving recipe:', error)
+    }
+  }
+
+  const handleCancelUnsave = () => {
+    setRecipeToRemove(null)
+  }
+
   return (
     <div className="gg-bg-page min-h-screen">
       <div className="gg-container">
@@ -383,10 +444,19 @@ export default function DashboardClient({
                             onClick={() => setSelectedRecipe(recipe)}
                           >
                             <div className="flex items-start justify-between mb-3">
-                              <h3 className="gg-heading-card flex-1">{recipe.name}</h3>
-                              <svg className="h-5 w-5 text-red-500 flex-shrink-0 ml-2" fill="currentColor" viewBox="0 0 24 24">
-                                <path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                              </svg>
+                              <h3 className="gg-heading-card flex-1 capitalize">{recipe.name}</h3>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleUnsaveRecipeClick(savedRecipe.id, recipe.id, recipe.name)
+                                }}
+                                className="flex-shrink-0 ml-2 p-1.5 rounded-full border-1 border-red-300 hover:border-red-500 hover:bg-red-50 transition-all"
+                                title="Remove from saved recipes"
+                              >
+                                <svg className="h-5 w-5 text-red-500 cursor-pointer" fill="currentColor" viewBox="0 0 24 24">
+                                  <path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                                </svg>
+                              </button>
                             </div>
 
                             {/* Recipe Info */}
@@ -815,6 +885,74 @@ export default function DashboardClient({
           onPrevious={handlePreviousStep}
           onComplete={handleCompleteWalkthrough}
         />
+      )}
+
+      {/* Action Error Toast */}
+      {actionError && (
+        <div className="fixed bottom-4 right-4 bg-red-50 border-2 border-red-500 rounded-lg p-4 shadow-lg z-50 max-w-md">
+          <div className="flex items-start gap-3">
+            <svg className="h-6 w-6 text-red-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-red-900">Action Failed</p>
+              <p className="text-sm text-red-800 mt-1">{actionError}</p>
+            </div>
+            <button
+              onClick={() => setActionError(null)}
+              className="text-red-600 hover:text-red-800"
+            >
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Remove Recipe Modal */}
+      {recipeToRemove && (
+        <>
+          {/* Backdrop */}
+          <div 
+            className="fixed inset-0 bg-black opacity-40 z-50" 
+            onClick={handleCancelUnsave}
+          />
+          
+          {/* Modal Content */}
+          <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none p-4">
+            <div className="bg-white rounded-xl shadow-2xl p-6 max-w-md w-full pointer-events-auto">
+              <div className="flex items-start gap-4 mb-6">
+                <div className="flex-shrink-0">
+                  <svg className="h-6 w-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">Remove Saved Recipe?</h3>
+                  <p className="text-sm text-gray-600">
+                    Are you sure you want to remove <span className="font-semibold capitalize">{recipeToRemove.recipeName}</span> from your saved recipes? This action cannot be undone.
+                  </p>
+                </div>
+              </div>
+              
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={handleCancelUnsave}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmUnsave}
+                  className="px-4 py-2 text-sm font-medium text-white bg-red-500 rounded-lg hover:bg-red-600 transition-colors"
+                >
+                  Remove
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
       )}
     </div>
   )

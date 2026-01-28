@@ -24,6 +24,7 @@ export default async function DashboardPage() {
   // Pass data to client component
   return (
     <DashboardClient 
+      userId={user.id}
       surveyResponse={dashboardData.surveyResponse}
       mealPlans={dashboardData.mealPlans}
       savedRecipes={dashboardData.savedRecipes}
