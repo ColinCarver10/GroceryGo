@@ -427,8 +427,11 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
       )
 
       if (result.success && result.link) {
-        // Open Instacart in a new tab
-        window.open(result.link, '_blank')
+        // Try opening in new tab, fallback to same tab if blocked (common on mobile)
+        const newWindow = window.open(result.link, '_blank')
+        if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
+          window.location.href = result.link
+        }
       } else {
         setInstacartError(result.error || 'Failed to create Instacart order')
       }
