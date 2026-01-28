@@ -452,7 +452,7 @@ export async function replaceRecipe(
     console.log('[replaceRecipe] Target meal type:', targetMealType)
 
     // Get current total_ingredients from meal plan (handle both old and new formats)
-    let currentTotalIngredients: { items: Array<{ item: string; quantity: string }>; seasonings: Array<{ item: string; quantity: string }> }
+    let currentTotalIngredients: { items: Array<{ item: string; quantity: string; checked?: boolean }>; seasonings: Array<{ item: string; quantity: string; checked?: boolean }> }
     if (Array.isArray(mealPlan.total_ingredients)) {
       // Old format: convert to new structure
       currentTotalIngredients = {
@@ -1403,7 +1403,7 @@ export async function replaceRecipeWithSaved(
     console.log('[replaceRecipeWithSaved] Using saved recipe:', savedRecipe.name)
 
     // Get current total_ingredients
-    let currentTotalIngredients: { items: Array<{ item: string; quantity: string }>; seasonings: Array<{ item: string; quantity: string }> }
+    let currentTotalIngredients: { items: Array<{ item: string; quantity: string; checked?: boolean }>; seasonings: Array<{ item: string; quantity: string; checked?: boolean }> }
     if (Array.isArray(mealPlan.total_ingredients)) {
       currentTotalIngredients = {
         items: mealPlan.total_ingredients,
