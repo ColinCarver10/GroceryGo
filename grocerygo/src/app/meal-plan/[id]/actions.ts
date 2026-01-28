@@ -166,6 +166,106 @@ export async function createInstacartOrder(
 }
 
 /**
+ * Update checked state for a shopping list item
+ */
+export async function updateShoppingListItemChecked(
+  mealPlanId: string,
+  itemName: string,
+  checked: boolean,
+  itemType: 'item' | 'seasoning'
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (!user) {
+      return { success: false, error: 'User not authenticated' }
+    }
+
+    // Get current meal plan
+    const { data: mealPlan, error: fetchError } = await supabase
+      .from('meal_plans')
+      .select('total_ingredients, user_id')
+      .eq('id', mealPlanId)
+      .single()
+
+    if (fetchError || !mealPlan) {
+      return { success: false, error: 'Meal plan not found' }
+    }
+
+    if (mealPlan.user_id !== user.id) {
+      return { success: false, error: 'Unauthorized' }
+    }
+
+    // Handle backward compatibility: convert old array format to new structure
+    let currentIngredients: {
+      items: Array<{ item: string; quantity: string; checked?: boolean }>
+      seasonings: Array<{ item: string; quantity: string; checked?: boolean }>
+    }
+
+    if (!mealPlan.total_ingredients) {
+      currentIngredients = { items: [], seasonings: [] }
+    } else if (Array.isArray(mealPlan.total_ingredients)) {
+      // Old format: convert to new structure
+      currentIngredients = {
+        items: mealPlan.total_ingredients.map(item => ({ ...item, checked: false })),
+        seasonings: []
+      }
+    } else if (typeof mealPlan.total_ingredients === 'object' && ('items' in mealPlan.total_ingredients || 'seasonings' in mealPlan.total_ingredients)) {
+      // New format: use as-is
+      currentIngredients = {
+        items: (mealPlan.total_ingredients as any).items || [],
+        seasonings: (mealPlan.total_ingredients as any).seasonings || []
+      }
+    } else {
+      currentIngredients = { items: [], seasonings: [] }
+    }
+
+    // Normalize item name for comparison (case-insensitive)
+    const normalizeName = (name: string) => name.toLowerCase().trim()
+    const normalizedItemName = normalizeName(itemName)
+
+    // Update the checked state in the appropriate array
+    const targetArray = itemType === 'item' ? currentIngredients.items : currentIngredients.seasonings
+    const itemIndex = targetArray.findIndex(item => normalizeName(item.item) === normalizedItemName)
+
+    if (itemIndex === -1) {
+      return { success: false, error: 'Item not found' }
+    }
+
+    // Update the checked property
+    targetArray[itemIndex] = {
+      ...targetArray[itemIndex],
+      checked: checked
+    }
+
+    // Update the meal plan
+    const { error: updateError } = await supabase
+      .from('meal_plans')
+      .update({ total_ingredients: currentIngredients })
+      .eq('id', mealPlanId)
+      .eq('user_id', user.id)
+
+    if (updateError) {
+      console.error('Error updating checked state:', updateError)
+      return { success: false, error: 'Failed to update checked state' }
+    }
+
+    // Revalidate cache
+    revalidateTag('meal-plan')
+    revalidateTag('dashboard')
+
+    return { success: true }
+  } catch (error) {
+    console.error('Error in updateShoppingListItemChecked:', error)
+    return {
+      success: false,
+      error: `An unexpected error occurred: ${error instanceof Error ? error.message : String(error)}`
+    }
+  }
+}
+
+/**
  * Helper function to generate a single meal replacement using the meal plan generation API
  */
 async function generateSingleMealReplacement(
@@ -716,11 +816,44 @@ CRITICAL: When updating total_ingredients, you MUST:
     
     console.log('[replaceRecipe] Successfully updated', totalUpdated, 'meal_plan_recipes')
 
+    // Preserve checked state from current total_ingredients
+    console.log('[replaceRecipe] Preserving checked state from current total_ingredients...')
+    const normalizeName = (name: string) => name.toLowerCase().trim()
+    
+    // Get current checked state
+    const currentCheckedState = new Map<string, boolean>()
+    if (currentTotalIngredients.items) {
+      currentTotalIngredients.items.forEach(item => {
+        if (item.checked !== undefined) {
+          currentCheckedState.set(normalizeName(item.item), item.checked)
+        }
+      })
+    }
+    if (currentTotalIngredients.seasonings) {
+      currentTotalIngredients.seasonings.forEach(item => {
+        if (item.checked !== undefined) {
+          currentCheckedState.set(normalizeName(item.item), item.checked)
+        }
+      })
+    }
+    
+    // Apply checked state to updated ingredients
+    const updatedWithCheckedState = {
+      items: updated_total_ingredients.items.map(item => ({
+        ...item,
+        checked: currentCheckedState.get(normalizeName(item.item)) ?? false
+      })),
+      seasonings: updated_total_ingredients.seasonings.map(item => ({
+        ...item,
+        checked: currentCheckedState.get(normalizeName(item.item)) ?? false
+      }))
+    }
+
     // Update meal plan's total_ingredients
     console.log('[replaceRecipe] Updating meal plan total_ingredients...')
     const { error: totalIngredientsError } = await supabase
       .from('meal_plans')
-      .update({ total_ingredients: updated_total_ingredients })
+      .update({ total_ingredients: updatedWithCheckedState })
       .eq('id', mealPlanId)
 
     if (totalIngredientsError) {
@@ -1304,6 +1437,23 @@ export async function replaceRecipeWithSaved(
     // Helper function to normalize ingredient name
     const normalizeName = (name: string): string => name.toLowerCase().trim()
 
+    // Preserve checked state from current total_ingredients
+    const currentCheckedState = new Map<string, boolean>()
+    if (currentTotalIngredients.items) {
+      currentTotalIngredients.items.forEach(item => {
+        if (item.checked !== undefined) {
+          currentCheckedState.set(normalizeName(item.item), item.checked)
+        }
+      })
+    }
+    if (currentTotalIngredients.seasonings) {
+      currentTotalIngredients.seasonings.forEach(item => {
+        if (item.checked !== undefined) {
+          currentCheckedState.set(normalizeName(item.item), item.checked)
+        }
+      })
+    }
+
     // Create maps for easier lookup and updating
     const itemsMap = new Map<string, { item: string; quantity: number; unit: string }>()
     const seasoningsMap = new Map<string, { item: string; quantity: number; unit: string }>()
@@ -1369,12 +1519,13 @@ export async function replaceRecipeWithSaved(
       }
     })
 
-    // Convert maps back to arrays
+    // Convert maps back to arrays and preserve checked state
     const updatedItems = Array.from(itemsMap.values())
       .filter(item => item.quantity > 0)
       .map(item => ({
         item: item.item,
-        quantity: `${item.quantity}${item.unit ? ' ' + item.unit : ''}`.trim()
+        quantity: `${item.quantity}${item.unit ? ' ' + item.unit : ''}`.trim(),
+        checked: currentCheckedState.get(normalizeName(item.item)) ?? false
       }))
       .sort((a, b) => a.item.localeCompare(b.item))
 
@@ -1382,7 +1533,8 @@ export async function replaceRecipeWithSaved(
       .filter(item => item.quantity > 0)
       .map(item => ({
         item: item.item,
-        quantity: `${item.quantity}${item.unit ? ' ' + item.unit : ''}`.trim()
+        quantity: `${item.quantity}${item.unit ? ' ' + item.unit : ''}`.trim(),
+        checked: currentCheckedState.get(normalizeName(item.item)) ?? false
       }))
       .sort((a, b) => a.item.localeCompare(b.item))
 

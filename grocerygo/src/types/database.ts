@@ -113,9 +113,9 @@ export interface MealPlan {
   
   // Total ingredients list (consolidated grocery list)
   // Can be either old array format (for backward compatibility) or new nested structure
-  total_ingredients?: Array<{ item: string; quantity: string }> | {
-    items: Array<{ item: string; quantity: string }>
-    seasonings: Array<{ item: string; quantity: string }>
+  total_ingredients?: Array<{ item: string; quantity: string; checked?: boolean }> | {
+    items: Array<{ item: string; quantity: string; checked?: boolean }>
+    seasonings: Array<{ item: string; quantity: string; checked?: boolean }>
   }
 }
 
@@ -124,9 +124,9 @@ export interface MealPlanInsert {
   week_of: string
   status: 'completed' | 'in-progress' | 'pending' | 'generating'
   total_meals: number
-  total_ingredients?: Array<{ item: string; quantity: string }> | {
-    items: Array<{ item: string; quantity: string }>
-    seasonings: Array<{ item: string; quantity: string }>
+  total_ingredients?: Array<{ item: string; quantity: string; checked?: boolean }> | {
+    items: Array<{ item: string; quantity: string; checked?: boolean }>
+    seasonings: Array<{ item: string; quantity: string; checked?: boolean }>
   }
   total_budget?: number
   

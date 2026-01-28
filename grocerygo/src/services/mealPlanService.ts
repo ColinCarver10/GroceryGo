@@ -359,20 +359,23 @@ export async function persistGeneratedMealPlan(
       updateData.total_ingredients = {
         items: groceryList.map(item => ({
           item: item.item,
-          quantity: item.quantity
+          quantity: item.quantity,
+          checked: false
         })),
         seasonings: []
       }
     } else if (groceryList.items || groceryList.seasonings) {
-      // New format: use as-is
+      // New format: use as-is, but ensure checked is false for new items
       updateData.total_ingredients = {
         items: (groceryList.items || []).map((item: any) => ({
           item: item.item,
-          quantity: item.quantity
+          quantity: item.quantity,
+          checked: false
         })),
         seasonings: (groceryList.seasonings || []).map((item: any) => ({
           item: item.item,
-          quantity: item.quantity
+          quantity: item.quantity,
+          checked: false
         }))
       }
     }

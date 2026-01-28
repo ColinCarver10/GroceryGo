@@ -166,15 +166,15 @@ export async function createMealPlanFromAI(
       if (Array.isArray(aiResponse.grocery_list)) {
         // Old format: convert to new structure
         totalIngredients = {
-          items: aiResponse.grocery_list,
+          items: aiResponse.grocery_list.map(item => ({ ...item, checked: false })),
           seasonings: []
         }
       } else if (typeof aiResponse.grocery_list === 'object' && ('items' in aiResponse.grocery_list || 'seasonings' in aiResponse.grocery_list)) {
-        // New format: use as-is
+        // New format: use as-is, but ensure checked is false for new items
         const groceryList = aiResponse.grocery_list as { items?: Array<{ item: string; quantity: string }>; seasonings?: Array<{ item: string; quantity: string }> }
         totalIngredients = {
-          items: groceryList.items || [],
-          seasonings: groceryList.seasonings || []
+          items: (groceryList.items || []).map(item => ({ ...item, checked: false })),
+          seasonings: (groceryList.seasonings || []).map(item => ({ ...item, checked: false }))
         }
       }
 

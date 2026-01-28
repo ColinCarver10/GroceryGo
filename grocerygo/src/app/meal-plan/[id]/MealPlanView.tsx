@@ -20,6 +20,7 @@ import {
   replaceRecipeWithSaved,
   // regenerateWithAdjustments, // COMMENTED OUT: Adjust plan functionality hidden temporarily
   saveCookingNote,
+  updateShoppingListItemChecked,
   // scaleRecipeServings, // COMMENTED OUT: Scale servings functionality
   // swapIngredient, // COMMENTED OUT: Swap ingredient functionality
   // simplifyRecipe // COMMENTED OUT: Simplify recipe functionality
@@ -31,7 +32,7 @@ import { invalidateDashboardCache } from '@/app/dashboard/actions'
 interface MealPlanViewProps {
   mealPlan: MealPlanWithRecipes
   savedRecipeIds: string[]
-  totalIngredients: { items: Array<{ item: string; quantity: string }>; seasonings: Array<{ item: string; quantity: string }> }
+  totalIngredients: { items: Array<{ item: string; quantity: string; checked?: boolean }>; seasonings: Array<{ item: string; quantity: string; checked?: boolean }> }
   existingFeedback?: {
     id: string
     rating: number
@@ -64,6 +65,41 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
     setFavoriteRecipes(new Set(savedRecipeIds))
   }, [savedRecipeIds])
   
+  // Initialize checkedItems from persisted data in totalIngredients
+  // Also automatically move checked seasonings to the main shopping list
+  useEffect(() => {
+    const checkedSet = new Set<string>()
+    const movedSeasoningsMap = new Map<string, { item: string; quantity: string }>()
+    
+    // Helper to create stable ID from item name
+    const getItemId = (item: { item: string }, type: 'item' | 'seasoning') => {
+      return type === 'item' ? `item-${item.item}` : `seasoning-${item.item}`
+    }
+    
+    // Add checked items from items array
+    totalIngredients.items.forEach(item => {
+      if (item.checked) {
+        checkedSet.add(`item-${item.item}`)
+      }
+    })
+    
+    // Add checked items from seasonings array
+    // If a seasoning is checked, automatically move it to the main shopping list
+    totalIngredients.seasonings.forEach(item => {
+      const seasoningId = `seasoning-${item.item}`
+      if (item.checked) {
+        checkedSet.add(`seasoning-${item.item}`)
+        // Also add the moved-seasoning ID so it shows as checked in the moved position
+        checkedSet.add(`moved-seasoning-${item.item}`)
+        // Add to movedSeasonings map
+        movedSeasoningsMap.set(seasoningId, item)
+      }
+    })
+    
+    setCheckedItems(checkedSet)
+    setMovedSeasonings(movedSeasoningsMap)
+  }, [totalIngredients])
+  
   // Replace recipe flow state
   const [showReplaceChoiceModal, setShowReplaceChoiceModal] = useState(false)
   const [showSavedRecipeSelector, setShowSavedRecipeSelector] = useState(false)
@@ -71,16 +107,78 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
   const [replacingRecipeIds, setReplacingRecipeIds] = useState<Set<string>>(new Set())
   const [copied, setCopied] = useState(false)
 
-  const toggleItem = (itemId: string) => {
+  const toggleItem = async (itemId: string) => {
+    // Extract item name and type from itemId
+    // Format: "item-{name}" or "seasoning-{name}" or "moved-seasoning-{name}"
+    const isMovedSeasoning = itemId.startsWith('moved-seasoning-')
+    const isSeasoning = itemId.startsWith('seasoning-')
+    
+    let itemName: string
+    let itemType: 'item' | 'seasoning'
+    
+    if (isMovedSeasoning) {
+      itemName = itemId.replace('moved-seasoning-', '')
+      // Moved seasonings are still stored in the seasonings array in the database
+      // The "moved" state is just for UI presentation
+      itemType = 'seasoning'
+    } else if (isSeasoning) {
+      itemName = itemId.replace('seasoning-', '')
+      itemType = 'seasoning'
+    } else {
+      itemName = itemId.replace('item-', '')
+      itemType = 'item'
+    }
+    
+    // Optimistic update
+    const wasChecked = checkedItems.has(itemId)
     setCheckedItems(prev => {
       const newSet = new Set(prev)
-      if (newSet.has(itemId)) {
+      if (wasChecked) {
         newSet.delete(itemId)
       } else {
         newSet.add(itemId)
       }
       return newSet
     })
+    
+    // Persist to server
+    try {
+      const result = await updateShoppingListItemChecked(
+        mealPlan.id,
+        itemName,
+        !wasChecked,
+        itemType
+      )
+      
+      if (!result.success) {
+        // Revert on error
+        setCheckedItems(prev => {
+          const newSet = new Set(prev)
+          if (wasChecked) {
+            newSet.add(itemId)
+          } else {
+            newSet.delete(itemId)
+          }
+          return newSet
+        })
+        console.error('Failed to update checked state:', result.error)
+      } else {
+        // Refresh to get updated data
+        router.refresh()
+      }
+    } catch (error) {
+      // Revert on error
+      setCheckedItems(prev => {
+        const newSet = new Set(prev)
+        if (wasChecked) {
+          newSet.add(itemId)
+        } else {
+          newSet.delete(itemId)
+        }
+        return newSet
+      })
+      console.error('Error updating checked state:', error)
+    }
   }
 
   // Handler functions for new features
@@ -397,8 +495,8 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
 
     // Combine main items and moved seasonings
     const allItems = [
-      ...totalIngredients.items.map((item, index) => ({ ...item, index, type: 'item' as const, itemId: `item-${index}` })),
-      ...Array.from(movedSeasonings.values()).map((item, index) => ({ ...item, index, type: 'seasoning' as const, itemId: `moved-seasoning-${Array.from(movedSeasonings.keys())[index]}` }))
+      ...totalIngredients.items.map((item) => ({ ...item, type: 'item' as const, itemId: `item-${item.item}` })),
+      ...Array.from(movedSeasonings.values()).map((item) => ({ ...item, type: 'seasoning' as const, itemId: `moved-seasoning-${item.item}` }))
     ]
 
     // Filter out checked items - only send unchecked items to Instacart
@@ -578,8 +676,8 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
   const handleCopyToClipboard = async () => {
     // Combine all items (regular items + moved seasonings)
     const allItems = [
-      ...totalIngredients.items.map((item, index) => ({ ...item, itemId: `item-${index}` })),
-      ...Array.from(movedSeasonings.values()).map((item, index) => ({ ...item, itemId: `moved-seasoning-${Array.from(movedSeasonings.keys())[index]}` }))
+      ...totalIngredients.items.map((item) => ({ ...item, itemId: `item-${item.item}` })),
+      ...Array.from(movedSeasonings.values()).map((item) => ({ ...item, itemId: `moved-seasoning-${item.item}` }))
     ]
 
     // Filter out checked items
@@ -923,7 +1021,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
                 <div className="gg-card mb-4 lg:hidden">
                   <button
                     onClick={handleOrderInstacart}
-                    disabled={isOrderingInstacart || (totalIngredients.items.length === 0 && movedSeasonings.size === 0) || (totalIngredients.items.every((_, index) => checkedItems.has(`item-${index}`)) && Array.from(movedSeasonings.keys()).every(id => checkedItems.has(`moved-seasoning-${id}`)))}
+                    disabled={isOrderingInstacart || (totalIngredients.items.length === 0 && movedSeasonings.size === 0) || (totalIngredients.items.every((item) => checkedItems.has(`item-${item.item}`)) && Array.from(movedSeasonings.values()).every(item => checkedItems.has(`moved-seasoning-${item.item}`)))}
                     className="w-full flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg font-medium transition-all duration-200 cursor-pointer hover:scale-[1.01] hover:shadow-lg active:scale-[0.98]"
                     style={{
                       height: '46px',
@@ -985,8 +1083,8 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
                   {(totalIngredients.items.length > 0 || movedSeasonings.size > 0) ? (
                     <div className="space-y-2 mb-8">
                       {/* Regular items */}
-                      {totalIngredients.items.map((item, index) => {
-                        const itemId = `item-${index}`
+                      {totalIngredients.items.map((item) => {
+                        const itemId = `item-${item.item}`
                         return (
                           <div
                             key={itemId}
@@ -1035,8 +1133,8 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
                         )
                       })}
                       {/* Moved seasonings */}
-                      {Array.from(movedSeasonings.entries()).map(([seasoningId, item], index) => {
-                        const itemId = `moved-seasoning-${seasoningId}`
+                      {Array.from(movedSeasonings.entries()).map(([seasoningId, item]) => {
+                        const itemId = `moved-seasoning-${item.item}`
                         return (
                           <div
                             key={itemId}
@@ -1100,10 +1198,10 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
                       </p>
                       <div className="space-y-2">
                         {totalIngredients.seasonings
-                          .map((item, index) => ({ item, index, seasoningId: `seasoning-${index}` }))
+                          .map((item) => ({ item, seasoningId: `seasoning-${item.item}` }))
                           .filter(({ seasoningId }) => !movedSeasonings.has(seasoningId))
-                          .map(({ item, index, seasoningId }) => {
-                          const isChecked = checkedItems.has(`moved-seasoning-${seasoningId}`)
+                          .map(({ item, seasoningId }) => {
+                          const isChecked = checkedItems.has(`moved-seasoning-${item.item}`)
                           
                           return (
                             <div
@@ -1175,7 +1273,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
                 <div className="gg-card hidden lg:block">
                   <button
                     onClick={handleOrderInstacart}
-                    disabled={isOrderingInstacart || (totalIngredients.items.length === 0 && movedSeasonings.size === 0) || (totalIngredients.items.every((_, index) => checkedItems.has(`item-${index}`)) && Array.from(movedSeasonings.keys()).every(id => checkedItems.has(`moved-seasoning-${id}`)))}
+                    disabled={isOrderingInstacart || (totalIngredients.items.length === 0 && movedSeasonings.size === 0) || (totalIngredients.items.every((item) => checkedItems.has(`item-${item.item}`)) && Array.from(movedSeasonings.values()).every(item => checkedItems.has(`moved-seasoning-${item.item}`)))}
                     className="w-full flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg font-medium transition-all duration-200 cursor-pointer hover:scale-[1.01] hover:shadow-lg active:scale-[0.98]"
                     style={{
                       height: '46px',
