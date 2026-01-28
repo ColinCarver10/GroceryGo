@@ -467,6 +467,47 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
     })
   }
 
+  const formatMealPlanDateRange = (weekOf: string) => {
+    if (!weekOf) return ''
+    
+    // Parse the start date from week_of (format: YYYY-MM-DD)
+    const parts = weekOf.split('-')
+    if (parts.length !== 3) return weekOf // Fallback if format is unexpected
+    
+    const [year, month, day] = parts.map(Number)
+    if (isNaN(year) || isNaN(month) || isNaN(day)) return weekOf // Fallback if parsing fails
+    
+    const startDate = new Date(year, month - 1, day)
+    
+    // Validate date
+    if (isNaN(startDate.getTime())) return weekOf // Fallback if invalid date
+    
+    // Calculate end date (7 days after start)
+    const endDate = new Date(startDate)
+    endDate.setDate(startDate.getDate() + 6) // +6 because we want 7 days total (start + 6 more)
+    
+    // If same month, simplify: "January 25 - 31"
+    if (startDate.getMonth() === endDate.getMonth()) {
+      const startMonth = startDate.toLocaleDateString('en-US', { month: 'long' })
+      const startDay = startDate.getDate()
+      const endDay = endDate.getDate()
+      return `${startMonth} ${startDay} - ${endDay}`
+    }
+    
+    // Different months: "December 26 - January 1"
+    const startFormatted = startDate.toLocaleDateString('en-US', {
+      month: 'long',
+      day: 'numeric'
+    })
+    
+    const endFormatted = endDate.toLocaleDateString('en-US', {
+      month: 'long',
+      day: 'numeric'
+    })
+    
+    return `${startFormatted} - ${endFormatted}`
+  }
+
   const formatDateRange = (days: WeekDayMeals[]) => {
     if (days.length === 0) return ''
     
@@ -642,7 +683,7 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
                 <h1 className="gg-heading-page mb-2 text-xl sm:text-2xl lg:text-3xl">
                   <span className="hidden sm:inline">Meal Plan for </span>
                   <span className="sm:hidden">Plan: </span>
-                  {formatDateRange(organizedWeek.days)}
+                  {formatMealPlanDateRange(mealPlan.week_of)}
                 </h1>
                 <p className="gg-text-subtitle text-xs sm:text-base">
                   <span className="hidden sm:inline">{mealPlan.total_meals} meal slot{mealPlan.total_meals === 1 ? '' : 's'} • {uniqueRecipeIds.size} unique recipe{uniqueRecipeIds.size === 1 ? '' : 's'} • Created {new Date(mealPlan.created_at).toLocaleDateString()}</span>
