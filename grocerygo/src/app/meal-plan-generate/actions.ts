@@ -10,6 +10,7 @@ import {
 } from '@/services/mealPlanService'
 import { REGULAR_MODEL } from '@/config/aiModels'
 import { getPostHogClient } from '@/lib/posthog-server';
+import { logUnexpectedError, logValidationError } from '@/utils/errorLogger';
 
 type MealPlanContextType = Awaited<ReturnType<typeof createMealPlanContext>>
 
@@ -60,6 +61,7 @@ export async function generateMealPlanFromPreferences(
   selectedSlots: MealSlot[]
 ): Promise<GenerateMealPlanResponse> {
   try {
+    debugger
     const context = await createMealPlanContext()
     return await internalGenerateMealPlan(
       context,
@@ -69,7 +71,12 @@ export async function generateMealPlanFromPreferences(
       selectedSlots
     )
   } catch (error: unknown) {
-    console.error('Meal plan generation error:', error)
+    logUnexpectedError('generateMealPlanFromPreferences', error, {
+      weekOf,
+      mealSelection,
+      distinctCounts,
+      selectedSlots
+    })
     return {
       error: error instanceof Error ? error.message : 'Failed to generate meal plan'
     }
@@ -88,6 +95,12 @@ export async function replaceExistingMealPlan(
 
     const mealPlan = await getMealPlanForUser(context, existingPlanId)
     if (!mealPlan) {
+      logValidationError('replaceExistingMealPlan', new Error('Meal plan not found'), {
+        validationType: 'meal_plan_existence',
+        field: 'existingPlanId',
+        input: existingPlanId,
+        reason: 'Meal plan not found or does not belong to user'
+      }, context.user.id)
       return { error: 'Meal plan not found or does not belong to you' }
     }
 
@@ -106,7 +119,13 @@ export async function replaceExistingMealPlan(
     // 'replaced' is not a property of the response; just return the result as-is
     return result
   } catch (error: unknown) {
-    console.error('Meal plan replacement error:', error)
+    logUnexpectedError('replaceExistingMealPlan', error, {
+      existingPlanId,
+      weekOf,
+      mealSelection,
+      distinctCounts,
+      selectedSlots
+    })
     return {
       error: error instanceof Error ? error.message : 'Failed to replace meal plan'
     }
@@ -128,6 +147,7 @@ async function internalGenerateMealPlan(
 
       if (existingPlan) {
         return {
+          success: false,
           conflict: true,
           existingPlanId: existingPlan.id,
           weekOf,
@@ -139,6 +159,10 @@ async function internalGenerateMealPlan(
     const surveyResponse = await fetchUserSurveyResponse(context)
 
     if (!surveyResponse) {
+      logValidationError('internalGenerateMealPlan', new Error('Survey response not found'), {
+        validationType: 'survey_completion',
+        reason: 'User has not completed onboarding survey'
+      }, context.user.id)
       return {
         error: 'Please complete the onboarding survey first',
         needsSurvey: true
@@ -195,7 +219,13 @@ async function internalGenerateMealPlan(
       selectedSlots
     }
   } catch (error: unknown) {
-    console.error('Error creating meal plan:', error)
+    logUnexpectedError('internalGenerateMealPlan', error, {
+      weekOf,
+      mealSelection,
+      distinctCounts,
+      selectedSlots,
+      skipConflictCheck
+    }, context.user.id)
     return {
       error: error instanceof Error ? error.message : 'Failed to create meal plan'
     }

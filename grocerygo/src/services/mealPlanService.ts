@@ -1,5 +1,6 @@
 import { createClient } from '@/utils/supabase/server'
 import type { MealPlan, MealPlanInsert, MealPlanRecipeInsert, RecipeInsert, GroceryItemInsert, MatchRecipeResult } from '@/types/database'
+import { logDatabaseError } from '@/utils/errorLogger'
 import { 
   embeddingPromptsSystemPrompt, 
   embeddingPromptsUserPromptTemplate,
@@ -88,7 +89,6 @@ export async function findExistingMealPlanByWeek(
     .from('meal_plans')
     .select('id, week_of')
     .eq('user_id', user.id)
-    .neq('status', 'generating')
   
   if (!allMealPlans || allMealPlans.length === 0) {
     return null
@@ -447,7 +447,15 @@ export async function fetchCandidateRecipesForMealType(
     return recipeIds;
     
   } catch(error){
-    console.error("An error occured while fetching the candidate recipes:", {error, mealType});
+    logDatabaseError('fetchCandidateRecipesForMealType', error, {
+      table: 'RPC: match_recipe_ids_with_history_exclusion',
+      queryParams: {
+        p_user_id: user.id,
+        p_match_count: matchCount,
+        p_meal_type_filter: mealType,
+        p_max_minutes: maxMinutes
+      }
+    }, user.id)
     throw new Error(
       'CRITICAL: Failed to generate candidate recipes. Meal plan generation aborted.',
       { cause: error as Error }

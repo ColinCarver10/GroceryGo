@@ -13,6 +13,7 @@ import type {
 } from '@/types/database'
 import { getDateForDayName } from '@/utils/mealPlanDates'
 import { REGULAR_MODEL } from '@/config/aiModels'
+import { logDatabaseError, logUnexpectedError } from '@/utils/errorLogger'
 
 /**
  * Create a complete meal plan from AI-generated data
@@ -65,7 +66,11 @@ export async function createMealPlanFromAI(
       .single()
 
     if (mealPlanError) {
-      console.error('Error creating meal plan:', mealPlanError)
+      logDatabaseError('createMealPlanFromAI', mealPlanError, {
+        table: 'meal_plans',
+        operation: 'INSERT',
+        queryParams: { user_id: userId, week_of: weekOf, total_meals: totalMeals }
+      }, userId)
       return { success: false, error: `Failed to create meal plan: ${mealPlanError.message}` }
     }
 
@@ -95,7 +100,11 @@ export async function createMealPlanFromAI(
         .single()
 
       if (recipeError) {
-        console.error('Error creating recipe:', aiRecipe.name, recipeError)
+        logDatabaseError('createMealPlanFromAI', recipeError, {
+          table: 'recipes',
+          operation: 'INSERT',
+          queryParams: { name: aiRecipe.name, meal_type: aiRecipe.mealType }
+        }, userId)
         recipeErrors.push(`${aiRecipe.name}: ${recipeError.message}`)
         continue // Skip this recipe but continue with others
       }
@@ -108,7 +117,11 @@ export async function createMealPlanFromAI(
 
     // Check if we created any recipes
     if (recipeIds.length === 0) {
-      console.error('No recipes were created successfully. Errors:', recipeErrors)
+      logDatabaseError('createMealPlanFromAI', new Error('No recipes were created successfully'), {
+        table: 'recipes',
+        operation: 'INSERT',
+        queryParams: { recipeErrors }
+      }, userId)
       return { 
         success: false, 
         error: `Failed to create recipes. Errors: ${recipeErrors.join('; ')}` 
@@ -155,7 +168,11 @@ export async function createMealPlanFromAI(
       .insert(mealPlanRecipes)
 
     if (linkError) {
-      console.error('Error linking recipes to meal plan:', linkError)
+      logDatabaseError('createMealPlanFromAI', linkError, {
+        table: 'meal_plan_recipes',
+        operation: 'INSERT',
+        queryParams: { meal_plan_id: mealPlan.id, recipeCount: mealPlanRecipes.length }
+      }, userId)
       return { success: false, error: `Failed to link recipes: ${linkError.message}` }
     }
 
@@ -185,7 +202,11 @@ export async function createMealPlanFromAI(
           .eq('id', mealPlan.id)
 
         if (updateError) {
-          console.error('Error updating total_ingredients:', updateError)
+          logDatabaseError('createMealPlanFromAI', updateError, {
+            table: 'meal_plans',
+            operation: 'UPDATE',
+            queryParams: { id: mealPlan.id, user_id: userId }
+          }, userId)
           // Don't fail the whole operation if this fails
         }
       }
@@ -201,7 +222,11 @@ export async function createMealPlanFromAI(
     }
 
   } catch (error: unknown) {
-    console.error('Error in createMealPlanFromAI:', error)
+    logUnexpectedError('createMealPlanFromAI', error, {
+      userId,
+      weekOf,
+      recipeCount: allRecipes.length
+    })
     return {
       success: false,
       error: `An unexpected error occurred: ${
@@ -231,7 +256,11 @@ export async function getUserMealPlans(userId: string): Promise<MealPlanWithReci
     .order('week_of', { ascending: false })
 
   if (error) {
-    console.error('Error fetching meal plans:', error)
+    logDatabaseError('getUserMealPlans', error, {
+      table: 'meal_plans',
+      operation: 'SELECT',
+      queryParams: { user_id: userId }
+    }, userId)
     return []
   }
 
@@ -288,7 +317,11 @@ export async function getMealPlanById(mealPlanId: string, userId: string) {
     .single()
 
   if (error) {
-    console.error('Error fetching meal plan:', error)
+    logDatabaseError('getMealPlanById', error, {
+      table: 'meal_plans',
+      operation: 'SELECT',
+      queryParams: { id: mealPlanId, user_id: userId }
+    }, userId)
     return null
   }
 
@@ -342,7 +375,11 @@ export async function updateMealPlanStatus(
     .eq('user_id', userId)
 
   if (error) {
-    console.error('Error updating meal plan status:', error)
+    logDatabaseError('updateMealPlanStatus', error, {
+      table: 'meal_plans',
+      operation: 'UPDATE',
+      queryParams: { id: mealPlanId, user_id: userId, status }
+    }, userId)
     return { success: false, error: 'Failed to update status' }
   }
 
@@ -363,7 +400,11 @@ export async function deleteMealPlan(mealPlanId: string, userId: string) {
     .eq('user_id', userId)
 
   if (error) {
-    console.error('Error deleting meal plan:', error)
+    logDatabaseError('deleteMealPlan', error, {
+      table: 'meal_plans',
+      operation: 'DELETE',
+      queryParams: { id: mealPlanId, user_id: userId }
+    }, userId)
     return { success: false, error: 'Failed to delete meal plan' }
   }
 
@@ -386,7 +427,11 @@ export async function toggleGroceryItemPurchased(itemId: string, purchased: bool
     .eq('id', itemId)
 
   if (error) {
-    console.error('Error updating grocery item:', error)
+    logDatabaseError('toggleGroceryItemPurchased', error, {
+      table: 'grocery_items',
+      operation: 'UPDATE',
+      queryParams: { id: itemId, purchased }
+    })
     return { success: false, error: 'Failed to update item' }
   }
 

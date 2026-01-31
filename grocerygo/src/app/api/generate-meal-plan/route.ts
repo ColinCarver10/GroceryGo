@@ -3,6 +3,7 @@ import { streamText } from 'ai'
 import { openai } from '@ai-sdk/openai'
 import { mealPlanFromSurveyPrompt } from '@/app/meal-plan-generate/prompts'
 import { REGULAR_MODEL } from '@/config/aiModels'
+import { logUnexpectedError, logValidationError, logApiError } from '@/utils/errorLogger'
 import {
   createMealPlanContext,
   fetchUserSurveyResponse,
@@ -19,9 +20,14 @@ interface MealSelection {
 }
 
 export async function POST(request: NextRequest) {
+  let mealPlanId: string | undefined
+  let mealSelection: MealSelection | undefined
+  let distinctRecipeCounts: MealSelection | undefined
+  let selectedSlots: Array<{ day: string; mealType: string }> | undefined
+  
   try {
     const body = await request.json()
-    const { mealSelection, mealPlanId, distinctRecipeCounts, selectedSlots, fetchCandidatesOnly } = body as {
+    const parsed = body as {
       mealSelection: MealSelection
       mealPlanId: string
       distinctRecipeCounts?: MealSelection
@@ -30,9 +36,31 @@ export async function POST(request: NextRequest) {
     }
 
     const context = await createMealPlanContext()
+
+    if (!parsed.mealSelection) {
+      logValidationError('POST /api/generate-meal-plan', new Error('Meal selection not found'), {
+        validationType: 'meal_selection_existence',
+        field: 'mealSelection',
+        input: parsed.mealSelection,
+        reason: 'Meal selection not found'
+      }, context.user.id)
+      return NextResponse.json({ error: 'Meal selection not found' }, { status: 400 })
+    }
+    const validatedMealSelection = parsed.mealSelection
+    mealPlanId = parsed.mealPlanId
+    distinctRecipeCounts = parsed.distinctRecipeCounts
+    selectedSlots = parsed.selectedSlots
+    const fetchCandidatesOnly = parsed.fetchCandidatesOnly
+
     const mealPlan = await getMealPlanForUser(context, mealPlanId)
 
     if (!mealPlan) {
+      logValidationError('POST /api/generate-meal-plan', new Error('Meal plan not found'), {
+        validationType: 'meal_plan_existence',
+        field: 'mealPlanId',
+        input: mealPlanId,
+        reason: 'Meal plan not found or does not belong to user'
+      }, context.user.id)
       return NextResponse.json({ error: 'Meal plan not found' }, { status: 404 })
     }
 
@@ -40,6 +68,10 @@ export async function POST(request: NextRequest) {
       mealPlan.survey_snapshot || (await fetchUserSurveyResponse(context))
 
     if (!surveyData) {
+      logValidationError('POST /api/generate-meal-plan', new Error('Survey data not found'), {
+        validationType: 'survey_completion',
+        reason: 'User has not completed onboarding survey'
+      }, context.user.id)
       return NextResponse.json(
         { error: 'Please complete the onboarding survey first' },
         { status: 400 }
@@ -47,15 +79,15 @@ export async function POST(request: NextRequest) {
     }
 
     // Calculate total meals
-    const totalMeals = mealSelection.breakfast + mealSelection.lunch + mealSelection.dinner
+    const totalMeals = validatedMealSelection.breakfast + validatedMealSelection.lunch + validatedMealSelection.dinner
 
     // Determine distinct recipe counts (fallback to no-duplicate scenario)
     const distinctCounts = distinctRecipeCounts
       ?? (mealPlan.survey_snapshot?.distinct_recipe_counts as MealSelection | undefined)
       ?? {
-        breakfast: mealSelection.breakfast,
-        lunch: mealSelection.lunch,
-        dinner: mealSelection.dinner
+        breakfast: validatedMealSelection.breakfast,
+        lunch: validatedMealSelection.lunch,
+        dinner: validatedMealSelection.dinner
       }
 
     // Generate unique embedding prompts for each meal type based on distinct counts
@@ -122,9 +154,9 @@ export async function POST(request: NextRequest) {
         : Array.from({ length: totalMeals }).map((_, index) => ({
             day: 'Unscheduled',
             mealType:
-              index < mealSelection.breakfast
+              index < validatedMealSelection.breakfast
                 ? 'Breakfast'
-                : index < mealSelection.breakfast + mealSelection.lunch
+                : index < validatedMealSelection.breakfast + validatedMealSelection.lunch
                   ? 'Lunch'
                   : 'Dinner'
           }))
@@ -200,9 +232,9 @@ You MUST MODIFY and use ALL provided recipes:
 - ${distinctCounts.dinner} Dinner recipe(s) - modify each to align with user goals
 
 ### Schedule breakdown (slot totals by mealType)
-- ${mealSelection.breakfast} Breakfast slot(s)
-- ${mealSelection.lunch} Lunch slot(s)
-- ${mealSelection.dinner} Dinner slot(s)
+- ${validatedMealSelection.breakfast} Breakfast slot(s)
+- ${validatedMealSelection.lunch} Lunch slot(s)
+- ${validatedMealSelection.dinner} Dinner slot(s)
 
 ### Critical modification rules
 1) You MUST modify ALL provided recipes to align with user goals. Do NOT use recipes as-is without modifications.
@@ -281,7 +313,12 @@ Return exactly the schema required above.`
     return result.toTextStreamResponse()
 
   } catch (error: unknown) {
-    console.error('API error:', error)
+    logUnexpectedError('POST /api/generate-meal-plan', error, {
+      mealPlanId: mealPlanId || 'unknown',
+      mealSelection: mealSelection || undefined,
+      distinctRecipeCounts: distinctRecipeCounts || undefined,
+      selectedSlots: selectedSlots || undefined
+    })
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to generate meal plan' },
       { status: 500 }

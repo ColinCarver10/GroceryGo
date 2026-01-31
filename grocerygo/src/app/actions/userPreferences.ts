@@ -3,6 +3,7 @@
 import { createClient } from '@/utils/supabase/server'
 import { trackMealPlanAction } from './feedbackHelper'
 import type { SavedRecipeInsert } from '@/types/database'
+import { logDatabaseError, logUnexpectedError } from '@/utils/errorLogger'
 
 /**
  * Add an ingredient to user's exclusion list
@@ -57,7 +58,10 @@ export async function excludeIngredient(
 
     return { success: true }
   } catch (error) {
-    console.error('Error excluding ingredient:', error)
+    logUnexpectedError('excludeIngredient', error, {
+      userId,
+      ingredientName
+    })
     return { success: false, error: 'An unexpected error occurred' }
   }
 }
@@ -115,7 +119,10 @@ export async function favorIngredient(
 
     return { success: true }
   } catch (error) {
-    console.error('Error favoring ingredient:', error)
+    logUnexpectedError('favorIngredient', error, {
+      userId,
+      ingredientName
+    })
     return { success: false, error: 'An unexpected error occurred' }
   }
 }
@@ -160,7 +167,10 @@ export async function removeExcludedIngredient(
 
     return { success: true }
   } catch (error) {
-    console.error('Error removing excluded ingredient:', error)
+    logUnexpectedError('removeExcludedIngredient', error, {
+      userId,
+      ingredientName
+    })
     return { success: false, error: 'An unexpected error occurred' }
   }
 }
@@ -198,7 +208,11 @@ export async function saveRecipe(
       } as SavedRecipeInsert)
 
     if (insertError) {
-      console.error('Error saving recipe:', insertError)
+      logDatabaseError('saveRecipe', insertError, {
+        table: 'saved_recipes',
+        operation: 'INSERT',
+        queryParams: { user_id: userId, recipe_id: recipeId }
+      }, userId)
       return { success: false, error: 'Failed to save recipe' }
     }
 
@@ -213,7 +227,12 @@ export async function saveRecipe(
 
     return { success: true }
   } catch (error) {
-    console.error('Error saving recipe:', error)
+    logUnexpectedError('saveRecipe', error, {
+      userId,
+      recipeId,
+      recipeName,
+      mealPlanId
+    })
     return { success: false, error: 'An unexpected error occurred' }
   }
 }
@@ -237,7 +256,11 @@ export async function unsaveRecipe(
       .eq('recipe_id', recipeId)
 
     if (deleteError) {
-      console.error('Error unsaving recipe:', deleteError)
+      logDatabaseError('unsaveRecipe', deleteError, {
+        table: 'saved_recipes',
+        operation: 'DELETE',
+        queryParams: { user_id: userId, recipe_id: recipeId }
+      }, userId)
       return { success: false, error: 'Failed to remove saved recipe' }
     }
 
@@ -252,7 +275,12 @@ export async function unsaveRecipe(
 
     return { success: true }
   } catch (error) {
-    console.error('Error unsaving recipe:', error)
+    logUnexpectedError('unsaveRecipe', error, {
+      userId,
+      recipeId,
+      recipeName,
+      mealPlanId
+    })
     return { success: false, error: 'An unexpected error occurred' }
   }
 }
@@ -270,13 +298,19 @@ export async function getSavedRecipeIds(userId: string): Promise<string[]> {
       .eq('user_id', userId)
 
     if (error) {
-      console.error('Error fetching saved recipes:', error)
+      logDatabaseError('getSavedRecipeIds', error, {
+        table: 'saved_recipes',
+        operation: 'SELECT',
+        queryParams: { user_id: userId }
+      }, userId)
       return []
     }
 
     return data.map(sr => sr.recipe_id)
   } catch (error) {
-    console.error('Error fetching saved recipes:', error)
+    logUnexpectedError('getSavedRecipeIds', error, {
+      userId
+    })
     return []
   }
 }
@@ -298,13 +332,19 @@ export async function getSavedRecipes(userId: string) {
       .order('created_at', { ascending: false })
 
     if (error) {
-      console.error('Error fetching saved recipes:', error)
+      logDatabaseError('getSavedRecipes', error, {
+        table: 'saved_recipes',
+        operation: 'SELECT',
+        queryParams: { user_id: userId }
+      }, userId)
       return []
     }
 
     return data
   } catch (error) {
-    console.error('Error fetching saved recipes:', error)
+    logUnexpectedError('getSavedRecipes', error, {
+      userId
+    })
     return []
   }
 }

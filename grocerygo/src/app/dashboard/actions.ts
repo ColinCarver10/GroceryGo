@@ -4,6 +4,7 @@ import { createClient } from '@/utils/supabase/server'
 import { unstable_cache } from 'next/cache'
 import { revalidateTag } from 'next/cache'
 import type { MealPlanWithRecipes } from '@/types/database'
+import { logDatabaseError, logAuthError } from '@/utils/errorLogger'
 
 /**
  * Check if recipes already exist for a meal plan
@@ -19,7 +20,11 @@ export async function checkMealPlanRecipesExist(mealPlanId: string): Promise<boo
     .limit(1)
   
   if (error) {
-    console.error('Error checking meal plan recipes:', error)
+    logDatabaseError('checkMealPlanRecipesExist', error, {
+      table: 'meal_plan_recipes',
+      operation: 'SELECT',
+      queryParams: { meal_plan_id: mealPlanId }
+    })
     return false
   }
   
@@ -46,7 +51,11 @@ export async function updateMealPlanStatuses(userId: string): Promise<number> {
     .in('status', ['pending', 'in-progress'])
   
   if (fetchError) {
-    console.error('Error fetching meal plans for status update:', fetchError)
+    logDatabaseError('updateMealPlanStatuses', fetchError, {
+      table: 'meal_plans',
+      operation: 'SELECT',
+      queryParams: { user_id: userId, status: ['pending', 'in-progress'] }
+    }, userId)
     return 0
   }
   
@@ -105,7 +114,6 @@ export async function updateMealPlanStatuses(userId: string): Promise<number> {
 
 export async function getUserDashboardData(userId: string, page: number = 1, pageSize: number = 5) {
   const supabase = await createClient()
-  console.log('getUserDashboardData', userId, page, pageSize)
   // Update meal plan statuses before fetching data
   await updateMealPlanStatuses(userId)
   
@@ -120,7 +128,11 @@ export async function getUserDashboardData(userId: string, page: number = 1, pag
     .single()
 
   if (userError) {
-    console.error('Error fetching user data:', userError)
+    logDatabaseError('getUserDashboardData', userError, {
+      table: 'users',
+      operation: 'SELECT',
+      queryParams: { user_id: userId }
+    }, userId)
   }
 
   // Get total count of meal plans
@@ -130,7 +142,11 @@ export async function getUserDashboardData(userId: string, page: number = 1, pag
     .eq('user_id', userId)
 
   if (countError) {
-    console.error('Error fetching meal plans count:', countError)
+    logDatabaseError('getUserDashboardData', countError, {
+      table: 'meal_plans',
+      operation: 'SELECT',
+      queryParams: { user_id: userId, count: 'exact' }
+    }, userId)
   }
 
   // Fetch meal plans with recipes and grocery items
@@ -149,7 +165,11 @@ export async function getUserDashboardData(userId: string, page: number = 1, pag
     .range(offset, offset + pageSize - 1)
   
   if (plansError) {
-    console.error('Error fetching meal plans:', plansError)
+    logDatabaseError('getUserDashboardData', plansError, {
+      table: 'meal_plans',
+      operation: 'SELECT',
+      queryParams: { user_id: userId, page, pageSize, offset }
+    }, userId)
   }
 
   // Fetch parent recipes separately for meal_plan_recipes that don't have updated_recipe_id
@@ -193,7 +213,11 @@ export async function getUserDashboardData(userId: string, page: number = 1, pag
     .order('created_at', { ascending: false })
 
   if (savedError) {
-    console.error('Error fetching saved recipes:', savedError)
+    logDatabaseError('getUserDashboardData', savedError, {
+      table: 'saved_recipes',
+      operation: 'SELECT',
+      queryParams: { user_id: userId }
+    }, userId)
   }
 
   // Calculate total meals across all meal plans
@@ -203,7 +227,11 @@ export async function getUserDashboardData(userId: string, page: number = 1, pag
     .eq('user_id', userId)
 
   if (statsError) {
-    console.error('Error fetching meal plan stats:', statsError)
+    logDatabaseError('getUserDashboardData', statsError, {
+      table: 'meal_plans',
+      operation: 'SELECT',
+      queryParams: { user_id: userId }
+    }, userId)
   }
 
   const totalMealsPlanned = allPlansForStats?.reduce((sum, plan) => sum + plan.total_meals, 0) || 0
@@ -221,7 +249,11 @@ export async function getUserDashboardData(userId: string, page: number = 1, pag
     .gte('rating', 1)
 
   if (feedbackError) {
-    console.error('Error fetching feedback summary:', feedbackError)
+    logDatabaseError('getUserDashboardData', feedbackError, {
+      table: 'meal_plan_feedback',
+      operation: 'SELECT',
+      queryParams: { user_id: userId, rating: { gte: 1 } }
+    }, userId)
   }
 
   const ratedMealPlansCount = feedbackData?.length || 0
@@ -270,6 +302,10 @@ export async function getPaginatedMealPlans(page: number = 1, pageSize: number =
   const { data: { user }, error: authError } = await supabase.auth.getUser()
   
   if (authError || !user) {
+    logAuthError('getPaginatedMealPlans', authError || new Error('User not found'), {
+      operation: 'getUser',
+      authErrorType: authError ? 'auth_error' : 'user_not_found'
+    })
     return { success: false, error: 'Not authenticated', mealPlans: [], totalMealPlans: 0, currentPage: page, pageSize }
   }
 
@@ -292,6 +328,10 @@ export async function updateSurveyResponse(questionId: string, answer: string | 
   const { data: { user }, error: authError } = await supabase.auth.getUser()
   
   if (authError || !user) {
+    logAuthError('updateSurveyResponse', authError || new Error('User not found'), {
+      operation: 'getUser',
+      authErrorType: authError ? 'auth_error' : 'user_not_found'
+    })
     return { success: false, error: 'Not authenticated' }
   }
 
@@ -303,7 +343,11 @@ export async function updateSurveyResponse(questionId: string, answer: string | 
     .single()
 
   if (fetchError) {
-    console.error('Error fetching current survey:', fetchError)
+    logDatabaseError('updateSurveyResponse', fetchError, {
+      table: 'users',
+      operation: 'SELECT',
+      queryParams: { user_id: user.id }
+    }, user.id)
     return { success: false, error: 'Failed to fetch current preferences' }
   }
 
@@ -336,7 +380,11 @@ export async function updateSurveyResponse(questionId: string, answer: string | 
     .eq('user_id', user.id)
 
   if (updateError) {
-    console.error('Error updating survey response:', updateError)
+    logDatabaseError('updateSurveyResponse', updateError, {
+      table: 'users',
+      operation: 'UPDATE',
+      queryParams: { user_id: user.id, questionId }
+    }, user.id)
     return { success: false, error: 'Failed to update preference' }
   }
 
@@ -354,6 +402,10 @@ export async function completeOnboardingWalkthrough() {
   const { data: { user }, error: authError } = await supabase.auth.getUser()
   
   if (authError || !user) {
+    logAuthError('completeOnboardingWalkthrough', authError || new Error('User not found'), {
+      operation: 'getUser',
+      authErrorType: authError ? 'auth_error' : 'user_not_found'
+    })
     return { success: false, error: 'Not authenticated' }
   }
 
@@ -364,7 +416,11 @@ export async function completeOnboardingWalkthrough() {
     .eq('user_id', user.id)
 
   if (updateError) {
-    console.error('Error updating first_login_flag:', updateError)
+    logDatabaseError('completeOnboardingWalkthrough', updateError, {
+      table: 'users',
+      operation: 'UPDATE',
+      queryParams: { user_id: user.id }
+    }, user.id)
     return { success: false, error: 'Failed to complete walkthrough' }
   }
 

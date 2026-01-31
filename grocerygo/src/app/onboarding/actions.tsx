@@ -4,6 +4,7 @@ import { createClient } from '@/utils/supabase/server'
 import { revalidatePath, revalidateTag } from 'next/cache'
 import { validateIngredients } from '@/config/ingredients'
 import { getPostHogClient } from '@/lib/posthog-server';
+import { logDatabaseError, logAuthError } from '@/utils/errorLogger';
 
 export async function saveSurveyResponse(surveyData: Record<string, string | string[]>) {
   const supabase = await createClient()
@@ -12,7 +13,10 @@ export async function saveSurveyResponse(surveyData: Record<string, string | str
   const { data: { user }, error: authError } = await supabase.auth.getUser()
 
   if (authError || !user) {
-    console.error('Error getting user:', authError)
+    logAuthError('saveSurveyResponse', authError || new Error('User not found'), {
+      operation: 'getUser',
+      authErrorType: authError ? 'auth_error' : 'user_not_found'
+    })
     return { success: false, error: 'User not authenticated' }
   }
 
@@ -41,7 +45,11 @@ export async function saveSurveyResponse(surveyData: Record<string, string | str
     .eq('user_id', user.id)
 
   if (updateError) {
-    console.error('Error saving survey response:', updateError)
+    logDatabaseError('saveSurveyResponse', updateError, {
+      table: 'users',
+      operation: 'UPDATE',
+      queryParams: { user_id: user.id }
+    }, user.id)
     return { success: false, error: 'Failed to save survey response' }
   }
 

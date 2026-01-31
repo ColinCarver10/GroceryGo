@@ -26,6 +26,7 @@ import {
   fetchRecipeDetailsByIds
 } from '@/services/mealPlanService'
 import { getPostHogClient } from '@/lib/posthog-server';
+import { logDatabaseError, logApiError, logAuthError, logUnexpectedError, logFetchError, logParseError, logValidationError } from '@/utils/errorLogger';
 
 const INSTACART_API_URL = process.env.INSTACART_API_URL || 'https://connect.dev.instacart.tools/idp/v1/products/products_link'
 const INSTACART_API_KEY = process.env.INSTACART_API_KEY
@@ -70,8 +71,12 @@ export async function createInstacartOrder(
 
     // Get authenticated user
     const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      logAuthError('createInstacartOrder', authError || new Error('User not found'), {
+        operation: 'getUser',
+        authErrorType: authError ? 'auth_error' : 'user_not_found'
+      })
       return { success: false, error: 'User not authenticated' }
     }
 
@@ -127,11 +132,13 @@ export async function createInstacartOrder(
 
     if (!response.ok) {
       const errorText = await response.text()
-      console.error('Instacart API error:', {
-        status: response.status,
-        statusText: response.statusText,
-        body: errorText
-      })
+      logApiError('createInstacartOrder', new Error(`Instacart API returned ${response.status}: ${response.statusText}`), {
+        endpoint: INSTACART_API_URL,
+        method: 'POST',
+        requestBody: { title: mealPlanTitle, itemCount: groceryItems.length },
+        statusCode: response.status,
+        responseBody: errorText
+      }, user.id)
       throw new Error(`Instacart API returned ${response.status}: ${response.statusText}`)
     }
 
@@ -148,7 +155,11 @@ export async function createInstacartOrder(
       .eq('user_id', user.id)
 
     if (updateError) {
-      console.error('Error saving Instacart link to database:', updateError)
+      logDatabaseError('createInstacartOrder', updateError, {
+        table: 'meal_plans',
+        operation: 'UPDATE',
+        queryParams: { id: mealPlanId, user_id: user.id }
+      }, user.id)
       // Still return success with the link even if database update fails
       // The link is still valid and can be used
     }
@@ -170,7 +181,10 @@ export async function createInstacartOrder(
       link: data.products_link_url
     }
   } catch (error) {
-    console.error('Error creating Instacart order:', error)
+    logUnexpectedError('createInstacartOrder', error, {
+      mealPlanId,
+      groceryItemCount: groceryItems.length
+    })
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Failed to create Instacart order'
@@ -189,9 +203,13 @@ export async function updateShoppingListItemChecked(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
     
-    if (!user) {
+    if (authError || !user) {
+      logAuthError('updateShoppingListItemChecked', authError || new Error('User not found'), {
+        operation: 'getUser',
+        authErrorType: authError ? 'auth_error' : 'user_not_found'
+      })
       return { success: false, error: 'User not authenticated' }
     }
 
@@ -203,10 +221,19 @@ export async function updateShoppingListItemChecked(
       .single()
 
     if (fetchError || !mealPlan) {
+      logDatabaseError('updateShoppingListItemChecked', fetchError || new Error('Meal plan not found'), {
+        table: 'meal_plans',
+        operation: 'SELECT',
+        queryParams: { id: mealPlanId }
+      }, user.id)
       return { success: false, error: 'Meal plan not found' }
     }
 
     if (mealPlan.user_id !== user.id) {
+      logAuthError('updateShoppingListItemChecked', new Error('Unauthorized'), {
+        operation: 'updateShoppingListItem',
+        authErrorType: 'unauthorized'
+      }, user.id)
       return { success: false, error: 'Unauthorized' }
     }
 
@@ -260,7 +287,11 @@ export async function updateShoppingListItemChecked(
       .eq('user_id', user.id)
 
     if (updateError) {
-      console.error('Error updating checked state:', updateError)
+      logDatabaseError('updateShoppingListItemChecked', updateError, {
+        table: 'meal_plans',
+        operation: 'UPDATE',
+        queryParams: { id: mealPlanId, user_id: user.id, itemName, itemType, checked }
+      }, user.id)
       return { success: false, error: 'Failed to update checked state' }
     }
 
@@ -283,7 +314,12 @@ export async function updateShoppingListItemChecked(
 
     return { success: true }
   } catch (error) {
-    console.error('Error in updateShoppingListItemChecked:', error)
+    logUnexpectedError('updateShoppingListItemChecked', error, {
+      mealPlanId,
+      itemName,
+      itemType,
+      checked
+    })
     return {
       success: false,
       error: `An unexpected error occurred: ${error instanceof Error ? error.message : String(error)}`
@@ -334,7 +370,13 @@ async function generateSingleMealReplacement(
 
     if (!response.ok) {
       const errorText = await response.text()
-      console.error('[generateSingleMealReplacement] API error:', response.status, errorText)
+      logFetchError('generateSingleMealReplacement', new Error(`API error: ${response.status}`), {
+        url: '/api/generate-meal-plan',
+        method: 'POST',
+        requestBody: { mealSelection, mealPlanId, distinctRecipeCounts, selectedSlots },
+        status: response.status,
+        responseText: errorText
+      })
       return { success: false, error: `API error: ${response.status} ${errorText}` }
     }
     console.log('[generateSingleMealReplacement] API response OK, parsing stream...')
@@ -343,7 +385,9 @@ async function generateSingleMealReplacement(
     const parsedResponse = await readAndParseMealPlanStream(response)
     
     if (!parsedResponse) {
-      console.error('[generateSingleMealReplacement] Failed to parse response')
+      logParseError('generateSingleMealReplacement', new Error('Failed to parse API response'), {
+        dataType: 'meal plan stream'
+      })
       return { success: false, error: 'Failed to parse API response' }
     }
     console.log('[generateSingleMealReplacement] Parsed response:', {
@@ -352,7 +396,10 @@ async function generateSingleMealReplacement(
 
     // Extract the recipe (should be exactly one)
     if (parsedResponse.recipes.length === 0) {
-      console.error('[generateSingleMealReplacement] No recipes in parsed response')
+      logValidationError('generateSingleMealReplacement', new Error('No recipes in parsed response'), {
+        validationType: 'recipe_count',
+        reason: 'Expected at least 1 recipe but got 0'
+      })
       return { success: false, error: 'No recipe generated' }
     }
 
@@ -370,8 +417,10 @@ async function generateSingleMealReplacement(
       }
     }
   } catch (error) {
-    console.error('[generateSingleMealReplacement] Unexpected error:', error)
-    console.error('[generateSingleMealReplacement] Error stack:', error instanceof Error ? error.stack : 'No stack trace')
+    logUnexpectedError('generateSingleMealReplacement', error, {
+      mealPlanId,
+      mealType
+    })
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Failed to generate meal replacement'
@@ -394,12 +443,11 @@ export async function replaceRecipe(
 
     // Get authenticated user
     const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError) {
-      console.error('[replaceRecipe] Auth error:', authError)
-      return { success: false, error: 'User not authenticated' }
-    }
-    if (!user) {
-      console.error('[replaceRecipe] No user found')
+    if (authError || !user) {
+      logAuthError('replaceRecipe', authError || new Error('User not found'), {
+        operation: 'getUser',
+        authErrorType: authError ? 'auth_error' : 'user_not_found'
+      })
       return { success: false, error: 'User not authenticated' }
     }
     console.log('[replaceRecipe] User authenticated:', user.id)
@@ -413,11 +461,19 @@ export async function replaceRecipe(
       .single()
 
     if (mealPlanError) {
-      console.error('[replaceRecipe] Meal plan fetch error:', mealPlanError)
+      logDatabaseError('replaceRecipe', mealPlanError, {
+        table: 'meal_plans',
+        operation: 'SELECT',
+        queryParams: { id: mealPlanId, user_id: user.id }
+      }, user.id)
       return { success: false, error: `Meal plan fetch error: ${mealPlanError.message}` }
     }
     if (!mealPlan) {
-      console.error('[replaceRecipe] Meal plan not found:', mealPlanId)
+      logDatabaseError('replaceRecipe', new Error('Meal plan not found'), {
+        table: 'meal_plans',
+        operation: 'SELECT',
+        queryParams: { id: mealPlanId, user_id: user.id }
+      }, user.id)
       return { success: false, error: 'Meal plan not found' }
     }
     console.log('[replaceRecipe] Meal plan found:', mealPlan.id, 'with', mealPlan.meal_plan_recipes?.length || 0, 'recipes')
@@ -429,7 +485,12 @@ export async function replaceRecipe(
 
     console.log('[replaceRecipe] Found', mealPlanRecipesToReplace.length, 'meal plan recipes to replace')
     if (mealPlanRecipesToReplace.length === 0) {
-      console.error('[replaceRecipe] No meal plan recipes found with recipe_id:', recipeId)
+      logValidationError('replaceRecipe', new Error('No meal plan recipes found'), {
+        validationType: 'recipe_existence',
+        field: 'recipeId',
+        input: recipeId,
+        reason: 'No meal_plan_recipes found matching recipe_id'
+      }, user.id)
       return { success: false, error: 'No meal plan recipes found with this recipe' }
     }
 
@@ -459,7 +520,11 @@ export async function replaceRecipe(
         .single()
       
       if (fullRecipesError) {
-        console.error('[replaceRecipe] Error fetching from full_recipes_table:', fullRecipesError)
+        logDatabaseError('replaceRecipe', fullRecipesError, {
+          table: 'full_recipes_table',
+          operation: 'SELECT',
+          queryParams: { recipe_id: recipeId }
+        }, user.id)
       }
       
       if (recipeFromFull) {
@@ -469,7 +534,11 @@ export async function replaceRecipe(
     }
 
     if (!oldRecipe) {
-      console.error('[replaceRecipe] Recipe not found in either table:', recipeId)
+      logDatabaseError('replaceRecipe', new Error('Recipe not found in either table'), {
+        table: 'recipes/full_recipes_table',
+        operation: 'SELECT',
+        queryParams: { recipeId }
+      }, user.id)
       return { success: false, error: 'Recipe not found' }
     }
 
@@ -504,7 +573,11 @@ export async function replaceRecipe(
     // Get survey data for embedding and prompt
     const surveyData = mealPlan.survey_snapshot || {}
     if (!surveyData || Object.keys(surveyData).length === 0) {
-      console.error('[replaceRecipe] No survey snapshot found')
+      logValidationError('replaceRecipe', new Error('No survey snapshot found'), {
+        validationType: 'survey_data',
+        field: 'survey_snapshot',
+        reason: 'Meal plan missing survey data'
+      }, user.id)
       return { success: false, error: 'Meal plan missing survey data' }
     }
 
@@ -530,7 +603,12 @@ export async function replaceRecipe(
       : embedPrompts.dinner[0]
 
     if (!mealTypeEmbedPrompt) {
-      console.error('[replaceRecipe] No embedding prompt generated for meal type:', targetMealType)
+      logValidationError('replaceRecipe', new Error('No embedding prompt generated'), {
+        validationType: 'embedding_prompt',
+        field: 'mealType',
+        input: targetMealType,
+        reason: 'Failed to generate embedding prompt for replacement'
+      }, user.id)
       return { success: false, error: 'Failed to generate embedding prompt for replacement' }
     }
 
@@ -543,14 +621,20 @@ export async function replaceRecipe(
     )
 
     if (candidateIds.length === 0) {
-      console.error('[replaceRecipe] No candidate recipes found')
+      logValidationError('replaceRecipe', new Error('No candidate recipes found'), {
+        validationType: 'candidate_recipes',
+        reason: 'No candidate recipes found for replacement'
+      }, user.id)
       return { success: false, error: 'No candidate recipes found for replacement' }
     }
 
     // Fetch recipe details
     const candidateRecipes = await fetchRecipeDetailsByIds(context, candidateIds)
     if (candidateRecipes.length === 0) {
-      console.error('[replaceRecipe] No recipe details found')
+      logValidationError('replaceRecipe', new Error('No recipe details found'), {
+        validationType: 'recipe_details',
+        reason: 'Failed to fetch recipe details'
+      }, user.id)
       return { success: false, error: 'Failed to fetch recipe details' }
     }
 
@@ -587,7 +671,10 @@ CRITICAL: When updating total_ingredients, you MUST:
         // Extract JSON from response
         const jsonMatch = response.match(/\{[\s\S]*\}/)
         if (!jsonMatch) {
-          console.error('[replaceRecipe] No JSON found in response. Full response:', response)
+          logParseError('replaceRecipe', new Error('No JSON found in response'), {
+            dataType: 'AI response',
+            rawData: response.substring(0, 500)
+          }, user.id)
           throw new Error('No JSON found in response')
         }
         
@@ -596,18 +683,30 @@ CRITICAL: When updating total_ingredients, you MUST:
           parsed = JSON.parse(jsonMatch[0])
           console.log('[replaceRecipe] JSON parsed successfully. Keys:', Object.keys(parsed))
         } catch (parseError) {
-          console.error('[replaceRecipe] JSON parse error:', parseError)
-          console.error('[replaceRecipe] JSON string that failed to parse:', jsonMatch[0].substring(0, 1000))
+          logParseError('replaceRecipe', parseError as Error, {
+            dataType: 'JSON',
+            rawData: jsonMatch[0].substring(0, 500)
+          }, user.id)
           throw new Error(`Failed to parse JSON: ${parseError instanceof Error ? parseError.message : String(parseError)}`)
         }
         
         if (!parsed.recipe) {
-          console.error('[replaceRecipe] Missing recipe field in parsed data. Available keys:', Object.keys(parsed))
+          logValidationError('replaceRecipe', new Error('Missing recipe field'), {
+            validationType: 'required_field',
+            field: 'recipe',
+            input: Object.keys(parsed),
+            reason: 'Missing required field: recipe'
+          }, user.id)
           throw new Error('Missing required field: recipe')
         }
         
         if (!parsed.updated_total_ingredients) {
-          console.error('[replaceRecipe] Missing updated_total_ingredients field in parsed data. Available keys:', Object.keys(parsed))
+          logValidationError('replaceRecipe', new Error('Missing updated_total_ingredients field'), {
+            validationType: 'required_field',
+            field: 'updated_total_ingredients',
+            input: Object.keys(parsed),
+            reason: 'Missing required field: updated_total_ingredients'
+          }, user.id)
           throw new Error('Missing required field: updated_total_ingredients')
         }
 
@@ -639,12 +738,16 @@ CRITICAL: When updating total_ingredients, you MUST:
             seasonings: parsed.updated_total_ingredients.seasonings || []
           }
         } else {
-          console.error('[replaceRecipe] Invalid updated_total_ingredients format:', {
-            type: typeof parsed.updated_total_ingredients,
-            value: parsed.updated_total_ingredients,
-            isArray: Array.isArray(parsed.updated_total_ingredients),
-            keys: typeof parsed.updated_total_ingredients === 'object' && parsed.updated_total_ingredients !== null ? Object.keys(parsed.updated_total_ingredients) : null
-          })
+          logValidationError('replaceRecipe', new Error('Invalid updated_total_ingredients format'), {
+            validationType: 'data_format',
+            field: 'updated_total_ingredients',
+            input: {
+              type: typeof parsed.updated_total_ingredients,
+              isArray: Array.isArray(parsed.updated_total_ingredients),
+              keys: typeof parsed.updated_total_ingredients === 'object' && parsed.updated_total_ingredients !== null ? Object.keys(parsed.updated_total_ingredients) : null
+            },
+            reason: 'Invalid updated_total_ingredients format'
+          }, user.id)
           throw new Error('Invalid updated_total_ingredients format')
         }
 
@@ -682,22 +785,20 @@ CRITICAL: When updating total_ingredients, you MUST:
         )
         
         if (!validationPassed) {
-          console.error('[replaceRecipe] Validation failed. Data structure:', {
-            hasRecipe,
-            hasRecipeName,
-            hasIngredientsArray,
-            hasStepsArray,
-            hasUpdatedTotalIngredients,
-            isUpdatedTotalIngredientsObject,
-            hasItemsArray,
-            hasSeasoningsArray,
-            recipeType: typeof data.recipe,
-            recipeKeys: data.recipe ? Object.keys(data.recipe) : null,
-            updatedTotalIngredientsType: typeof data.updated_total_ingredients,
-            updatedTotalIngredientsIsArray: Array.isArray(data.updated_total_ingredients),
-            updatedTotalIngredientsKeys: data.updated_total_ingredients && typeof data.updated_total_ingredients === 'object' ? Object.keys(data.updated_total_ingredients) : null,
-            fullData: JSON.stringify(data, null, 2)
-          })
+          logValidationError('replaceRecipe', new Error('AI response validation failed'), {
+            validationType: 'ai_response_structure',
+            input: {
+              hasRecipe,
+              hasRecipeName,
+              hasIngredientsArray,
+              hasStepsArray,
+              hasUpdatedTotalIngredients,
+              isUpdatedTotalIngredientsObject,
+              hasItemsArray,
+              hasSeasoningsArray
+            },
+            reason: 'AI response failed structure validation'
+          }, user.id)
         }
         
         return validationPassed
@@ -705,15 +806,12 @@ CRITICAL: When updating total_ingredients, you MUST:
     )
 
     if (!aiResult.success || !aiResult.data) {
-      console.error('[replaceRecipe] AI generation failed:', {
-        error: aiResult.error,
-        hasRawResponse: !!aiResult.rawResponse,
-        rawResponseLength: aiResult.rawResponse?.length,
-        rawResponsePreview: aiResult.rawResponse?.substring(0, 500)
-      })
-      if (aiResult.rawResponse) {
-        console.error('[replaceRecipe] Full raw AI response:', aiResult.rawResponse)
-      }
+      logApiError('replaceRecipe', new Error(aiResult.error || 'AI generation failed'), {
+        endpoint: 'OpenAI API',
+        method: 'POST',
+        requestBody: { mealPlanId, recipeId, mealType: targetMealType },
+        responseBody: aiResult.rawResponse?.substring(0, 500)
+      }, user.id)
       return { success: false, error: aiResult.error || 'Failed to generate replacement recipe' }
     }
 
@@ -749,11 +847,19 @@ CRITICAL: When updating total_ingredients, you MUST:
       .single()
 
     if (recipeError) {
-      console.error('[replaceRecipe] Error inserting recipe:', recipeError)
+      logDatabaseError('replaceRecipe', recipeError, {
+        table: 'recipes',
+        operation: 'INSERT',
+        queryParams: { name: recipeInsert.name, meal_type: targetMealType }
+      }, user.id)
       return { success: false, error: `Failed to create new recipe: ${recipeError.message}` }
     }
     if (!newRecipe) {
-      console.error('[replaceRecipe] Recipe insert returned no data')
+      logDatabaseError('replaceRecipe', new Error('Recipe insert returned no data'), {
+        table: 'recipes',
+        operation: 'INSERT',
+        queryParams: { name: recipeInsert.name }
+      }, user.id)
       return { success: false, error: 'Failed to create new recipe: No data returned' }
     }
     console.log('[replaceRecipe] New recipe created:', newRecipe.id)
@@ -831,12 +937,19 @@ CRITICAL: When updating total_ingredients, you MUST:
     }
     
     if (updateError) {
-      console.error('[replaceRecipe] Error updating meal_plan_recipes:', updateError)
+      logDatabaseError('replaceRecipe', updateError, {
+        table: 'meal_plan_recipes',
+        operation: 'UPDATE',
+        queryParams: { meal_plan_id: mealPlanId, recipeId, newRecipeId: newRecipe.id }
+      }, user.id)
       return { success: false, error: `Failed to update meal plan recipes: ${updateError.message}` }
     }
     
     if (totalUpdated === 0) {
-      console.error('[replaceRecipe] No records were updated')
+      logValidationError('replaceRecipe', new Error('No records were updated'), {
+        validationType: 'update_count',
+        reason: 'No meal plan recipes were updated'
+      }, user.id)
       return { success: false, error: 'No meal plan recipes were updated' }
     }
     
@@ -883,7 +996,11 @@ CRITICAL: When updating total_ingredients, you MUST:
       .eq('id', mealPlanId)
 
     if (totalIngredientsError) {
-      console.error('[replaceRecipe] Error updating total_ingredients:', totalIngredientsError)
+      logDatabaseError('replaceRecipe', totalIngredientsError, {
+        table: 'meal_plans',
+        operation: 'UPDATE',
+        queryParams: { id: mealPlanId, user_id: user.id }
+      }, user.id)
       // Don't fail the whole operation, but log the error
     } else {
       console.log('[replaceRecipe] Total ingredients updated successfully')
@@ -926,8 +1043,11 @@ CRITICAL: When updating total_ingredients, you MUST:
     console.log('[replaceRecipe] Replacement completed successfully. New recipe ID:', newRecipe.id)
     return { success: true, newRecipeId: newRecipe.id }
   } catch (error) {
-    console.error('[replaceRecipe] Unexpected error:', error)
-    console.error('[replaceRecipe] Error stack:', error instanceof Error ? error.stack : 'No stack trace')
+    logUnexpectedError('replaceRecipe', error, {
+      mealPlanId,
+      recipeId,
+      mealType
+    })
     return {
       success: false,
       error: `An unexpected error occurred: ${error instanceof Error ? error.message : String(error)}`
@@ -1131,7 +1251,10 @@ export async function regenerateWithAdjustments(
 
     return { success: true }
   } catch (error) {
-    console.error('Error regenerating meal plan:', error)
+    logUnexpectedError('regenerateWithAdjustments', error, {
+      mealPlanId,
+      adjustments
+    })
     return { success: false, error: 'An unexpected error occurred' }
   }
 }
@@ -1195,7 +1318,11 @@ export async function scaleRecipeServings(
 
     return { success: true }
   } catch (error) {
-    console.error('Error scaling recipe:', error)
+    logUnexpectedError('scaleRecipeServings', error, {
+      mealPlanId,
+      recipeId,
+      multiplier
+    })
     return { success: false, error: 'An unexpected error occurred' }
   }
 }
@@ -1257,7 +1384,12 @@ export async function swapIngredient(
 
     return { success: true }
   } catch (error) {
-    console.error('Error swapping ingredient:', error)
+    logUnexpectedError('swapIngredient', error, {
+      mealPlanId,
+      recipeId,
+      oldIngredient,
+      newIngredient
+    })
     return { success: false, error: 'An unexpected error occurred' }
   }
 }
@@ -1334,7 +1466,10 @@ export async function simplifyRecipe(
 
     return { success: true, simplifiedRecipe: simplified_recipe }
   } catch (error) {
-    console.error('Error simplifying recipe:', error)
+    logUnexpectedError('simplifyRecipe', error, {
+      mealPlanId,
+      recipeId
+    })
     return { success: false, error: 'An unexpected error occurred' }
   }
 }
@@ -1376,7 +1511,10 @@ export async function replaceRecipeWithSaved(
     // Get authenticated user
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
-      console.error('[replaceRecipeWithSaved] Auth error:', authError)
+      logAuthError('replaceRecipeWithSaved', authError || new Error('User not found'), {
+        operation: 'getUser',
+        authErrorType: authError ? 'auth_error' : 'user_not_found'
+      })
       return { success: false, error: 'User not authenticated' }
     }
     console.log('[replaceRecipeWithSaved] User authenticated:', user.id)
@@ -1390,7 +1528,11 @@ export async function replaceRecipeWithSaved(
       .single()
 
     if (mealPlanError || !mealPlan) {
-      console.error('[replaceRecipeWithSaved] Meal plan fetch error:', mealPlanError)
+      logDatabaseError('replaceRecipeWithSaved', mealPlanError || new Error('Meal plan not found'), {
+        table: 'meal_plans',
+        operation: 'SELECT',
+        queryParams: { id: mealPlanId, user_id: user.id }
+      }, user.id)
       return { success: false, error: 'Meal plan not found' }
     }
 
@@ -1400,7 +1542,12 @@ export async function replaceRecipeWithSaved(
     )
 
     if (mealPlanRecipesToReplace.length === 0) {
-      console.error('[replaceRecipeWithSaved] No meal plan recipes found with recipe_id:', recipeId)
+      logValidationError('replaceRecipeWithSaved', new Error('No meal plan recipes found'), {
+        validationType: 'recipe_existence',
+        field: 'recipeId',
+        input: recipeId,
+        reason: 'No meal_plan_recipes found matching recipe_id'
+      }, user.id)
       return { success: false, error: 'No meal plan recipes found with this recipe' }
     }
 
@@ -1427,7 +1574,11 @@ export async function replaceRecipeWithSaved(
     }
 
     if (!oldRecipe) {
-      console.error('[replaceRecipeWithSaved] Recipe not found:', recipeId)
+      logDatabaseError('replaceRecipeWithSaved', new Error('Recipe not found'), {
+        table: 'recipes/full_recipes_table',
+        operation: 'SELECT',
+        queryParams: { recipeId }
+      }, user.id)
       return { success: false, error: 'Recipe not found' }
     }
 
@@ -1439,7 +1590,11 @@ export async function replaceRecipeWithSaved(
       .single()
 
     if (savedRecipeError || !savedRecipe) {
-      console.error('[replaceRecipeWithSaved] Saved recipe not found:', savedRecipeError)
+      logDatabaseError('replaceRecipeWithSaved', savedRecipeError || new Error('Saved recipe not found'), {
+        table: 'recipes',
+        operation: 'SELECT',
+        queryParams: { id: savedRecipeId }
+      }, user.id)
       return { success: false, error: 'Saved recipe not found' }
     }
     console.log('[replaceRecipeWithSaved] Using saved recipe:', savedRecipe.name)
@@ -1642,12 +1797,19 @@ export async function replaceRecipeWithSaved(
     }
     
     if (updateError) {
-      console.error('[replaceRecipeWithSaved] Error updating meal_plan_recipes:', updateError)
+      logDatabaseError('replaceRecipeWithSaved', updateError, {
+        table: 'meal_plan_recipes',
+        operation: 'UPDATE',
+        queryParams: { meal_plan_id: mealPlanId, recipeId, savedRecipeId }
+      }, user.id)
       return { success: false, error: `Failed to update meal plan recipes: ${updateError.message}` }
     }
     
     if (totalUpdated === 0) {
-      console.error('[replaceRecipeWithSaved] No records were updated')
+      logValidationError('replaceRecipeWithSaved', new Error('No records were updated'), {
+        validationType: 'update_count',
+        reason: 'No meal plan recipes were updated'
+      }, user.id)
       return { success: false, error: 'No meal plan recipes were updated' }
     }
 
@@ -1658,7 +1820,11 @@ export async function replaceRecipeWithSaved(
       .eq('id', mealPlanId)
 
     if (totalIngredientsError) {
-      console.error('[replaceRecipeWithSaved] Error updating total_ingredients:', totalIngredientsError)
+      logDatabaseError('replaceRecipeWithSaved', totalIngredientsError, {
+        table: 'meal_plans',
+        operation: 'UPDATE',
+        queryParams: { id: mealPlanId, user_id: user.id }
+      }, user.id)
       // Don't fail the whole operation, but log the error
     }
 
@@ -1679,7 +1845,12 @@ export async function replaceRecipeWithSaved(
     console.log('[replaceRecipeWithSaved] Replacement completed successfully')
     return { success: true }
   } catch (error) {
-    console.error('[replaceRecipeWithSaved] Unexpected error:', error)
+    logUnexpectedError('replaceRecipeWithSaved', error, {
+      mealPlanId,
+      recipeId,
+      savedRecipeId,
+      mealType
+    })
     return { 
       success: false, 
       error: `An unexpected error occurred: ${error instanceof Error ? error.message : String(error)}` 
@@ -1715,7 +1886,11 @@ export async function saveCookingNote(
       .single()
 
     if (fetchError) {
-      console.error('Error fetching recipe:', fetchError)
+      logDatabaseError('saveCookingNote', fetchError, {
+        table: 'recipes',
+        operation: 'SELECT',
+        queryParams: { id: recipeId }
+      })
       return { success: false, error: 'Recipe not found' }
     }
 
@@ -1730,7 +1905,11 @@ export async function saveCookingNote(
       .eq('id', recipeId)
 
     if (updateError) {
-      console.error('Error updating recipe notes:', updateError)
+      logDatabaseError('saveCookingNote', updateError, {
+        table: 'recipes',
+        operation: 'UPDATE',
+        queryParams: { id: recipeId }
+      })
       return { success: false, error: 'Failed to save note' }
     }
 
@@ -1739,7 +1918,10 @@ export async function saveCookingNote(
 
     return { success: true }
   } catch (error) {
-    console.error('Error saving cooking note:', error)
+    logUnexpectedError('saveCookingNote', error, {
+      recipeId,
+      noteLength: note.length
+    })
     return { 
       success: false, 
       error: error instanceof Error ? error.message : 'Failed to save note' 

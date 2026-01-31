@@ -2,6 +2,7 @@
 
 import { createClient } from '@/utils/supabase/server'
 import type { MealPlanFeedbackInsert } from '@/types/database'
+import { logDatabaseError } from '@/utils/errorLogger'
 
 /**
  * Track user actions in the meal_plan_feedback table
@@ -48,7 +49,11 @@ export async function trackMealPlanAction(
     }
   } catch (error) {
     // Don't throw - feedback tracking shouldn't break the main flow
-    console.error('Error tracking meal plan action:', error)
+    logDatabaseError('trackMealPlanAction', error, {
+      table: 'meal_plan_feedback',
+      operation: 'INSERT/UPDATE',
+      queryParams: { meal_plan_id: mealPlanId, user_id: userId }
+    }, userId)
   }
 }
 

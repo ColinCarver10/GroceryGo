@@ -7,6 +7,7 @@ import { createClient } from '@/utils/supabase/server'
 import type { UserInsert } from '@/types/database'
 import type { PostgrestError } from '@supabase/supabase-js';
 import { getPostHogClient } from '@/lib/posthog-server';
+import { logDatabaseError, logAuthError } from '@/utils/errorLogger';
 
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
@@ -34,7 +35,11 @@ async function ensureUserExists(supabase: SupabaseServerClient, userId: string, 
       .insert(newUser)
 
     if (insertError) {
-      console.error('Error creating user in users table:', insertError)
+      logDatabaseError('ensureUserExists', insertError, {
+        table: 'users',
+        operation: 'INSERT',
+        queryParams: { user_id: userId, email }
+      }, userId)
     }
   }
 }
@@ -51,6 +56,10 @@ export async function login(formData: FormData) {
 
   const { data: authData, error } = await supabase.auth.signInWithPassword(data)
   if (error) {
+    logAuthError('login', error, {
+      operation: 'signInWithPassword',
+      authErrorType: 'invalid_credentials'
+    }, data.email)
     // Track login error
     const posthog = getPostHogClient();
     posthog.capture({
@@ -117,6 +126,10 @@ export async function signup(formData: FormData) {
   const { data: authData, error } = await supabase.auth.signUp(data)
 
   if (error) {
+    logAuthError('signup', error, {
+      operation: 'signUp',
+      authErrorType: 'signup_error'
+    }, data.email)
     // Track signup error
     const posthog = getPostHogClient();
     posthog.capture({
@@ -182,6 +195,10 @@ export async function signInWithGoogle() {
   })
 
   if (error) {
+    logAuthError('signInWithGoogle', error, {
+      operation: 'signInWithOAuth',
+      authErrorType: 'oauth_error'
+    })
     posthog.capture({
       distinctId: 'anonymous',
       event: 'login_error',

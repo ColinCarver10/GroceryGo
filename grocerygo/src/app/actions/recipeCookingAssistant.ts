@@ -3,6 +3,7 @@
 import { Ingredient } from '@/types/database'
 import { callOpenAI } from './aiHelper'
 import { sanitizeUserInput } from '@/utils/sanitize'
+import { logValidationError, logUnexpectedError } from '@/utils/errorLogger'
 
 /**
  * Validate that the question is related to cooking/recipes
@@ -69,6 +70,12 @@ export async function askRecipeCookingQuestion(
 
     // Validate that question is cooking-related
     if (!isValidCookingQuestion(sanitizedQuestion)) {
+      logValidationError('askRecipeCookingQuestion', new Error('Question not cooking-related'), {
+        validationType: 'cooking_question',
+        field: 'userQuestion',
+        input: sanitizedQuestion.substring(0, 100),
+        reason: 'Question is not related to cooking this recipe'
+      })
       return {
         success: false,
         error: 'Please ask questions specifically about cooking this recipe.'
@@ -177,7 +184,12 @@ Remember: ONLY answer if this question is about cooking this specific recipe. If
     }
 
   } catch (error: unknown) {
-    console.error('Recipe cooking assistant error:', error)
+    logUnexpectedError('askRecipeCookingQuestion', error, {
+      recipeName,
+      ingredientCount: ingredients.length,
+      stepCount: steps.length,
+      questionLength: userQuestion.length
+    })
     return {
       success: false,
       error:

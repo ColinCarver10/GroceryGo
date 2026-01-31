@@ -4,6 +4,7 @@ import OpenAI from 'openai'
 import type { z } from 'zod'
 import { zodToJsonSchema } from 'zod-to-json-schema'
 import { REGULAR_MODEL } from '@/config/aiModels'
+import { logApiError, logParseError, logValidationError } from '@/utils/errorLogger'
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -71,7 +72,10 @@ export async function callOpenAIStructured<T extends z.ZodTypeAny>(
     try {
       parsedData = JSON.parse(response)
     } catch (parseError) {
-      console.error('Failed to parse AI response:', parseError)
+      logParseError('callOpenAIStructured', parseError as Error, {
+        dataType: 'JSON',
+        rawData: response.substring(0, 500)
+      })
       return {
         success: false,
         error: 'Failed to parse AI response'
@@ -81,7 +85,12 @@ export async function callOpenAIStructured<T extends z.ZodTypeAny>(
     const validationResult = schema.safeParse(parsedData)
     
     if (!validationResult.success) {
-      console.error('Schema validation failed:', validationResult.error)
+      logValidationError('callOpenAIStructured', validationResult.error, {
+        validationType: 'schema_validation',
+        field: schemaName,
+        input: parsedData,
+        reason: validationResult.error.message
+      })
       return {
         success: false,
         error: `Response validation failed: ${validationResult.error.message}`
@@ -94,9 +103,15 @@ export async function callOpenAIStructured<T extends z.ZodTypeAny>(
     }
 
   } catch (error: unknown) {
-    console.error('OpenAI API error:', error)
-
     const status = getErrorStatus(error)
+    
+    logApiError('callOpenAIStructured', error, {
+      endpoint: 'OpenAI API',
+      method: 'POST',
+      requestBody: { schemaName, model: REGULAR_MODEL },
+      statusCode: status
+    })
+
     if (status === 401) {
       return { success: false, error: 'Invalid OpenAI API key' }
     }
@@ -172,7 +187,10 @@ export async function callOpenAI<T>(
     try {
       parsedData = parseResponse(response)
     } catch (parseError) {
-      console.error('Failed to parse AI response:', parseError)
+      logParseError('callOpenAI', parseError as Error, {
+        dataType: 'AI response',
+        rawData: response.substring(0, 500)
+      })
       return {
         success: false,
         error: 'Failed to parse AI response',
@@ -196,9 +214,15 @@ export async function callOpenAI<T>(
     }
 
   } catch (error: unknown) {
-    console.error('OpenAI API error:', error)
-
     const status = getErrorStatus(error)
+    
+    logApiError('callOpenAI', error, {
+      endpoint: 'OpenAI API',
+      method: 'POST',
+      requestBody: { model: REGULAR_MODEL },
+      statusCode: status
+    })
+
     if (status === 401) {
       return { success: false, error: 'Invalid OpenAI API key' }
     }
