@@ -100,13 +100,13 @@ STRICT POLICY:
 Your response MUST be in this EXACT JSON format:
 {
   "detailedResponse": "A detailed, helpful answer to the cooking question (2-4 sentences)",
-  "shortSummary": "A brief 1-sentence summary suitable for saving as a note"
+  "shortSummary": "A brief summary that includes both the user's question and your answer, suitable for saving as a note (e.g., 'Q: [question] A: [answer]' or similar format)"
 }
 
 If the question is not about cooking this recipe, use:
 {
   "detailedResponse": "I can only help with questions about cooking this specific recipe. Please ask about the ingredients, cooking steps, techniques, or timing for this dish.",
-  "shortSummary": "Question not related to recipe"
+  "shortSummary": "Q: [user's question] A: Question not related to recipe"
 }`
 
     // Create user prompt with recipe context
