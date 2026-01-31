@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/utils/supabase/server'
 import type { UserInsert } from '@/types/database'
 import type { PostgrestError } from '@supabase/supabase-js';
+import { getPostHogClient } from '@/lib/posthog-server';
 
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
@@ -50,6 +51,17 @@ export async function login(formData: FormData) {
 
   const { data: authData, error } = await supabase.auth.signInWithPassword(data)
   if (error) {
+    // Track login error
+    const posthog = getPostHogClient();
+    posthog.capture({
+      distinctId: data.email,
+      event: 'login_error',
+      properties: {
+        email: data.email,
+        error_message: 'Invalid credentials',
+        auth_method: 'email'
+      }
+    });
     redirect('/login?error=' + encodeURIComponent('Invalid credentials. Please check your email and password.'))
   }
 
@@ -57,6 +69,23 @@ export async function login(formData: FormData) {
   if (authData.user) {
     await ensureUserExists(supabase, authData.user.id, authData.user.email || data.email)
   }
+
+  // Track successful login
+  const posthog = getPostHogClient();
+  posthog.capture({
+    distinctId: authData.user.id,
+    event: 'user_logged_in',
+    properties: {
+      email: authData.user.email,
+      auth_method: 'email'
+    }
+  });
+  posthog.identify({
+    distinctId: authData.user.id,
+    properties: {
+      email: authData.user.email
+    }
+  });
 
   // Check if user has completed the questionnaire
   const { data: userData } = await supabase
@@ -66,7 +95,7 @@ export async function login(formData: FormData) {
     .single()
 
   revalidatePath('/', 'layout')
-  
+
   // Redirect based on questionnaire completion
   if (userData?.survey_response) {
     redirect('/dashboard')
@@ -88,12 +117,42 @@ export async function signup(formData: FormData) {
   const { data: authData, error } = await supabase.auth.signUp(data)
 
   if (error) {
+    // Track signup error
+    const posthog = getPostHogClient();
+    posthog.capture({
+      distinctId: data.email,
+      event: 'login_error',
+      properties: {
+        email: data.email,
+        error_message: error.message,
+        auth_method: 'email',
+        action: 'signup'
+      }
+    });
     redirect('/login?error=' + encodeURIComponent(error.message || 'Failed to create account. Please try again.'))
   }
 
   // Ensure user exists in users table
   if (authData.user) {
     await ensureUserExists(supabase, authData.user.id, authData.user.email || data.email)
+
+    // Track successful signup
+    const posthog = getPostHogClient();
+    posthog.capture({
+      distinctId: authData.user.id,
+      event: 'user_signed_up',
+      properties: {
+        email: authData.user.email,
+        auth_method: 'email'
+      }
+    });
+    posthog.identify({
+      distinctId: authData.user.id,
+      properties: {
+        email: authData.user.email,
+        created_at: new Date().toISOString()
+      }
+    });
   }
 
   revalidatePath('/', 'layout')
@@ -103,7 +162,18 @@ export async function signup(formData: FormData) {
 
 export async function signInWithGoogle() {
   const supabase = await createClient()
-  
+
+  // Track Google sign-in initiation
+  const posthog = getPostHogClient();
+  posthog.capture({
+    distinctId: 'anonymous',
+    event: 'user_logged_in_google',
+    properties: {
+      auth_method: 'google',
+      action: 'initiated'
+    }
+  });
+
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
@@ -112,6 +182,14 @@ export async function signInWithGoogle() {
   })
 
   if (error) {
+    posthog.capture({
+      distinctId: 'anonymous',
+      event: 'login_error',
+      properties: {
+        error_message: error.message,
+        auth_method: 'google'
+      }
+    });
     redirect('/login?error=' + encodeURIComponent(error.message || 'Failed to sign in with Google. Please try again.'))
   }
 

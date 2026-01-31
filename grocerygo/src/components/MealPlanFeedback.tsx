@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import posthog from 'posthog-js'
 import { submitMealPlanFeedback } from '@/app/actions/feedbackHelper'
 import { sanitizeUserInput } from '@/utils/sanitize'
 
@@ -107,6 +108,16 @@ export default function MealPlanFeedback({ mealPlanId, userId, existingFeedback 
 
       if (result.success) {
         setSuccess(true)
+
+        // Track feedback submission
+        posthog.capture('meal_plan_feedback_submitted', {
+          meal_plan_id: mealPlanId,
+          rating: rating,
+          would_make_again: wouldMakeAgain,
+          has_feedback_text: !!sanitizedFeedback,
+          is_update: !!existingFeedback
+        })
+
         // Refresh page data to show updated feedback
         router.refresh()
         // Collapse after a short delay

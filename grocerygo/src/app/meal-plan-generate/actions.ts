@@ -9,6 +9,7 @@ import {
   insertGeneratingMealPlan
 } from '@/services/mealPlanService'
 import { REGULAR_MODEL } from '@/config/aiModels'
+import { getPostHogClient } from '@/lib/posthog-server';
 
 type MealPlanContextType = Awaited<ReturnType<typeof createMealPlanContext>>
 
@@ -154,7 +155,7 @@ async function internalGenerateMealPlan(
       selected_slots: selectedSlots
     }
 
-    const mealPlan = await insertGeneratingMealPlan(context, 
+    const mealPlan = await insertGeneratingMealPlan(context,
       {
         week_of: weekOf,
         status: 'generating',
@@ -164,6 +165,26 @@ async function internalGenerateMealPlan(
         ai_model: REGULAR_MODEL
       }
     )
+
+    // Track meal plan creation
+    const posthog = getPostHogClient();
+    posthog.capture({
+      distinctId: context.user.id,
+      event: 'meal_plan_created',
+      properties: {
+        meal_plan_id: mealPlan.id,
+        total_meals: totalMeals,
+        breakfast_count: mealSelection.breakfast,
+        lunch_count: mealSelection.lunch,
+        dinner_count: mealSelection.dinner,
+        breakfast_recipe_count: distinctCounts.breakfast,
+        lunch_recipe_count: distinctCounts.lunch,
+        dinner_recipe_count: distinctCounts.dinner,
+        week_of: weekOf,
+        ai_model: REGULAR_MODEL,
+        is_replacement: skipConflictCheck
+      }
+    });
 
     return {
       success: true,

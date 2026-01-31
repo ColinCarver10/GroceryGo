@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import posthog from 'posthog-js'
 import {
   generateMealPlanFromPreferences,
   replaceExistingMealPlan,
@@ -651,6 +652,18 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
     setError('')
     setSuccess(false)
     setDateError('')
+
+    // Track meal plan generation started
+    posthog.capture('meal_plan_generation_started', {
+      total_meals: totals.total,
+      breakfast_count: totals.breakfast,
+      lunch_count: totals.lunch,
+      dinner_count: totals.dinner,
+      breakfast_recipe_count: recipeCount.breakfast,
+      lunch_recipe_count: recipeCount.lunch,
+      dinner_recipe_count: recipeCount.dinner,
+      start_date: startDate
+    })
 
     try {
       const weekOf = startDate

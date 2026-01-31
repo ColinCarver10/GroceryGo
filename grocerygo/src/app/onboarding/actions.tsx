@@ -3,6 +3,7 @@
 import { createClient } from '@/utils/supabase/server'
 import { revalidatePath, revalidateTag } from 'next/cache'
 import { validateIngredients } from '@/config/ingredients'
+import { getPostHogClient } from '@/lib/posthog-server';
 
 export async function saveSurveyResponse(surveyData: Record<string, string | string[]>) {
   const supabase = await createClient()
@@ -44,11 +45,37 @@ export async function saveSurveyResponse(surveyData: Record<string, string | str
     return { success: false, error: 'Failed to save survey response' }
   }
 
+  // Track onboarding completion
+  const posthog = getPostHogClient();
+  posthog.capture({
+    distinctId: user.id,
+    event: 'onboarding_completed',
+    properties: {
+      email: user.email,
+      dietary_restrictions: surveyData['5'] || [],
+      cuisine_preferences: surveyData['6'] || [],
+      cooking_skill_level: surveyData['4'] || '',
+      budget: surveyData['3'] || '',
+      household_size: surveyData['1'] || '',
+      liked_ingredients_count: validatedLikedFoods.length,
+      disliked_ingredients_count: validatedDislikedFoods.length
+    }
+  });
+  posthog.identify({
+    distinctId: user.id,
+    properties: {
+      email: user.email,
+      has_completed_onboarding: true,
+      household_size: surveyData['1'] || '',
+      cooking_skill_level: surveyData['4'] || ''
+    }
+  });
+
   // Invalidate dashboard cache to show updated preferences
   revalidateTag('dashboard')
   revalidatePath('/', 'layout')
   revalidatePath('/dashboard')
-  
+
   return { success: true }
 }
 

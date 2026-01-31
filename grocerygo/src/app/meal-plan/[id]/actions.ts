@@ -15,8 +15,8 @@ import { trackMealPlanAction } from '@/app/actions/feedbackHelper'
 import {
   replaceRecipePrompt,
   replaceRecipeWithTotalIngredientsPrompt,
-  bulkAdjustmentPrompt, 
-  simplifyRecipePrompt 
+  bulkAdjustmentPrompt,
+  simplifyRecipePrompt
 } from './prompts'
 import { getDateForDayName } from '@/utils/mealPlanDates'
 import {
@@ -25,6 +25,7 @@ import {
   fetchCandidateRecipesForMealType,
   fetchRecipeDetailsByIds
 } from '@/services/mealPlanService'
+import { getPostHogClient } from '@/lib/posthog-server';
 
 const INSTACART_API_URL = process.env.INSTACART_API_URL || 'https://connect.dev.instacart.tools/idp/v1/products/products_link'
 const INSTACART_API_KEY = process.env.INSTACART_API_KEY
@@ -152,6 +153,18 @@ export async function createInstacartOrder(
       // The link is still valid and can be used
     }
 
+    // Track Instacart order creation
+    const posthog = getPostHogClient();
+    posthog.capture({
+      distinctId: user.id,
+      event: 'instacart_order_created',
+      properties: {
+        meal_plan_id: mealPlanId,
+        item_count: groceryItems.length,
+        meal_plan_title: mealPlanTitle
+      }
+    });
+
     return {
       success: true,
       link: data.products_link_url
@@ -250,6 +263,19 @@ export async function updateShoppingListItemChecked(
       console.error('Error updating checked state:', updateError)
       return { success: false, error: 'Failed to update checked state' }
     }
+
+    // Track shopping list item check
+    const posthog = getPostHogClient();
+    posthog.capture({
+      distinctId: user.id,
+      event: 'shopping_list_item_checked',
+      properties: {
+        meal_plan_id: mealPlanId,
+        item_name: itemName,
+        item_type: itemType,
+        checked: checked
+      }
+    });
 
     // Revalidate cache
     revalidateTag('meal-plan')
@@ -877,6 +903,22 @@ CRITICAL: When updating total_ingredients, you MUST:
       // Don't fail the whole operation if tracking fails
     }
 
+    // Track recipe replacement
+    const posthog = getPostHogClient();
+    posthog.capture({
+      distinctId: user.id,
+      event: 'recipe_replaced',
+      properties: {
+        meal_plan_id: mealPlanId,
+        old_recipe_id: recipeId,
+        old_recipe_name: oldRecipe.name,
+        new_recipe_id: newRecipe.id,
+        new_recipe_name: newRecipeData.name,
+        meal_type: targetMealType,
+        occurrences_replaced: totalUpdated
+      }
+    });
+
     console.log('[replaceRecipe] Revalidating cache...')
     revalidateTag('meal-plan')
     revalidateTag('dashboard')
@@ -886,9 +928,9 @@ CRITICAL: When updating total_ingredients, you MUST:
   } catch (error) {
     console.error('[replaceRecipe] Unexpected error:', error)
     console.error('[replaceRecipe] Error stack:', error instanceof Error ? error.stack : 'No stack trace')
-    return { 
-      success: false, 
-      error: `An unexpected error occurred: ${error instanceof Error ? error.message : String(error)}` 
+    return {
+      success: false,
+      error: `An unexpected error occurred: ${error instanceof Error ? error.message : String(error)}`
     }
   }
 }

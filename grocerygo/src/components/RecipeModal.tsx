@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import posthog from 'posthog-js'
 import type { Ingredient, Recipe } from '@/types/database'
 import RecipeAdjustments from './RecipeAdjustments'
 import { askRecipeCookingQuestion } from '@/app/actions/recipeCookingAssistant'
@@ -116,6 +117,17 @@ export default function RecipeModal({
       setAskError(null)
     }
   }, [isOpen])
+
+  // Track recipe modal opened
+  useEffect(() => {
+    if (isOpen && recipe) {
+      posthog.capture('recipe_modal_opened', {
+        recipe_id: recipe.id,
+        recipe_name: recipe.name,
+        meal_type: recipe.meal_type || 'unknown'
+      })
+    }
+  }, [isOpen, recipe])
 
   // Handle asking a cooking question
   const handleAskQuestion = async () => {
