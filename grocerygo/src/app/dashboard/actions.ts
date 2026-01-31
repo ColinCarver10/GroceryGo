@@ -105,7 +105,7 @@ export async function updateMealPlanStatuses(userId: string): Promise<number> {
 
 export async function getUserDashboardData(userId: string, page: number = 1, pageSize: number = 5) {
   const supabase = await createClient()
-  
+  console.log('getUserDashboardData', userId, page, pageSize)
   // Update meal plan statuses before fetching data
   await updateMealPlanStatuses(userId)
   
