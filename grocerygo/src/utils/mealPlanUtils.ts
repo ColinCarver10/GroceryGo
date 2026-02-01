@@ -1,6 +1,63 @@
 import { Ingredient, RecipeIngredient } from '@/types/database';
 import type { Recipe, MealPlanWithRecipes, MealPlanRecipe } from '@/types/database'
 
+/**
+ * Parse quantity from ingredient string like "2 cups flour" -> 2
+ */
+function parseIngredientQuantity(ingredientStr: string): number {
+  const match = ingredientStr.match(/^([\d.]+)/)
+  return match ? parseFloat(match[1]) : 1
+}
+
+/**
+ * Parse unit and item name from ingredient string like "2 cups flour" -> { unit: "cups", item: "flour" }
+ * Handles formats: "quantity unit item" or "quantity item" (if no unit)
+ */
+function parseIngredientUnitAndItem(ingredientStr: string): { unit: string; item: string } {
+  // Match pattern: "quantity unit item" or "quantity item" (if no unit)
+  const match = ingredientStr.match(/^[\d.]+\s+(.+)/)
+  if (!match) {
+    return { unit: '', item: ingredientStr }
+  }
+  
+  const rest = match[1].trim()
+  
+  // Try to split unit and item - units are typically short words
+  // Common units: cup, cups, lb, lbs, oz, tbs, tsp, each, etc.
+  // Match units that are followed by a space and then the item name
+  const unitPattern = /^(cup|cups|c|fl oz|gallon|gallons|gal|gals|ml|milliliter|millilitre|milliliters|millilitres|liter|litre|liters|litres|l|pint|pints|pt|pts|quart|quarts|qt|qts|tb|tbs|tablespoon|tablespoons|ts|tsp|teaspoon|teaspoons|tspn|gram|grams|g|gs|kilogram|kilograms|kg|kgs|ounce|ounces|oz|pound|pounds|lb|lbs|bunch|bunches|can|cans|each|ears|head|heads|large|lrg|lge|lg|medium|med|md|package|packages|packet|small|sm|container|jar|pouch|bag|box)\s+(.+)$/i
+  
+  const unitMatch = rest.match(unitPattern)
+  if (unitMatch) {
+    return { unit: unitMatch[1], item: unitMatch[2] }
+  }
+  
+  // If no unit found, treat entire rest as item (e.g., "3 eggs" -> unit: "", item: "eggs")
+  return { unit: '', item: rest }
+}
+
+/**
+ * Scale an ingredient string by a multiplier
+ * Example: scaleIngredient("2 cups flour", 3) -> "6 cups flour"
+ * Rounds scaled quantities to the nearest tenth (e.g., 0.51 -> 0.5, 0.56 -> 0.6)
+ */
+export function scaleIngredient(ingredientStr: string, multiplier: number): string {
+  if (multiplier === 1) return ingredientStr
+  
+  const quantity = parseIngredientQuantity(ingredientStr)
+  const { unit, item } = parseIngredientUnitAndItem(ingredientStr)
+  
+  const scaledQuantity = quantity * multiplier
+  // Round to nearest tenth (one decimal place)
+  const roundedQuantity = Math.round(scaledQuantity * 10) / 10
+  
+  if (unit) {
+    return `${roundedQuantity} ${unit} ${item}`
+  } else {
+    return `${roundedQuantity} ${item}`
+  }
+}
+
 export const getIngredients = (recipe: Recipe): Ingredient[] => {
     if (!recipe.ingredients) return [];
     

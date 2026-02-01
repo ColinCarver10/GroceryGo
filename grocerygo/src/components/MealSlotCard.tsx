@@ -2,7 +2,7 @@
 
 import type { MealPlanRecipe, Recipe, Ingredient } from '@/types/database'
 import RecipeCardActions from '@/components/RecipeCardActions'
-import { getIngredients } from '@/utils/mealPlanUtils'
+import { getIngredients, scaleIngredient } from '@/utils/mealPlanUtils'
 
 export interface MealSlotCardProps {
   mealPlanRecipe: MealPlanRecipe & { recipe: Recipe }
@@ -34,7 +34,13 @@ export default function MealSlotCard({
     )
   )
   const primaryMealType = uniqueMealTypes[0]
-  const ingredients = getIngredients(recipe)
+  const baseIngredients = getIngredients(recipe)
+  const portionMultiplier = mealPlanRecipe.portion_multiplier ?? 1
+  // Scale ingredients by portion multiplier for this specific meal slot
+  const ingredients = baseIngredients.map(ing => ({
+    ...ing,
+    ingredient: scaleIngredient(ing.ingredient, portionMultiplier)
+  }))
 
   // Get all other days with the same recipe to show planned days
   const getPlannedDays = () => {
@@ -81,6 +87,14 @@ export default function MealSlotCard({
 
   const plannedDays = getPlannedDays()
 
+  // Calculate total weekly servings when recipe is used multiple times
+  const totalWeeklyServings = allMealPlanRecipes
+    ?.filter(mpr => String(mpr.recipe_id) === String(mealPlanRecipe.recipe_id))
+    .reduce((sum, mpr) => sum + (mpr.portion_multiplier ?? 1), 0) ?? 0
+
+  const currentSlotServings = mealPlanRecipe.portion_multiplier ?? 1
+  const showWeeklyTotal = totalWeeklyServings > currentSlotServings && totalWeeklyServings > 0
+
   return (
     <div className="rounded-xl border-2 border-gray-200 bg-white p-3 sm:p-4 md:p-6 transition-all hover:border-[var(--gg-primary)] hover:shadow-md flex flex-col h-full">
       <div className="flex items-start justify-between mb-2 sm:mb-3 md:mb-4">
@@ -116,6 +130,15 @@ export default function MealSlotCard({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 12h14M5 16h14" />
             </svg>
             ×{mealPlanRecipe.portion_multiplier}
+          </span>
+        )}
+        {showWeeklyTotal && (
+          <span className="flex items-center gap-1 font-semibold text-[var(--gg-primary)]">
+            <svg className="h-3 w-3 sm:h-4 sm:w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+            <span className="hidden sm:inline">Total: {totalWeeklyServings} servings this week</span>
+            <span className="sm:hidden">{totalWeeklyServings} total</span>
           </span>
         )}
       </div>

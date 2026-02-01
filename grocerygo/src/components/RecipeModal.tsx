@@ -5,7 +5,7 @@ import posthog from 'posthog-js'
 import type { Ingredient, Recipe } from '@/types/database'
 import RecipeAdjustments from './RecipeAdjustments'
 import { askRecipeCookingQuestion } from '@/app/actions/recipeCookingAssistant'
-import { getIngredients, getRecipeSteps } from '@/utils/mealPlanUtils';
+import { getIngredients, getRecipeSteps, scaleIngredient } from '@/utils/mealPlanUtils';
 
 interface RecipeModalProps {
   recipe: Recipe
@@ -45,7 +45,34 @@ export default function RecipeModal({
   plannedSlots,
   excludeDate
 }: RecipeModalProps) {
+  // State for batch cook mode
+  const [isBatchCookMode, setIsBatchCookMode] = useState(false)
+  
   const totalPlannedPortions = plannedSlots?.reduce((sum, slot) => sum + slot.portionMultiplier, 0)
+
+  // Get the portion multiplier for the clicked slot (matching excludeDate)
+  // If excludeDate matches a slot, use that slot's multiplier; otherwise use first slot's multiplier or 1
+  const getPortionMultiplierForDisplay = (): number => {
+    if (!plannedSlots || plannedSlots.length === 0) return 1
+    if (excludeDate && plannedSlots.length > 0) {
+      const clickedSlot = plannedSlots.find(slot => slot.plannedDate === excludeDate)
+      if (clickedSlot) return clickedSlot.portionMultiplier
+    }
+    // Default to first slot's multiplier if no match found
+    return plannedSlots[0]?.portionMultiplier ?? 1
+  }
+
+  const portionMultiplier = getPortionMultiplierForDisplay()
+  const baseIngredients = getIngredients(recipe)
+  // Determine multiplier: use totalPlannedPortions if batch cook mode is enabled, otherwise use portionMultiplier
+  const multiplier = isBatchCookMode && totalPlannedPortions 
+    ? totalPlannedPortions 
+    : portionMultiplier
+  // Scale ingredients by the selected multiplier
+  const scaledIngredients = baseIngredients.map(ing => ({
+    ...ing,
+    ingredient: scaleIngredient(ing.ingredient, multiplier)
+  }))
 
   const formatPlannedDate = (value?: string | null) => {
     if (!value) return null
@@ -109,12 +136,13 @@ export default function RecipeModal({
     }
   }, [isOpen, onClose])
 
-  // Reset chat when modal closes
+  // Reset chat and batch cook mode when modal closes
   useEffect(() => {
     if (!isOpen) {
       setChatMessages([])
       setCurrentQuestion('')
       setAskError(null)
+      setIsBatchCookMode(false)
     }
   }, [isOpen])
 
@@ -192,13 +220,13 @@ export default function RecipeModal({
         >
           {/* Header */}
           <div className="sticky top-0 bg-white border-b border-gray-200 px-4 sm:px-8 py-4 sm:py-6 flex items-start justify-between z-10">
-            <div className="flex-1 pr-2 sm:pr-8 min-w-0">
+            <div className="flex-1 min-w-0">
               <h2 className="text-xl sm:text-3xl font-bold text-gray-900 mb-2 sm:mb-3 capitalize line-clamp-2">
                 {recipe.name}
               </h2>
-              <div className="flex flex-wrap gap-2 sm:gap-4 text-xs sm:text-sm text-gray-600">
+              <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs sm:text-sm text-gray-600">
                 {recipe.meal_type && (
-                  <span className="inline-flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-3 py-0.5 sm:py-1 rounded-full bg-[var(--gg-primary)]">
+                  <span className="inline-flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-3 py-0.5 sm:py-1 rounded-full bg-[var(--gg-primary)] flex-shrink-0">
                     <svg className="h-3 w-3 sm:h-4 sm:w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
                     </svg>
@@ -206,28 +234,65 @@ export default function RecipeModal({
                   </span>
                 )}
                 {recipe.prep_time_minutes && (
-                  <span className="flex items-center gap-1 sm:gap-2">
+                  <span className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
                     <svg className="h-4 w-4 sm:h-5 sm:w-5 text-[var(--gg-primary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
-                    <span className="font-medium">{recipe.prep_time_minutes}<span className="hidden sm:inline"> minutes</span><span className="sm:hidden">m</span></span>
+                    <span className="font-medium whitespace-nowrap">{recipe.prep_time_minutes}<span className="hidden sm:inline"> minutes</span><span className="sm:hidden">m</span></span>
                   </span>
                 )}
                 {plannedDays.length > 0 && (
-                  <span className="hidden sm:flex items-center gap-2">
+                  <span className="hidden sm:flex items-center gap-2 flex-shrink-0">
                     <svg className="h-5 w-5 text-[var(--gg-primary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                     </svg>
-                    <span className="font-medium">Also planned for {plannedDays.join(', ')}</span>
+                    <span className="font-medium whitespace-nowrap">Also planned for {plannedDays.join(', ')}</span>
+                  </span>
+                )}
+                {totalPlannedPortions && totalPlannedPortions > 0 && plannedSlots && plannedSlots.length > 1 && (
+                  <span className="flex items-center gap-2 font-semibold text-[var(--gg-primary)] flex-shrink-0">
+                    <svg className="h-5 w-5 text-[var(--gg-primary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                    </svg>
+                    <span className="font-medium whitespace-nowrap">Total: {totalPlannedPortions} servings this week</span>
                   </span>
                 )}
                 {recipe.difficulty && (
-                  <span className="flex items-center gap-1 sm:gap-2">
+                  <span className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
                     <svg className="h-4 w-4 sm:h-5 sm:w-5 text-[var(--gg-primary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                     </svg>
-                    <span className="font-medium capitalize">{recipe.difficulty}</span>
+                    <span className="font-medium capitalize whitespace-nowrap">{recipe.difficulty}</span>
                   </span>
+                )}
+                {/* Batch Cook Mode Toggle - Only show if recipe appears multiple times */}
+                {plannedSlots && plannedSlots.length > 1 && (
+                  <label className="flex items-center gap-1.5 sm:gap-2 cursor-pointer group flex-shrink-0 ml-auto">
+                    <span className="text-xs sm:text-sm font-medium text-gray-700 group-hover:text-gray-900 whitespace-nowrap">
+                      <span className="hidden sm:inline">Batch Cook</span>
+                      <span className="sm:hidden">Batch</span>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={isBatchCookMode}
+                      onChange={(e) => setIsBatchCookMode(e.target.checked)}
+                      className="sr-only"
+                      aria-label="Batch cook mode"
+                    />
+                    <div 
+                      role="switch"
+                      aria-checked={isBatchCookMode}
+                      className={`relative inline-flex h-5 w-9 sm:h-6 sm:w-11 items-center rounded-full transition-colors duration-200 ease-in-out focus-within:outline-none focus-within:ring-2 focus-within:ring-[var(--gg-primary)] focus-within:ring-offset-2 flex-shrink-0 ${
+                        isBatchCookMode ? 'bg-[var(--gg-primary)]' : 'bg-gray-300'
+                      }`}
+                    >
+                      <span
+                        className={`absolute inline-block h-3.5 w-3.5 sm:h-4 sm:w-4 rounded-full bg-white shadow-md transform transition-transform duration-200 ease-in-out ${
+                          isBatchCookMode ? 'translate-x-5 sm:translate-x-6' : 'translate-x-0.5 sm:translate-x-1'
+                        }`}
+                      />
+                    </div>
+                  </label>
                 )}
               </div>
             </div>
@@ -257,7 +322,7 @@ export default function RecipeModal({
                   Ingredients
                 </h3>
                 <div className="space-y-2 sm:space-y-3">
-                  {getIngredients(recipe).map((ingredient: Ingredient, index: number) => (
+                  {scaledIngredients.map((ingredient: Ingredient, index: number) => (
                     <div 
                       key={index}
                       className="flex items-start gap-2 sm:gap-3 p-2 sm:p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors"

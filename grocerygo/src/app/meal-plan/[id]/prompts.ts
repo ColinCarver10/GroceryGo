@@ -82,12 +82,22 @@ export const replaceRecipePrompt = (
   const isBudgetConscious = goals.includes('Save money on groceries') || budgetResponse === '$50-100' || priorities[0] === 'Cost efficiency' || priorities[1] === 'Cost efficiency'
   
   let proteinRequirement = ''
-  if (requiresProtein) {
+  if (isBudgetConscious) {
+    // Always show budget-friendly protein options when budget-conscious
     proteinRequirement = `\n### Protein Requirement:
-- **TARGET: 0.5 lb (8 oz) protein TOTAL per recipe** (not per serving)
+${requiresProtein ? '- EVERY recipe MUST include a quality protein source\n' : ''}- **TARGET: ${requiresProtein ? '0.5 lbs (8 oz)' : '0.25 lbs (4 oz)'} protein per serving**
+- **BUDGET-FRIENDLY PROTEIN OPTIONS (use these):**
+  - **Animal proteins:** chicken thighs/drumsticks, ground beef/turkey (80/20 or leaner), pork shoulder/butt, canned tuna, eggs, whole chicken
+  - **Plant proteins (most cost-effective):** beans/lentils/chickpeas, black beans, kidney beans, pinto beans, tofu
+  - **Breakfast:** eggs, Greek yogurt (store brand), cottage cheese, peanut butter
+- **NEVER USE when budget-conscious:** salmon, shrimp, lobster, crab, ribeye steak, filet mignon, lamb, premium cuts, fresh tuna, swordfish, or any seafood/fish over $8/lb
+- **Cost-saving strategy:** It's acceptable to use the same protein source across multiple meals (e.g., use chicken thighs in 3-4 meals) to maximize cost efficiency\n`
+  } else if (requiresProtein) {
+    // Show regular protein requirements when protein is required but not budget-conscious
+    proteinRequirement = `\n### Protein Requirement:
+- **TARGET: 0.5 lbs (8 oz) protein per serving**
 - Animal: chicken, turkey, beef, pork, fish, seafood, eggs, Greek yogurt, cottage cheese
-- Plant: tofu, tempeh, legumes, quinoa, nuts, seeds
-${isBudgetConscious ? `- Budget proteins: chicken thighs, ground beef/turkey, pork shoulder, canned tuna, eggs, beans/lentils, tofu (avoid ribeye, salmon, shrimp, lamb)` : ''}\n`
+- Plant: tofu, tempeh, legumes, quinoa, nuts, seeds\n`
   }
   
   return `You are an expert meal planner generating a single replacement recipe.
@@ -171,11 +181,21 @@ export const replaceRecipeWithTotalIngredientsPrompt = (
   
   let proteinRequirement = ''
   if (requiresProtein) {
-    proteinRequirement = `\n### Protein Requirement:
-- **TARGET: 0.5 lb (8 oz) protein TOTAL per recipe** (not per serving)
+    if (isBudgetConscious) {
+      proteinRequirement = `\n### Protein Requirement:
+- **TARGET: 0.5 lbs (8 oz) protein per serving**
+- **BUDGET-FRIENDLY PROTEIN OPTIONS (use these):**
+  - **Animal proteins:** chicken thighs/drumsticks, ground beef/turkey (80/20 or leaner), pork shoulder/butt, canned tuna, eggs, whole chicken
+  - **Plant proteins (most cost-effective):** beans/lentils/chickpeas, black beans, kidney beans, pinto beans, tofu
+  - **Breakfast:** eggs, Greek yogurt (store brand), cottage cheese, peanut butter
+- **NEVER USE when budget-conscious:** salmon, shrimp, lobster, crab, ribeye steak, filet mignon, lamb, premium cuts, fresh tuna, swordfish, or any seafood/fish over $8/lb
+- **Cost-saving strategy:** It's acceptable to use the same protein source across multiple meals (e.g., use chicken thighs in 3-4 meals) to maximize cost efficiency\n`
+    } else {
+      proteinRequirement = `\n### Protein Requirement:
+- **TARGET: 0.5 lbs (8 oz) protein per serving**
 - Animal: chicken, turkey, beef, pork, fish, seafood, eggs, Greek yogurt, cottage cheese
-- Plant: tofu, tempeh, legumes, quinoa, nuts, seeds
-${isBudgetConscious ? `- Budget proteins: chicken thighs, ground beef/turkey, pork shoulder, canned tuna, eggs, beans/lentils, tofu (avoid ribeye, salmon, shrimp, lamb)` : ''}\n`
+- Plant: tofu, tempeh, legumes, quinoa, nuts, seeds\n`
+    }
   }
   
   let candidateRecipeSection = ''
@@ -329,13 +349,45 @@ export const bulkAdjustmentPrompt = (
   const budgetResponse = surveyData['3'] || ''
   const isBudgetConscious = goals.includes('Save money on groceries') || budgetResponse === '$50-100' || priorities[0] === 'Cost efficiency' || priorities[1] === 'Cost efficiency'
   
+  // Extract household size (Question 2)
+  const householdSize = surveyData['2'] as string | undefined
+  const getServingsPerMeal = (size: string | undefined): number => {
+    switch (size) {
+      case 'Just me': return 1
+      case '2 people': return 2
+      case '3-4 people': return 3
+      case '5+ people': return 4
+      default: return 1
+    }
+  }
+  const servingsPerMeal = getServingsPerMeal(householdSize)
+  
   let proteinRequirement = ''
-  if (requiresProtein) {
+  if (isBudgetConscious) {
+    // Always show budget-friendly protein options when budget-conscious
     proteinRequirement = `\n### Protein Requirement:
-- **TARGET: 0.5 lb (8 oz) protein TOTAL per recipe** (not per serving)
+${requiresProtein ? '- EVERY recipe MUST include a quality protein source\n' : ''}- **TARGET: ${requiresProtein ? '0.5 lbs (8 oz)' : '0.25 lbs (4 oz)'} protein per serving**
+- **BUDGET-FRIENDLY PROTEIN OPTIONS (use these):**
+  - **Animal proteins:** chicken thighs/drumsticks, ground beef/turkey (80/20 or leaner), pork shoulder/butt, canned tuna, eggs, whole chicken
+  - **Plant proteins (most cost-effective):** beans/lentils/chickpeas, black beans, kidney beans, pinto beans, tofu
+  - **Breakfast:** eggs, Greek yogurt (store brand), cottage cheese, peanut butter
+- **NEVER USE when budget-conscious:** salmon, shrimp, lobster, crab, ribeye steak, filet mignon, lamb, premium cuts, fresh tuna, swordfish, or any seafood/fish over $8/lb
+- **Cost-saving strategy:** It's acceptable to use the same protein source across multiple meals (e.g., use chicken thighs in 3-4 meals) to maximize cost efficiency\n`
+  } else if (requiresProtein) {
+    // Show regular protein requirements when protein is required but not budget-conscious
+    proteinRequirement = `\n### Protein Requirement:
+- **TARGET: 0.5 lbs (8 oz) protein per serving**
 - Animal: chicken, turkey, beef, pork, fish, seafood, eggs, Greek yogurt, cottage cheese
-- Plant: tofu, tempeh, legumes, quinoa, nuts, seeds
-${isBudgetConscious ? `- Budget proteins: chicken thighs, ground beef/turkey, pork shoulder, canned tuna, eggs, beans/lentils, tofu (avoid ribeye, salmon, shrimp, lamb)` : ''}\n`
+- Plant: tofu, tempeh, legumes, quinoa, nuts, seeds\n`
+  }
+  
+  let householdSizeSection = ''
+  if (householdSize) {
+    householdSizeSection = `\n### Household Size (Question 2) - Servings per Meal:
+- Household size: "${householdSize}"
+- Servings per meal: ${servingsPerMeal}
+- When generating recipes, adjust ingredient quantities to match ${servingsPerMeal} serving(s) per meal
+- Maintain ingredient ratios when scaling recipes to the appropriate serving size\n`
   }
 
   /**
@@ -348,7 +400,7 @@ ${isBudgetConscious ? `- Budget proteins: chicken thighs, ground beef/turkey, po
 
 ### User Preferences:
 ${JSON.stringify(surveyData, null, 2)}
-${ingredientPreferencesSection}${proteinRequirement}
+${ingredientPreferencesSection}${proteinRequirement}${householdSizeSection}
 ### Special Optimizations to Apply:
 ${adjustmentInstructions.join('\n')}
 
@@ -391,6 +443,10 @@ ${MEASUREMENT_UNITS_PROMPT}
 - Recipe ingredients show quantities for ONE serving (e.g., "0.5 lb chicken")
 - Grocery list must MULTIPLY recipe quantities by servings to get total needed
 - Example: Recipe has "0.5 lb chicken" with 4 servings → grocery list shows "2 lb chicken"
+${householdSize ? `\n**CRITICAL - Recipe Serving Sizes:**
+- All recipes should be adjusted to ${servingsPerMeal} serving(s) per meal (household size: "${householdSize}")
+- When modifying recipes, scale ingredient quantities proportionally to match ${servingsPerMeal} serving(s)
+- Maintain ingredient ratios when scaling` : ''}
 
 **Important**: Every recipe MUST include a "mealType" field indicating the type of meal (Breakfast, Lunch, or Dinner).`;
 };

@@ -19,6 +19,19 @@ interface MealSelection {
   dinner: number
 }
 
+/**
+ * Map household size (Question 2) to servings per meal
+ */
+function getServingsPerMeal(householdSize: string | undefined): number {
+  switch (householdSize) {
+    case 'Just me': return 1
+    case '2 people': return 2
+    case '3-4 people': return 3
+    case '5+ people': return 4
+    default: return 1
+  }
+}
+
 export async function POST(request: NextRequest) {
   let mealPlanId: string | undefined
   let mealSelection: MealSelection | undefined
@@ -169,6 +182,10 @@ export async function POST(request: NextRequest) {
       .join('\n')
 
     const surveyJson = surveyData ?? {}
+    // Extract household size (Question 2)
+    const householdSize = (surveyJson as Record<string, unknown>)?.['2'] as string | undefined
+    const servingsPerMeal = getServingsPerMeal(householdSize)
+    
     // Use questions '12' (Foods You Like) and '13' (Foods You Dislike)
     // Fall back to old fields for backward compatibility
     const favoredIngredients =
@@ -198,7 +215,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const enhancedPrompt = `${mealPlanFromSurveyPrompt}
+    // Check if protein requirement applies
+    const goals = (surveyJson as Record<string, unknown>)?.['9'] as string[] || []
+    const priorities = (surveyJson as Record<string, unknown>)?.['11'] as string[] || []
+    const requiresProtein = goals.includes('Eat healthier') || priorities[0] === 'Nutrition'
+
+    const enhancedPrompt = `${mealPlanFromSurveyPrompt(surveyData)}
 
 ### User Input:
 ${JSON.stringify(surveyData, null, 2)}
@@ -242,15 +264,27 @@ You MUST MODIFY and use ALL provided recipes:
 3) Recipes may be reused across multiple slots by referencing the same recipeId in the schedule (after modification).
 4) When cost efficiency is a priority, MODIFY recipes to consolidate ingredients - use the same ingredients across multiple recipes to maximize reuse.
 
+### Household Size (Question 2) - Servings per Meal:
+Based on user's household size, set portionMultiplier for each schedule entry:
+- "Just me" → portionMultiplier = 1 (1 serving per meal)
+- "2 people" → portionMultiplier = 2 (2 servings per meal)
+- "3-4 people" → portionMultiplier = 3 (3 servings per meal)
+- "5+ people" → portionMultiplier = 4 (4 servings per meal)
+
+IMPORTANT: Each schedule entry's portionMultiplier should reflect servings needed for that specific meal slot based on household size. The user's household size is: "${householdSize || 'Just me'}" which means ${servingsPerMeal} serving(s) per meal.
+
+CRITICAL: When modifying recipes, you MUST adjust ingredient quantities to match the serving size. The provided recipes may have different serving sizes - you need to scale all ingredients proportionally to match the target serving size (${servingsPerMeal} serving(s) per meal). Maintain ingredient ratios when scaling.
+
 ### Servings + Portions rule (MANDATORY)
 - Each schedule entry has a portionMultiplier (integer >= 1).
+- Set portionMultiplier = ${servingsPerMeal} for ALL schedule entries (based on household size: "${householdSize || 'Just me'}").
 - For each recipeId, compute: totalPortionsAssigned = sum(portionMultiplier) across all schedule entries using that recipeId.
 - Set recipes[].servings = totalPortionsAssigned for that recipe.
-  (Example: if recipe-abc appears in 3 slots with multipliers 2,1,1 then servings must be 4)
+  (Example: if recipe-abc appears in 3 slots with multipliers ${servingsPerMeal},${servingsPerMeal},${servingsPerMeal} then servings must be ${servingsPerMeal * 3})
 
 ### Required process (follow exactly)
 1) MODIFY each provided recipe to align with user goals:
-   - For high protein goals: Add quality protein sources if missing
+   ${requiresProtein ? '- For high protein goals: Add quality protein sources if missing' : ''}
    - For cost efficiency: Consolidate ingredients across ALL recipes (use same ingredients in multiple recipes)
    - Remove/replace excluded ingredients
    - Adjust for dietary restrictions and allergies
@@ -260,7 +294,7 @@ You MUST MODIFY and use ALL provided recipes:
 3) For each slot:
    - Use the correct day + mealType from the slot label
    - recipeId must reference one of the modified recipes
-   - portionMultiplier must be an integer >= 1 (default 1 unless user household needs more)
+   - portionMultiplier must be ${servingsPerMeal} for ALL slots (based on household size: "${householdSize || 'Just me'}")
 4) Standardize ingredient names across ALL recipes:
    - Use consistent names (e.g., always "eggs" not "egg", always "chicken breast" not variations)
    - Consolidate similar ingredients (e.g., "chicken breast", "boneless chicken breast" → use "chicken breast")
@@ -274,8 +308,9 @@ You MUST MODIFY and use ALL provided recipes:
    - schedule length equals ${resolvedSlots.length} and covers every slot exactly once.
    - Every schedule entry references a valid recipe ID.
    - Every recipe.servings equals the total portions assigned to that recipe across schedule.
+   - Every schedule entry's portionMultiplier equals ${servingsPerMeal} (household size: "${householdSize || 'Just me'}").
    - Units comply (no "tbsp"; use "tbs" or "tb").
-   - Protein requirement satisfied for every recipe when triggered (recipes must be modified to include quality protein sources).
+   ${requiresProtein ? '- Protein requirement satisfied for every recipe when triggered (recipes must be modified to include quality protein sources).' : ''}
    - If cost efficiency is a priority: ingredients are consolidated across recipes (same ingredients used in multiple recipes).
    - **INGREDIENT CONSOLIDATION: All recipes use consistent ingredient names, grocery list uses same names and consolidates quantities (no duplicates).**
 

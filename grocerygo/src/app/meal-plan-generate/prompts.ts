@@ -1,3 +1,5 @@
+import type { SurveyResponse } from '@/types/database'
+
 const MEASUREMENT_UNITS_PROMPT = `
 When specifying ingredient quantities, use these standardized measurement units based on Instacart's API requirements:
 
@@ -46,7 +48,105 @@ Important Rules:
 6. Include both quantity and unit in the format: "quantity unit" (e.g., "2 cups", "1 lb", "3 each")
 `;
 
-const mealPlanFromSurveyPrompt = `You are an expert meal planner. Build a personalized meal plan by MODIFYING provided recipes to align with user goals, then scheduling them.
+const mealPlanFromSurveyPrompt = (surveyData: SurveyResponse) => {
+  // Extract survey data with fallbacks
+  const goals = (surveyData['9'] || []) as string[]
+  const priorities = (surveyData['11'] || []) as string[]
+  const flavors = (surveyData['8'] || []) as string[]
+  const budgetResponse = (surveyData['3'] || '') as string
+  
+  // Determine which sections to include
+  const requiresProtein = goals.includes('Eat healthier') || priorities[0] === 'Nutrition'
+  const hasPriorities = Array.isArray(priorities) && priorities.length > 0
+  const hasFlavors = Array.isArray(flavors) && flavors.length > 0
+  const hasGoals = Array.isArray(goals) && goals.length > 0
+  const isBudgetConscious = goals.includes('Save money on groceries') || budgetResponse === '$50-100' || priorities[0] === 'Cost efficiency' || priorities[1] === 'Cost efficiency'
+  
+  // Build protein requirements section conditionally
+  let proteinRequirementsSection = ''
+  if (isBudgetConscious) {
+    // Always show budget-friendly protein options when budget-conscious
+    proteinRequirementsSection = `### Protein Requirements:
+${requiresProtein ? '- EVERY recipe MUST include a quality protein source\n' : ''}- **TARGET: ${requiresProtein ? '0.5 lbs (8 oz)' : '0.25 lbs (4 oz)'} protein per serving**
+- **BUDGET-FRIENDLY PROTEIN OPTIONS (use these):**
+  - **Animal proteins:** chicken thighs/drumsticks, ground beef/turkey (80/20 or leaner), pork shoulder/butt, canned tuna, eggs, whole chicken
+  - **Plant proteins (most cost-effective):** beans/lentils/chickpeas, black beans, kidney beans, pinto beans, tofu
+  - **Breakfast:** eggs, Greek yogurt (store brand), cottage cheese, peanut butter
+- **NEVER USE when budget-conscious:** salmon, shrimp, lobster, crab, ribeye steak, filet mignon, lamb, premium cuts, fresh tuna, swordfish, or any seafood/fish over $8/lb
+- **Cost-saving strategy:** It's acceptable to use the same protein source across multiple meals (e.g., use chicken thighs in 3-4 meals) to maximize cost efficiency
+`
+  } else if (requiresProtein) {
+    // Show regular protein requirements when protein is required but not budget-conscious
+    proteinRequirementsSection = `### Protein Requirements:
+- EVERY recipe MUST include a quality protein source
+- **TARGET: 0.5 lbs (8 oz) protein per serving**
+- Animal: chicken, turkey, beef, pork, fish/seafood, eggs, Greek yogurt, cottage cheese
+- Plant: tofu, tempeh, beans/lentils/chickpeas, quinoa, nuts, seeds
+- Breakfast: eggs, Greek yogurt, cottage cheese, protein powder, nut butters
+`
+  }
+  
+  // Build user priorities section conditionally
+  let userPrioritiesSection = ''
+  if (hasPriorities) {
+    userPrioritiesSection = `### User Priorities (Question 11) — follow ranked order:
+- If Cost efficiency is #1:
+  - CRITICAL: MODIFY ALL recipes to CONSOLIDATE ingredients. When multiple recipes need similar items, modify them to use the EXACT SAME ingredients.
+  - Examples: If one recipe uses bell peppers and another uses different vegetables, modify both to use bell peppers. If one uses chicken and another uses beef, consider modifying both to use the same protein source.
+  - Maximize ingredient reuse across ALL recipes to reduce unique grocery items
+  - Update recipes to use overlapping ingredients and pantry staples
+  - The goal is to minimize the number of unique ingredients in the grocery list by consolidating across recipes
+- If Nutrition is #1:
+  - MODIFY recipes to use whole foods, veggies, lean proteins; replace overly processed choices
+  - Protein requirement becomes mandatory (see above)
+- If Time saving is #1:
+  - MODIFY recipes to use simpler cooking methods, fewer steps
+  - Update recipes to use shortcuts: rotisserie chicken, bagged salad, frozen veg, jarred sauces
+
+`
+  }
+  
+  // Build flavors section conditionally
+  let flavorsSection = ''
+  if (hasFlavors) {
+    flavorsSection = `### Flavors (Question 8):
+When modifying recipes, adjust flavors to match requested preferences (Savory/Spicy/Sweet/etc.) without violating exclusions. Add spices, seasonings, or flavor components as needed.
+
+`
+  }
+  
+  // Build goals section conditionally
+  let goalsSection = ''
+  if (hasGoals) {
+    goalsSection = `### Goals (Question 9):
+- Eat healthier: MODIFY recipes to include mandatory protein + healthier choices (replace processed items with whole foods)
+- Learn new recipes: MODIFY 1–2 recipes to include a slightly new technique (still within skill/time constraints)
+- Save money: MODIFY recipes to maximize ingredient reuse + use low-cost ingredients; CONSOLIDATE ingredients across ALL recipes (modify recipes to use the same ingredients where possible to reduce grocery costs)
+- Reduce waste: MODIFY recipes to use ingredients fully across multiple recipes (ensure shared ingredients are used completely)
+
+`
+  }
+  
+  // Build validation checklist with conditional protein requirement
+  let validationChecklist = `### Validation Checklist (must satisfy before output):
+1) schedule length === meal_slots length (every slot filled)
+2) Every schedule.recipeId exists in recipes[].id
+3) No excluded ingredients appear in any modified recipe
+4) Units comply with Measurement Units rules (no tbsp)
+${requiresProtein ? '5) Protein requirement satisfied for every recipe when triggered (recipes must be modified to include quality protein sources)' : ''}
+${requiresProtein ? '6' : '5'}) Recipes are modified to align with user goals:
+   - If cost efficiency/save money: ingredients are consolidated across recipes (same ingredients used in multiple recipes)
+   ${requiresProtein ? '- If nutrition/eat healthier: quality protein sources are present in all recipes' : ''}
+   - All other goals are addressed through modifications
+${requiresProtein ? '7' : '6'}) ALL provided recipes are used and modified (one distinct modified recipe per provided recipe)
+${requiresProtein ? '8' : '7'}) **INGREDIENT CONSOLIDATION VERIFIED:**
+   - All recipes use consistent ingredient names (no variations like "egg" vs "eggs" or "chicken" vs "chicken breast")
+   - Grocery list uses exact same ingredient names as recipes
+   - Grocery list has no duplicate entries for the same ingredient (quantities are summed)
+   - Pluralization is consistent (always plural for countable items)
+`
+  
+  return `You are an expert meal planner. Build a personalized meal plan by MODIFYING provided recipes to align with user goals, then scheduling them.
 
 You MAY reuse the same recipe across multiple meal slots (duplicate recipes across the schedule is allowed and encouraged when it supports budget/time/ingredient reuse), but you must still follow all restrictions.
 
@@ -75,8 +175,8 @@ You will be given:
 ### Your Task:
 Using the provided_recipes (one per distinct meal type):
 1) MODIFY each recipe to align with user goals and preferences:
-   - For high protein goals: Ensure EVERY recipe includes a quality protein source. If a recipe lacks protein, ADD a quality protein source (e.g., chicken, fish, tofu, beans, eggs, Greek yogurt) that fits the dish.
-   - For cost efficiency goals: CONSOLIDATE ingredients across ALL recipes. Modify recipes to use the same ingredients where possible (e.g., if multiple recipes need vegetables, use the same vegetables; if multiple recipes need proteins, use the same protein source). This reduces grocery costs by maximizing ingredient reuse.
+   ${requiresProtein ? '- For high protein goals: Ensure EVERY recipe includes a quality protein source. If a recipe lacks protein, ADD a quality protein source (e.g., chicken, fish, tofu, beans, eggs, Greek yogurt) that fits the dish.' : ''}
+   - For cost efficiency goals: CONSOLIDATE ingredients across ALL recipes. Modify recipes to use the same ingredients where possible (e.g., if multiple recipes need vegetables, use the same vegetables; if multiple recipes need proteins, sometimes swap expensive protein source, but not always). This reduces grocery costs by maximizing ingredient reuse.
    - Adjust quantities, swap ingredients, or add/remove components as needed to meet goals
    - Remove or replace any excluded ingredients
    - Ensure ingredients have valid quantities + units
@@ -97,40 +197,25 @@ F) All recipes MUST include: id, name, mealType, servings, ingredients, steps.
 G) Follow Measurement Units rules exactly (no "tbsp"; use "tbs" or "tb").
 H) You MUST use ALL provided recipes. Each provided recipe becomes one distinct recipe in your output (modified to align with goals).
 
-### Protein Requirements:
-If "Nutrition" is ranked #1 in priorities (Question 11) OR "Eat healthier" is included in goals (Question 9):
-- EVERY recipe MUST include a quality protein source
-- **TARGET: 0.5 lb (8 oz) protein TOTAL per recipe** (not per serving)
-- Animal: chicken, turkey, beef, pork, fish/seafood, eggs, Greek yogurt, cottage cheese
-- Plant: tofu, tempeh, beans/lentils/chickpeas, quinoa, nuts, seeds
-- Breakfast: eggs, Greek yogurt, cottage cheese, protein powder, nut butters
+### Household Size (Question 2) - Servings per Meal:
+Based on user's household size from Question 2, set portionMultiplier for each schedule entry:
+- "Just me" → portionMultiplier = 1 (1 serving per meal)
+- "2 people" → portionMultiplier = 2 (2 servings per meal)
+- "3-4 people" → portionMultiplier = 3 (3 servings per meal)
+- "5+ people" → portionMultiplier = 4 (4 servings per meal)
 
-**Budget-Conscious Protein:** If "Save money" goal OR "$50-100" budget OR high "Cost efficiency" priority:
-- USE: chicken thighs/drumsticks, ground beef/turkey, pork shoulder, canned tuna, eggs, beans/lentils, tofu
-- AVOID: ribeye, salmon, shrimp, lamb, premium cuts
-- Less protein diversity is acceptable when saving money
+IMPORTANT: 
+- Each schedule entry's portionMultiplier should reflect servings needed for that specific meal slot based on household size.
+- When modifying recipes, you MUST adjust ingredient quantities to match the serving size. The provided recipes may have different serving sizes - you need to scale all ingredients proportionally to match the target serving size. Maintain ingredient ratios when scaling.
+- Do NOT simply multiply all recipes by the same factor. Adjust each recipe's ingredients to match the appropriate serving size for the household.
 
-### Ingredient Quantity Sanity Check:
+${proteinRequirementsSection}### Ingredient Quantity Sanity Check:
 Before finalizing, verify each ingredient quantity makes sense for ONE serving:
 - Vegetables: 1-3 pieces per serving (e.g., 1 tomato, not 4)
 - Aromatics: reasonable amounts (2-3 garlic cloves, not 8)
 - If a quantity seems excessive for one person to eat, reduce it
 
-### User Priorities (Question 11) — follow ranked order:
-- If Cost efficiency is #1:
-  - CRITICAL: MODIFY ALL recipes to CONSOLIDATE ingredients. When multiple recipes need similar items, modify them to use the EXACT SAME ingredients.
-  - Examples: If one recipe uses bell peppers and another uses different vegetables, modify both to use bell peppers. If one uses chicken and another uses beef, consider modifying both to use the same protein source.
-  - Maximize ingredient reuse across ALL recipes to reduce unique grocery items
-  - Update recipes to use overlapping ingredients and pantry staples
-  - The goal is to minimize the number of unique ingredients in the grocery list by consolidating across recipes
-- If Nutrition is #1:
-  - MODIFY recipes to use whole foods, veggies, lean proteins; replace overly processed choices
-  - Protein requirement becomes mandatory (see above)
-- If Time saving is #1:
-  - MODIFY recipes to use simpler cooking methods, fewer steps
-  - Update recipes to use shortcuts: rotisserie chicken, bagged salad, frozen veg, jarred sauces
-
-### Budget Guidance (Question 3):
+${userPrioritiesSection}### Budget Guidance (Question 3):
 - "$50-100": MODIFY recipes to use low-cost ingredients + heavy ingredient reuse; CONSOLIDATE ingredients across ALL recipes to keep unique ingredients low (e.g., use the same vegetables, proteins, and pantry staples across multiple recipes)
 - "$101-200": moderate flexibility; still modify for ingredient reuse when possible
 - "$200+": flexible, but modify to avoid unnecessary specialty items
@@ -145,16 +230,7 @@ Before finalizing, verify each ingredient quantity makes sense for ONE serving:
 - Standard (30–45 min): moderate ok (may need minor time-saving modifications)
 - Extended (45+ min): complex ok (minimal modifications needed)
 
-### Flavors (Question 8):
-When modifying recipes, adjust flavors to match requested preferences (Savory/Spicy/Sweet/etc.) without violating exclusions. Add spices, seasonings, or flavor components as needed.
-
-### Goals (Question 9):
-- Eat healthier: MODIFY recipes to include mandatory protein + healthier choices (replace processed items with whole foods)
-- Learn new recipes: MODIFY 1–2 recipes to include a slightly new technique (still within skill/time constraints)
-- Save money: MODIFY recipes to maximize ingredient reuse + use low-cost ingredients; CONSOLIDATE ingredients across ALL recipes (modify recipes to use the same ingredients where possible to reduce grocery costs)
-- Reduce waste: MODIFY recipes to use ingredients fully across multiple recipes (ensure shared ingredients are used completely)
-
-### Measurement Units:
+${flavorsSection}${goalsSection}### Measurement Units:
 ${MEASUREMENT_UNITS_PROMPT}
 
 ---
@@ -182,7 +258,7 @@ ${MEASUREMENT_UNITS_PROMPT}
       "day": "Monday",
       "mealType": "Lunch",
       "recipeId": "provided_recipe_id",
-      "portionMultiplier": 1
+      "portionMultiplier": 1  // Set based on household size (Question 2): "Just me"=1, "2 people"=2, "3-4 people"=3, "5+ people"=4
     }
   ],
   "grocery_list": {
@@ -242,23 +318,8 @@ You MUST consolidate and standardize ingredient names across ALL recipes and the
    - Grocery list has consolidated quantities (no duplicate entries for the same ingredient)
    - Pluralization is consistent (always plural for countable items like eggs, tomatoes, onions)
 
-### Validation Checklist (must satisfy before output):
-1) schedule length === meal_slots length (every slot filled)
-2) Every schedule.recipeId exists in recipes[].id
-3) No excluded ingredients appear in any modified recipe
-4) Units comply with Measurement Units rules (no tbsp)
-5) Protein requirement satisfied for every recipe when triggered (recipes must be modified to include quality protein sources)
-6) Recipes are modified to align with user goals:
-   - If cost efficiency/save money: ingredients are consolidated across recipes (same ingredients used in multiple recipes)
-   - If nutrition/eat healthier: quality protein sources are present in all recipes
-   - All other goals are addressed through modifications
-7) ALL provided recipes are used and modified (one distinct modified recipe per provided recipe)
-8) **INGREDIENT CONSOLIDATION VERIFIED:**
-   - All recipes use consistent ingredient names (no variations like "egg" vs "eggs" or "chicken" vs "chicken breast")
-   - Grocery list uses exact same ingredient names as recipes
-   - Grocery list has no duplicate entries for the same ingredient (quantities are summed)
-   - Pluralization is consistent (always plural for countable items)
-`;
+${validationChecklist}`
+}
 
 const embeddingSentencePrompt = `You are generating a semantic search query for a recipe database.
 
