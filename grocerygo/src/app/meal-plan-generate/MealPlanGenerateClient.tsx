@@ -900,15 +900,23 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
                 <label htmlFor="start-date" className="block text-sm font-semibold text-gray-900 mb-2">
                   Select Start Date
                 </label>
-                <input
-                  type="date"
-                  id="start-date"
-                  value={startDate}
-                  onChange={(e) => handleDateChange(e.target.value)}
-                  onClick={(e) => (e.target as HTMLInputElement).showPicker?.()}
-                  min={new Date().toISOString().split('T')[0]}
-                  className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:border-[var(--gg-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--gg-primary)] focus:ring-opacity-20 text-gray-900 cursor-pointer"
-                />
+                <div className="relative">
+                  <input
+                    type="date"
+                    id="start-date"
+                    value={startDate}
+                    onChange={(e) => handleDateChange(e.target.value)}
+                    onClick={(e) => (e.target as HTMLInputElement).showPicker?.()}
+                    min={new Date().toISOString().split('T')[0]}
+                    placeholder="Select a date"
+                    className="gg-date-input w-full pl-4 pr-12 sm:pr-4 py-3 rounded-lg border border-gray-300 focus:border-[var(--gg-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--gg-primary)] focus:ring-opacity-20 text-gray-900 cursor-pointer"
+                  />
+                  <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 sm:hidden">
+                    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  </span>
+                </div>
                 {dateError && (
                   <p className="mt-2 text-sm text-red-600">{dateError}</p>
                 )}

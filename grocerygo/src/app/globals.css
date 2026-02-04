@@ -423,3 +423,13 @@ body {
 .gg-slider:focus::-webkit-slider-thumb {
   box-shadow: 0 0 0 4px rgba(45, 190, 96, 0.2);
 }
+
+@media (max-width: 640px) {
+  .gg-date-input::-webkit-calendar-picker-indicator {
+    opacity: 0;
+  }
+
+  .gg-date-input::-webkit-inner-spin-button {
+    display: none;
+  }
+}
