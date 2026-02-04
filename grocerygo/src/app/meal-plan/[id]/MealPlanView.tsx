@@ -20,6 +20,7 @@ import {
   // regenerateWithAdjustments, // COMMENTED OUT: Adjust plan functionality hidden temporarily
   saveCookingNote,
   updateShoppingListItemChecked,
+  moveSeasoningToItems,
   // scaleRecipeServings, // COMMENTED OUT: Scale servings functionality
   // swapIngredient, // COMMENTED OUT: Swap ingredient functionality
   // simplifyRecipe // COMMENTED OUT: Simplify recipe functionality
@@ -75,6 +76,12 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
       return type === 'item' ? `item-${item.item}` : `seasoning-${item.item}`
     }
     
+    // Normalize function for comparison
+    const normalizeName = (name: string) => name.toLowerCase().trim()
+    
+    // Create a set of item names that are in the items array (these were moved from seasonings)
+    const itemsSet = new Set(totalIngredients.items.map(item => normalizeName(item.item)))
+    
     // Add checked items from items array
     totalIngredients.items.forEach(item => {
       if (item.checked) {
@@ -83,7 +90,8 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
     })
     
     // Add checked items from seasonings array
-    // If a seasoning is checked, automatically move it to the main shopping list
+    // If a seasoning is checked, it should have been moved to items by updateShoppingListItemChecked
+    // But for backward compatibility, we still track checked seasonings that are still in seasonings
     totalIngredients.seasonings.forEach(item => {
       const seasoningId = `seasoning-${item.item}`
       if (item.checked) {
@@ -96,7 +104,37 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
     })
     
     setCheckedItems(checkedSet)
-    setMovedSeasonings(movedSeasoningsMap)
+    
+    // Preserve manually moved spices that haven't been persisted yet
+    // Check if any previously moved seasonings are still in the seasonings list
+    // (if they were moved to items, they won't be in seasonings anymore)
+    setMovedSeasonings(prevMoved => {
+      const newMap = new Map(movedSeasoningsMap)
+      
+      // Preserve manually moved spices that are still in seasonings (move hasn't completed yet)
+      // This handles the case where a spice was manually moved but the move hasn't completed,
+      // or where checking another item causes a refresh before the move completes
+      prevMoved.forEach((item, seasoningId) => {
+        const itemName = seasoningId.replace('seasoning-', '')
+        const normalizedName = normalizeName(itemName)
+        
+        // Only preserve if:
+        // 1. The seasoning still exists in the seasonings list (move hasn't completed or failed)
+        // 2. It's not already in the items array (move has completed successfully)
+        // 3. It's not already in the new map (already handled above as checked seasoning)
+        const stillInSeasonings = totalIngredients.seasonings.some(
+          s => normalizeName(s.item) === normalizedName
+        )
+        const movedToItems = itemsSet.has(normalizedName)
+        
+        if (stillInSeasonings && !movedToItems && !newMap.has(seasoningId)) {
+          // Preserve this manually moved spice
+          newMap.set(seasoningId, item)
+        }
+      })
+      
+      return newMap
+    })
   }, [totalIngredients])
   
   // Replace recipe flow state
@@ -1083,106 +1121,73 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
                   {/* Main Items */}
                   {(totalIngredients.items.length > 0 || movedSeasonings.size > 0) ? (
                     <div className="space-y-2 mb-8">
-                      {/* Regular items */}
-                      {totalIngredients.items.map((item) => {
-                        const itemId = `item-${item.item}`
-                        return (
-                          <div
-                            key={itemId}
-                            onClick={() => toggleItem(itemId)}
-                            className={`flex items-center gap-2 sm:gap-4 rounded-lg border-2 p-3 sm:p-4 transition-all cursor-pointer ${
-                              checkedItems.has(itemId)
-                                ? 'border-gray-200 bg-gray-50'
-                                : 'border-gray-200 bg-white hover:border-gray-300'
-                            }`}
-                          >
+                      {(() => {
+                        const itemNames = new Set(
+                          totalIngredients.items.map(item => item.item.toLowerCase().trim())
+                        )
+                        return [
+                          ...totalIngredients.items.map(item => ({
+                            ...item,
+                            itemId: `item-${item.item}`
+                          })),
+                          ...Array.from(movedSeasonings.values())
+                            .filter(item => !itemNames.has(item.item.toLowerCase().trim()))
+                            .map(item => ({
+                              ...item,
+                              itemId: `moved-seasoning-${item.item}`
+                            }))
+                        ]
+                      })()
+                        .sort((a, b) => a.item.localeCompare(b.item, undefined, { sensitivity: 'base' }))
+                        .map(item => {
+                          const itemId = item.itemId
+                          return (
                             <div
-                              className={`flex h-5 w-5 sm:h-6 sm:w-6 items-center justify-center rounded border-2 transition-all flex-shrink-0 ${
+                              key={itemId}
+                              onClick={() => toggleItem(itemId)}
+                              className={`flex items-center gap-2 sm:gap-4 rounded-lg border-2 p-3 sm:p-4 transition-all cursor-pointer ${
                                 checkedItems.has(itemId)
-                                  ? 'border-[var(--gg-primary)] bg-[var(--gg-primary)]'
-                                  : 'border-gray-300'
+                                  ? 'border-gray-200 bg-gray-50'
+                                  : 'border-gray-200 bg-white hover:border-gray-300'
                               }`}
                             >
-                              {checkedItems.has(itemId) && (
-                                <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                                </svg>
-                              )}
-                            </div>
-                            
-                            <div className="flex-1">
-                              <p className={`font-medium capitalize ${checkedItems.has(itemId) ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
-                                {item.item}
-                              </p>
-                              {item.quantity && (
-                                <p className="text-sm text-gray-500">
-                                  {item.quantity}
+                              <div
+                                className={`flex h-5 w-5 sm:h-6 sm:w-6 items-center justify-center rounded border-2 transition-all flex-shrink-0 ${
+                                  checkedItems.has(itemId)
+                                    ? 'border-[var(--gg-primary)] bg-[var(--gg-primary)]'
+                                    : 'border-gray-300'
+                                }`}
+                              >
+                                {checkedItems.has(itemId) && (
+                                  <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                  </svg>
+                                )}
+                              </div>
+                              
+                              <div className="flex-1">
+                                <p className={`font-medium capitalize ${checkedItems.has(itemId) ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
+                                  {item.item}
                                 </p>
-                              )}
-                            </div>
+                                {item.quantity && (
+                                  <p className="text-sm text-gray-500">
+                                    {item.quantity}
+                                  </p>
+                                )}
+                              </div>
 
-                            {/* Ingredient Actions Menu */}
-                            <div onClick={(e) => e.stopPropagation()}>
-                              <IngredientActions
-                                itemId={itemId}
-                                itemName={item.item}
-                                onExclude={handleExcludeIngredient}
-                                onFavor={handleFavorIngredient}
-                              />
+                              {/* Ingredient Actions Menu */}
+                              <div onClick={(e) => e.stopPropagation()}>
+                                <IngredientActions
+                                  itemId={itemId}
+                                  itemName={item.item}
+                                  onExclude={handleExcludeIngredient}
+                                  onFavor={handleFavorIngredient}
+                                />
+                              </div>
                             </div>
-                          </div>
-                        )
-                      })}
-                      {/* Moved seasonings */}
-                      {Array.from(movedSeasonings.entries()).map(([seasoningId, item]) => {
-                        const itemId = `moved-seasoning-${item.item}`
-                        return (
-                          <div
-                            key={itemId}
-                            onClick={() => toggleItem(itemId)}
-                            className={`flex items-center gap-4 rounded-lg border-2 p-4 transition-all cursor-pointer ${
-                              checkedItems.has(itemId)
-                                ? 'border-gray-200 bg-gray-50'
-                                : 'border-gray-200 bg-white hover:border-gray-300'
-                            }`}
-                          >
-                            <div
-                              className={`flex h-6 w-6 items-center justify-center rounded border-2 transition-all flex-shrink-0 ${
-                                checkedItems.has(itemId)
-                                  ? 'border-[var(--gg-primary)] bg-[var(--gg-primary)]'
-                                  : 'border-gray-300'
-                              }`}
-                            >
-                              {checkedItems.has(itemId) && (
-                                <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                                </svg>
-                              )}
-                            </div>
-                            
-                            <div className="flex-1">
-                              <p className={`font-medium capitalize ${checkedItems.has(itemId) ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
-                                {item.item}
-                              </p>
-                              {item.quantity && (
-                                <p className="text-sm text-gray-500">
-                                  {item.quantity}
-                                </p>
-                              )}
-                            </div>
-
-                            {/* Ingredient Actions Menu */}
-                            <div onClick={(e) => e.stopPropagation()}>
-                              <IngredientActions
-                                itemId={itemId}
-                                itemName={item.item}
-                                onExclude={handleExcludeIngredient}
-                                onFavor={handleFavorIngredient}
-                              />
-                            </div>
-                          </div>
-                        )
-                      })}
+                          )
+                        })}
                     </div>
                   ) : (
                     <div className="text-center py-12 mb-8">
@@ -1208,13 +1213,40 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
                             <div
                               key={seasoningId}
                               className="flex items-center gap-4 rounded-lg border-2 p-4 transition-all cursor-pointer border-gray-200 bg-gray-50 hover:border-gray-300"
-                              onClick={() => {
-                                // Move seasoning to items section
+                              onClick={async () => {
+                                // Move seasoning to items section in the database
+                                // Optimistically update local state first
                                 setMovedSeasonings(prev => {
                                   const newMap = new Map(prev)
                                   newMap.set(seasoningId, item)
                                   return newMap
                                 })
+                                
+                                try {
+                                  const result = await moveSeasoningToItems(mealPlan.id, item.item)
+                                  if (result.success) {
+                                    // Refresh to get updated data from server
+                                    router.refresh()
+                                  } else {
+                                    // Revert optimistic update on error
+                                    setMovedSeasonings(prev => {
+                                      const newMap = new Map(prev)
+                                      newMap.delete(seasoningId)
+                                      return newMap
+                                    })
+                                    console.error('Failed to move seasoning:', result.error)
+                                    setActionError(result.error || 'Failed to move seasoning to shopping list')
+                                  }
+                                } catch (error) {
+                                  // Revert optimistic update on error
+                                  setMovedSeasonings(prev => {
+                                    const newMap = new Map(prev)
+                                    newMap.delete(seasoningId)
+                                    return newMap
+                                  })
+                                  console.error('Error moving seasoning:', error)
+                                  setActionError('An unexpected error occurred while moving seasoning')
+                                }
                               }}
                             >
                               <div className="flex h-6 w-6 items-center justify-center">

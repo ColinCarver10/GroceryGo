@@ -265,18 +265,61 @@ export async function updateShoppingListItemChecked(
     const normalizeName = (name: string) => name.toLowerCase().trim()
     const normalizedItemName = normalizeName(itemName)
 
-    // Update the checked state in the appropriate array
-    const targetArray = itemType === 'item' ? currentIngredients.items : currentIngredients.seasonings
-    const itemIndex = targetArray.findIndex(item => normalizeName(item.item) === normalizedItemName)
+    // If checking a seasoning, move it to items array first (since you can't check off in spices list)
+    if (itemType === 'seasoning' && checked) {
+      const seasoningIndex = currentIngredients.seasonings.findIndex(
+        item => normalizeName(item.item) === normalizedItemName
+      )
 
-    if (itemIndex === -1) {
-      return { success: false, error: 'Item not found' }
-    }
+      if (seasoningIndex !== -1) {
+        const seasoning = currentIngredients.seasonings[seasoningIndex]
+        
+        // Check if it already exists in items array
+        const existingItemIndex = currentIngredients.items.findIndex(
+          item => normalizeName(item.item) === normalizedItemName
+        )
 
-    // Update the checked property
-    targetArray[itemIndex] = {
-      ...targetArray[itemIndex],
-      checked: checked
+        if (existingItemIndex === -1) {
+          // Move from seasonings to items
+          currentIngredients.items.push({
+            item: seasoning.item,
+            quantity: seasoning.quantity,
+            checked: true
+          })
+          currentIngredients.seasonings.splice(seasoningIndex, 1)
+          
+          // Sort items alphabetically
+          currentIngredients.items.sort((a, b) => a.item.localeCompare(b.item))
+        } else {
+          // Already in items, just update checked state and remove from seasonings
+          currentIngredients.items[existingItemIndex].checked = true
+          currentIngredients.seasonings.splice(seasoningIndex, 1)
+        }
+      } else {
+        // Seasoning not found in seasonings, check if it's in items
+        const itemIndex = currentIngredients.items.findIndex(
+          item => normalizeName(item.item) === normalizedItemName
+        )
+        if (itemIndex !== -1) {
+          currentIngredients.items[itemIndex].checked = true
+        } else {
+          return { success: false, error: 'Item not found' }
+        }
+      }
+    } else {
+      // Update the checked state in the appropriate array
+      const targetArray = itemType === 'item' ? currentIngredients.items : currentIngredients.seasonings
+      const itemIndex = targetArray.findIndex(item => normalizeName(item.item) === normalizedItemName)
+
+      if (itemIndex === -1) {
+        return { success: false, error: 'Item not found' }
+      }
+
+      // Update the checked property
+      targetArray[itemIndex] = {
+        ...targetArray[itemIndex],
+        checked: checked
+      }
     }
 
     // Update the meal plan
@@ -319,6 +362,143 @@ export async function updateShoppingListItemChecked(
       itemName,
       itemType,
       checked
+    })
+    return {
+      success: false,
+      error: `An unexpected error occurred: ${error instanceof Error ? error.message : String(error)}`
+    }
+  }
+}
+
+/**
+ * Move a seasoning from the seasonings array to the items array
+ */
+export async function moveSeasoningToItems(
+  mealPlanId: string,
+  seasoningName: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createClient()
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    
+    
+    if (authError || !user) {
+      logAuthError('moveSeasoningToItems', authError || new Error('User not found'), {
+        operation: 'getUser',
+        authErrorType: authError ? 'auth_error' : 'user_not_found'
+      })
+      return { success: false, error: 'User not authenticated' }
+    }
+
+    // Get current meal plan
+    const { data: mealPlan, error: fetchError } = await supabase
+      .from('meal_plans')
+      .select('total_ingredients, user_id')
+      .eq('id', mealPlanId)
+      .single()
+
+    if (fetchError || !mealPlan) {
+      logDatabaseError('moveSeasoningToItems', fetchError || new Error('Meal plan not found'), {
+        table: 'meal_plans',
+        operation: 'SELECT',
+        queryParams: { id: mealPlanId }
+      }, user.id)
+      return { success: false, error: 'Meal plan not found' }
+    }
+
+    if (mealPlan.user_id !== user.id) {
+      logAuthError('moveSeasoningToItems', new Error('Unauthorized'), {
+        operation: 'moveSeasoningToItems',
+        authErrorType: 'unauthorized'
+      }, user.id)
+      return { success: false, error: 'Unauthorized' }
+    }
+
+    // Handle backward compatibility: convert old array format to new structure
+    let currentIngredients: {
+      items: Array<{ item: string; quantity: string; checked?: boolean }>
+      seasonings: Array<{ item: string; quantity: string; checked?: boolean }>
+    }
+
+    if (!mealPlan.total_ingredients) {
+      currentIngredients = { items: [], seasonings: [] }
+    } else if (Array.isArray(mealPlan.total_ingredients)) {
+      // Old format: convert to new structure
+      currentIngredients = {
+        items: mealPlan.total_ingredients.map(item => ({ ...item, checked: false })),
+        seasonings: []
+      }
+    } else if (typeof mealPlan.total_ingredients === 'object' && ('items' in mealPlan.total_ingredients || 'seasonings' in mealPlan.total_ingredients)) {
+      // New format: use as-is
+      currentIngredients = {
+        items: (mealPlan.total_ingredients as any).items || [],
+        seasonings: (mealPlan.total_ingredients as any).seasonings || []
+      }
+    } else {
+      currentIngredients = { items: [], seasonings: [] }
+    }
+
+    // Normalize item name for comparison (case-insensitive)
+    const normalizeName = (name: string) => name.toLowerCase().trim()
+    const normalizedSeasoningName = normalizeName(seasoningName)
+
+    // Find the seasoning in the seasonings array
+    const seasoningIndex = currentIngredients.seasonings.findIndex(
+      item => normalizeName(item.item) === normalizedSeasoningName
+    )
+
+    if (seasoningIndex === -1) {
+      return { success: false, error: 'Seasoning not found' }
+    }
+
+    const seasoning = currentIngredients.seasonings[seasoningIndex]
+
+    // Check if it already exists in items array (shouldn't happen, but handle it)
+    const existingItemIndex = currentIngredients.items.findIndex(
+      item => normalizeName(item.item) === normalizedSeasoningName
+    )
+
+    if (existingItemIndex !== -1) {
+      // Already in items, just remove from seasonings
+      currentIngredients.seasonings.splice(seasoningIndex, 1)
+    } else {
+      // Move from seasonings to items
+      currentIngredients.items.push({
+        item: seasoning.item,
+        quantity: seasoning.quantity,
+        checked: seasoning.checked || false
+      })
+      currentIngredients.seasonings.splice(seasoningIndex, 1)
+      
+      // Sort items alphabetically
+      currentIngredients.items.sort((a, b) => a.item.localeCompare(b.item))
+    }
+
+    // Update the meal plan
+    const { error: updateError } = await supabase
+      .from('meal_plans')
+      .update({ total_ingredients: currentIngredients })
+      .eq('id', mealPlanId)
+      .eq('user_id', user.id)
+
+    if (updateError) {
+      logDatabaseError('moveSeasoningToItems', updateError, {
+        table: 'meal_plans',
+        operation: 'UPDATE',
+        queryParams: { id: mealPlanId, user_id: user.id, seasoningName }
+      }, user.id)
+      return { success: false, error: 'Failed to move seasoning' }
+    }
+
+    // Revalidate cache
+    revalidateTag('meal-plan')
+    revalidateTag('dashboard')
+
+    return { success: true }
+  } catch (error) {
+    logUnexpectedError('moveSeasoningToItems', error, {
+      mealPlanId,
+      seasoningName
     })
     return {
       success: false,
