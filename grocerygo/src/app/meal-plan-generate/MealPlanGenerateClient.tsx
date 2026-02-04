@@ -900,7 +900,7 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
                 <label htmlFor="start-date" className="block text-sm font-semibold text-gray-900 mb-2">
                   Select Start Date
                 </label>
-                <div className="relative">
+                <div className="relative pr-2 sm:pr-0">
                   <input
                     type="date"
                     id="start-date"
@@ -916,7 +916,7 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
                       Select a date
                     </span>
                   )}
-                  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 sm:hidden">
+                  <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 sm:hidden">
                     <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                     </svg>
