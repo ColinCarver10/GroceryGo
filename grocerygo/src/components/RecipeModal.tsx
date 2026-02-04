@@ -267,10 +267,10 @@ export default function RecipeModal({
                 )}
                 {/* Batch Cook Mode Toggle - Only show if recipe appears multiple times */}
                 {plannedSlots && plannedSlots.length > 1 && (
-                  <label className="flex items-center gap-1.5 sm:gap-2 cursor-pointer group flex-shrink-0 ml-auto">
+                  <label className="flex items-center gap-1.5 sm:gap-2 cursor-pointer group flex-shrink-0 w-full sm:w-auto sm:ml-auto">
                     <span className="text-xs sm:text-sm font-medium text-gray-700 group-hover:text-gray-900 whitespace-nowrap">
                       <span className="hidden sm:inline">Batch Cook</span>
-                      <span className="sm:hidden">Batch</span>
+                      <span className="sm:hidden">Batch Cook</span>
                     </span>
                     <input
                       type="checkbox"

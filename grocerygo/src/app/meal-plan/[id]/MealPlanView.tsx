@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import Image from 'next/image'
 import type { MealPlanWithRecipes, Recipe, MealPlanRecipe } from '@/types/database'
 import RecipeModal from '@/components/RecipeModal'
 // import AdjustPlanPanel from '@/components/AdjustPlanPanel' // COMMENTED OUT: Adjust plan functionality hidden temporarily
@@ -1043,12 +1042,14 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
                       </>
                     ) : (
                       <>
-                        <Image
+                        <img
                           src="/Instacart_Carrot.png"
                           alt="Instacart"
                           width={22}
                           height={22}
                           className="flex-shrink-0"
+                          loading="eager"
+                          decoding="async"
                         />
                         Get Recipe Ingredients
                       </>
@@ -1295,12 +1296,14 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
                       </>
                     ) : (
                       <>
-                        <Image
+                        <img
                           src="/Instacart_Carrot.png"
                           alt="Instacart"
                           width={22}
                           height={22}
                           className="flex-shrink-0"
+                          loading="eager"
+                          decoding="async"
                         />
                         Get Recipe Ingredients
                       </>

@@ -897,9 +897,9 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
           {currentStep === 1 && (
             <div className="mb-8">
               <div className="gg-card">
-                <span className="block text-sm font-semibold text-gray-900 mb-3">
+                <label htmlFor="start-date" className="block text-sm font-semibold text-gray-900 mb-2">
                   Select Start Date
-                </span>
+                </label>
                 <input
                   type="date"
                   id="start-date"
