@@ -9,6 +9,7 @@ import Link from 'next/link'
 function LoginContent() {
   const [showToast, setShowToast] = useState(false)
   const [toastMessage, setToastMessage] = useState('')
+  const [toastType, setToastType] = useState<'error' | 'success'>('error')
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [userEmail, setUserEmail] = useState('')
   const [isLoading, setIsLoading] = useState(true)
@@ -17,18 +18,21 @@ function LoginContent() {
 
   useEffect(() => {
     const error = searchParams.get('error')
+    const success = searchParams.get('success')
     if (error) {
+      setToastType('error')
       setToastMessage(decodeURIComponent(error))
       setShowToast(true)
-      
-      // Clear the error from URL
       router.replace('/login')
-      
-      // Auto-hide toast after 5 seconds
-      const timer = setTimeout(() => {
-        setShowToast(false)
-      }, 5000)
-      
+      const timer = setTimeout(() => setShowToast(false), 5000)
+      return () => clearTimeout(timer)
+    }
+    if (success === 'check_email') {
+      setToastType('success')
+      setToastMessage('Check your email to confirm your account.')
+      setShowToast(true)
+      router.replace('/login')
+      const timer = setTimeout(() => setShowToast(false), 5000)
       return () => clearTimeout(timer)
     }
   }, [searchParams, router])
@@ -64,10 +68,16 @@ function LoginContent() {
       {/* Toast Notification */}
       {showToast && (
         <div className="fixed bottom-4 right-4 z-50 animate-slide-in">
-          <div className="bg-red-500 text-white px-6 py-4 rounded-lg shadow-lg flex items-center gap-3 max-w-md">
-            <svg className="h-6 w-6 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
+          <div className={`${toastType === 'success' ? 'bg-green-500' : 'bg-red-500'} text-white px-6 py-4 rounded-lg shadow-lg flex items-center gap-3 max-w-md`}>
+            {toastType === 'success' ? (
+              <svg className="h-6 w-6 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            ) : (
+              <svg className="h-6 w-6 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            )}
             <p className="flex-1">{toastMessage}</p>
             <button 
               onClick={() => setShowToast(false)}

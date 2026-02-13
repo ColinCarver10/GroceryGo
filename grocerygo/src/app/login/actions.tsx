@@ -169,8 +169,7 @@ export async function signup(formData: FormData) {
   }
 
   revalidatePath('/', 'layout')
-  // New users should complete the questionnaire
-  redirect('/onboarding')
+  redirect('/login?success=check_email')
 }
 
 export async function signInWithGoogle() {
