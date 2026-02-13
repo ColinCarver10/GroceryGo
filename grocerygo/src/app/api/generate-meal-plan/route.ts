@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { streamText } from 'ai'
 import { openai } from '@ai-sdk/openai'
-import { mealPlanFromSurveyPrompt } from '@/app/meal-plan-generate/prompts'
+import { mealPlanFromSurveyPrompt, complexityTierPrompt } from '@/app/meal-plan-generate/prompts'
 import {
   createMealPlanContext,
   fetchUserSurveyResponse,
@@ -17,11 +17,12 @@ interface MealSelection {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { mealSelection, mealPlanId, distinctRecipeCounts, selectedSlots } = body as {
+    const { mealSelection, mealPlanId, distinctRecipeCounts, selectedSlots, complexityMap } = body as {
       mealSelection: MealSelection
       mealPlanId: string
       distinctRecipeCounts?: MealSelection
       selectedSlots?: Array<{ day: string; mealType: string }>
+      complexityMap?: Record<string, string>
     }
 
     const context = await createMealPlanContext()
@@ -143,7 +144,7 @@ ${slotListText}
 
 **Critical:** The "recipes" array must contain exactly ${
       distinctCounts.breakfast + distinctCounts.lunch + distinctCounts.dinner
-    } unique recipe objects.`
+    } unique recipe objects.${complexityMap ? complexityTierPrompt(complexityMap) : ''}`
 
     const result = streamText({
       model: openai('gpt-4o'),

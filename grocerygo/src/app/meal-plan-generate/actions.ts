@@ -54,7 +54,8 @@ export async function generateMealPlanFromPreferences(
   weekOf: string,
   mealSelection: MealSelection,
   distinctCounts: MealSelection,
-  selectedSlots: MealSlot[]
+  selectedSlots: MealSlot[],
+  complexityMap?: Record<string, string>
 ): Promise<GenerateMealPlanResponse> {
   try {
     const context = await createMealPlanContext()
@@ -63,7 +64,8 @@ export async function generateMealPlanFromPreferences(
       weekOf,
       mealSelection,
       distinctCounts,
-      selectedSlots
+      selectedSlots,
+      complexityMap
     )
   } catch (error: unknown) {
     console.error('Meal plan generation error:', error)
@@ -78,7 +80,8 @@ export async function replaceExistingMealPlan(
   weekOf: string,
   mealSelection: MealSelection,
   distinctCounts: MealSelection,
-  selectedSlots: MealSlot[]
+  selectedSlots: MealSlot[],
+  complexityMap?: Record<string, string>
 ): Promise<GenerateMealPlanResponse> {
   try {
     const context = await createMealPlanContext()
@@ -95,7 +98,8 @@ export async function replaceExistingMealPlan(
       weekOf,
       mealSelection,
       distinctCounts,
-      selectedSlots
+      selectedSlots,
+      complexityMap
     )
 
     // 'replaced' is not a property of the response; just return the result as-is
@@ -113,7 +117,8 @@ async function internalGenerateMealPlan(
   weekOf: string,
   mealSelection: MealSelection,
   distinctCounts: MealSelection,
-  selectedSlots: MealSlot[]
+  selectedSlots: MealSlot[],
+  complexityMap?: Record<string, string>
 ): Promise<GenerateMealPlanResponse> {
   try {
     const existingPlan = await findExistingMealPlanByWeek(context, weekOf)
@@ -143,7 +148,8 @@ async function internalGenerateMealPlan(
       ...surveyResponse,
       meal_selection: mealSelection,
       distinct_recipe_counts: distinctCounts,
-      selected_slots: selectedSlots
+      selected_slots: selectedSlots,
+      ...(complexityMap ? { complexity_map: complexityMap } : {}),
     }
 
     const mealPlan = await insertGeneratingMealPlan(context, 
