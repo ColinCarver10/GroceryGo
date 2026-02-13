@@ -1,7 +1,6 @@
 'use server'
 
 import { createClient } from '@/utils/supabase/server'
-import { unstable_cache } from 'next/cache'
 import { revalidateTag } from 'next/cache'
 import type { MealPlanWithRecipes } from '@/types/database'
 import { logDatabaseError, logAuthError } from '@/utils/errorLogger'
@@ -112,15 +111,15 @@ export async function updateMealPlanStatuses(userId: string): Promise<number> {
   return updatedCount
 }
 
-export async function getUserDashboardData(userId: string, page: number = 1, pageSize: number = 5) {
+// ─── Split data-fetching functions ───────────────────────────────────────────
+
+/**
+ * Get core user data needed for initial render (fast, single query).
+ * Blocks render because it's needed for the onboarding redirect check + preferences.
+ */
+export async function getUserCoreData(userId: string) {
   const supabase = await createClient()
-  // Update meal plan statuses before fetching data
-  await updateMealPlanStatuses(userId)
-  
-  // Calculate offset for pagination
-  const offset = (page - 1) * pageSize
-  
-  // Fetch user data with survey responses
+
   const { data: userData, error: userError } = await supabase
     .from('users')
     .select('survey_response, email, first_login_flag')
@@ -128,29 +127,30 @@ export async function getUserDashboardData(userId: string, page: number = 1, pag
     .single()
 
   if (userError) {
-    logDatabaseError('getUserDashboardData', userError, {
+    logDatabaseError('getUserCoreData', userError, {
       table: 'users',
       operation: 'SELECT',
       queryParams: { user_id: userId }
     }, userId)
   }
 
-  // Get total count of meal plans
-  const { count: totalCount, error: countError } = await supabase
-    .from('meal_plans')
-    .select('*', { count: 'exact', head: true })
-    .eq('user_id', userId)
-
-  if (countError) {
-    logDatabaseError('getUserDashboardData', countError, {
-      table: 'meal_plans',
-      operation: 'SELECT',
-      queryParams: { user_id: userId, count: 'exact' }
-    }, userId)
+  return {
+    surveyResponse: userData?.survey_response || null,
+    email: userData?.email || '',
+    firstLoginFlag: userData?.first_login_flag ?? null,
   }
+}
 
-  // Fetch meal plans with recipes and grocery items
-  const { data: mealPlans, error: plansError } = await supabase
+/**
+ * Get paginated meal plans with recipes and grocery items.
+ * Uses count: 'exact' to get total count in the same query.
+ */
+export async function getMealPlansPageData(userId: string, page: number = 1, pageSize: number = 5) {
+  const supabase = await createClient()
+  const offset = (page - 1) * pageSize
+
+  // Fetch meal plans with count in same query
+  const { data: mealPlans, count: totalCount, error: plansError } = await supabase
     .from('meal_plans')
     .select(`
       *,
@@ -159,13 +159,13 @@ export async function getUserDashboardData(userId: string, page: number = 1, pag
         updated_recipe:recipes (*)
       ),
       grocery_items (*)
-    `)
+    `, { count: 'exact' })
     .eq('user_id', userId)
     .order('week_of', { ascending: false })
     .range(offset, offset + pageSize - 1)
-  
+
   if (plansError) {
-    logDatabaseError('getUserDashboardData', plansError, {
+    logDatabaseError('getMealPlansPageData', plansError, {
       table: 'meal_plans',
       operation: 'SELECT',
       queryParams: { user_id: userId, page, pageSize, offset }
@@ -202,7 +202,100 @@ export async function getUserDashboardData(userId: string, page: number = 1, pag
     }))
   }))
 
-  // Fetch saved recipes with full recipe details
+  return {
+    mealPlans: (transformedMealPlans as MealPlanWithRecipes[]) || [],
+    totalMealPlans: totalCount || 0,
+    currentPage: page,
+    pageSize,
+  }
+}
+
+/**
+ * Get quick stats data with Promise.all for parallel queries.
+ * Combines totalCount and allPlansForStats into a single query,
+ * and uses a lightweight count query for saved recipes.
+ */
+export async function getQuickStatsData(userId: string) {
+  const supabase = await createClient()
+
+  const [statsResult, savedCountResult, feedbackResult] = await Promise.all([
+    // Stats: derive totalMealPlans from .length, totalMealsPlanned from sum, plansThisMonth from date filter
+    supabase
+      .from('meal_plans')
+      .select('total_meals, created_at')
+      .eq('user_id', userId),
+    // Saved recipes count (lightweight, head-only)
+    supabase
+      .from('saved_recipes')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId),
+    // Feedback summary
+    supabase
+      .from('meal_plan_feedback')
+      .select('rating')
+      .eq('user_id', userId)
+      .gte('rating', 1),
+  ])
+
+  if (statsResult.error) {
+    logDatabaseError('getQuickStatsData', statsResult.error, {
+      table: 'meal_plans',
+      operation: 'SELECT',
+      queryParams: { user_id: userId }
+    }, userId)
+  }
+
+  if (savedCountResult.error) {
+    logDatabaseError('getQuickStatsData', savedCountResult.error, {
+      table: 'saved_recipes',
+      operation: 'SELECT',
+      queryParams: { user_id: userId }
+    }, userId)
+  }
+
+  if (feedbackResult.error) {
+    logDatabaseError('getQuickStatsData', feedbackResult.error, {
+      table: 'meal_plan_feedback',
+      operation: 'SELECT',
+      queryParams: { user_id: userId, rating: { gte: 1 } }
+    }, userId)
+  }
+
+  const allPlans = statsResult.data || []
+  const totalMealPlans = allPlans.length
+  const totalMealsPlanned = allPlans.reduce((sum, plan) => sum + plan.total_meals, 0)
+  const now = new Date()
+  const plansThisMonth = allPlans.filter(plan => {
+    const planDate = new Date(plan.created_at)
+    return planDate.getMonth() === now.getMonth() && planDate.getFullYear() === now.getFullYear()
+  }).length
+
+  const savedRecipesCount = savedCountResult.count || 0
+
+  const feedbackData = feedbackResult.data || []
+  const ratedMealPlansCount = feedbackData.length
+  const averageRating = feedbackData.length > 0
+    ? feedbackData.reduce((sum, f) => sum + f.rating, 0) / feedbackData.length
+    : null
+
+  return {
+    totalMealPlans,
+    totalMealsPlanned,
+    plansThisMonth,
+    savedRecipesCount,
+    feedbackSummary: {
+      ratedMealPlansCount,
+      averageRating: averageRating ? Math.round(averageRating * 10) / 10 : null
+    }
+  }
+}
+
+/**
+ * Get saved recipes with full recipe details.
+ */
+export async function getSavedRecipesData(userId: string) {
+  const supabase = await createClient()
+
   const { data: savedRecipes, error: savedError } = await supabase
     .from('saved_recipes')
     .select(`
@@ -213,81 +306,19 @@ export async function getUserDashboardData(userId: string, page: number = 1, pag
     .order('created_at', { ascending: false })
 
   if (savedError) {
-    logDatabaseError('getUserDashboardData', savedError, {
+    logDatabaseError('getSavedRecipesData', savedError, {
       table: 'saved_recipes',
       operation: 'SELECT',
       queryParams: { user_id: userId }
     }, userId)
   }
 
-  // Calculate total meals across all meal plans
-  const { data: allPlansForStats, error: statsError } = await supabase
-    .from('meal_plans')
-    .select('total_meals, created_at')
-    .eq('user_id', userId)
-
-  if (statsError) {
-    logDatabaseError('getUserDashboardData', statsError, {
-      table: 'meal_plans',
-      operation: 'SELECT',
-      queryParams: { user_id: userId }
-    }, userId)
-  }
-
-  const totalMealsPlanned = allPlansForStats?.reduce((sum, plan) => sum + plan.total_meals, 0) || 0
-  const now = new Date()
-  const plansThisMonth = allPlansForStats?.filter(plan => {
-    const planDate = new Date(plan.created_at)
-    return planDate.getMonth() === now.getMonth() && planDate.getFullYear() === now.getFullYear()
-  }).length || 0
-
-  // Fetch feedback summary (only user feedback with rating >= 1, not system tracking)
-  const { data: feedbackData, error: feedbackError } = await supabase
-    .from('meal_plan_feedback')
-    .select('rating')
-    .eq('user_id', userId)
-    .gte('rating', 1)
-
-  if (feedbackError) {
-    logDatabaseError('getUserDashboardData', feedbackError, {
-      table: 'meal_plan_feedback',
-      operation: 'SELECT',
-      queryParams: { user_id: userId, rating: { gte: 1 } }
-    }, userId)
-  }
-
-  const ratedMealPlansCount = feedbackData?.length || 0
-  const averageRating = feedbackData && feedbackData.length > 0
-    ? feedbackData.reduce((sum, f) => sum + f.rating, 0) / feedbackData.length
-    : null
-
   return {
-    surveyResponse: userData?.survey_response || null,
-    email: userData?.email || '',
-    firstLoginFlag: userData?.first_login_flag ?? null,
-    mealPlans: (transformedMealPlans as MealPlanWithRecipes[]) || [],
     savedRecipes: savedRecipes || [],
-    totalMealPlans: totalCount || 0,
-    totalMealsPlanned,
-    plansThisMonth,
-    currentPage: page,
-    pageSize,
-    feedbackSummary: {
-      ratedMealPlansCount,
-      averageRating: averageRating ? Math.round(averageRating * 10) / 10 : null // Round to 1 decimal place
-    }
   }
 }
 
-// Cached version with 60 second revalidation
-export const getCachedDashboardData = unstable_cache(
-  getUserDashboardData,
-  ['user-dashboard'],
-  { 
-    revalidate: 60,
-    tags: ['dashboard']
-  }
-)
+// ─── Mutation actions ────────────────────────────────────────────────────────
 
 // Function to invalidate dashboard cache after updates
 export async function invalidateDashboardCache() {
@@ -306,10 +337,10 @@ export async function getPaginatedMealPlans(page: number = 1, pageSize: number =
       operation: 'getUser',
       authErrorType: authError ? 'auth_error' : 'user_not_found'
     })
-    return { success: false, error: 'Not authenticated', mealPlans: [], totalMealPlans: 0, currentPage: page, pageSize }
+    return { success: false, error: 'Not authenticated', mealPlans: [] as MealPlanWithRecipes[], totalMealPlans: 0, currentPage: page, pageSize }
   }
 
-  const result = await getUserDashboardData(user.id, page, pageSize)
+  const result = await getMealPlansPageData(user.id, page, pageSize)
   
   return {
     success: true,
@@ -429,4 +460,3 @@ export async function completeOnboardingWalkthrough() {
 
   return { success: true }
 }
-

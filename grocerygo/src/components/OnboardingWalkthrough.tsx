@@ -11,6 +11,7 @@ interface OnboardingWalkthroughProps {
   onNext: () => void
   onPrevious: () => void
   onComplete: () => void
+  onClose?: () => void
 }
 
 export default function OnboardingWalkthrough({
@@ -20,7 +21,8 @@ export default function OnboardingWalkthrough({
   step,
   onNext,
   onPrevious,
-  onComplete
+  onComplete,
+  onClose
 }: OnboardingWalkthroughProps) {
   // Lock body scroll when modal is open
   useEffect(() => {
@@ -34,12 +36,12 @@ export default function OnboardingWalkthrough({
     }
   }, [isOpen])
 
-  // Prevent ESC key from closing (no skip option)
+  // Allow ESC key to close modal
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && onClose) {
         e.preventDefault()
-        // Do nothing - prevent closing
+        onClose()
       }
     }
     if (isOpen) {
@@ -48,7 +50,7 @@ export default function OnboardingWalkthrough({
     return () => {
       document.removeEventListener('keydown', handleEsc)
     }
-  }, [isOpen])
+  }, [isOpen, onClose])
 
   if (!isOpen) return null
 
@@ -73,6 +75,19 @@ export default function OnboardingWalkthrough({
               style={{ width: `${((currentStep + 1) / totalSteps) * 100}%` }}
             />
           </div>
+
+          {/* Close Button */}
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="absolute top-4 right-4 p-2 rounded-full text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+              aria-label="Close"
+            >
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
 
           {/* Content */}
           <div className="px-8 py-8">
