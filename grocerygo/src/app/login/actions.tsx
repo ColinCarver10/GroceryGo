@@ -21,7 +21,7 @@ async function ensureUserExists(supabase: SupabaseServerClient, userId: string, 
   console.log('checkError', checkError)
   // If user doesn't exist, create them
   // PGRST116 means no rows were found, which is expected for new users
-  if (!existingUser || checkError?.code === 'PGRST116') {
+  if (!existingUser || (checkError as { code?: string } | null)?.code === 'PGRST116') {
     const newUser: UserInsert = {
       user_id: userId,
       email: email,

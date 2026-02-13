@@ -1,7 +1,7 @@
 'use server'
 
 import OpenAI from 'openai'
-import type { z } from 'zod'
+import { type z, toJSONSchema } from 'zod'
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -49,7 +49,7 @@ export async function callOpenAIStructured<T extends z.ZodType>(
         type: 'json_schema',
         json_schema: {
           name: schemaName,
-          schema: schema.toJSON(),
+          schema: toJSONSchema(schema),
           strict: true
         }
       },

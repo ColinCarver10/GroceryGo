@@ -55,8 +55,8 @@ export const replaceRecipePrompt = (
   recipeToReplace: string
 ) => {
   // Extract favored and excluded ingredients
-  const favoredIngredients = surveyData.favored_ingredients || []
-  const excludedIngredients = surveyData.excluded_ingredients || []
+  const favoredIngredients = (surveyData.favored_ingredients || []) as string[]
+  const excludedIngredients = (surveyData.excluded_ingredients || []) as string[]
   
   let ingredientPreferencesSection = ''
   if (favoredIngredients.length > 0 || excludedIngredients.length > 0) {
@@ -72,8 +72,8 @@ export const replaceRecipePrompt = (
   }
   
   // Check if protein requirement applies
-  const goals = surveyData['9'] || []
-  const priorities = surveyData['11'] || []
+  const goals = (surveyData['9'] || []) as string[]
+  const priorities = (surveyData['11'] || []) as string[]
   const requiresProtein = goals.includes('Eat healthier') || priorities[0] === 'Nutrition'
   
   let proteinRequirement = ''
@@ -161,8 +161,8 @@ export const bulkAdjustmentPrompt = (
   }
 
   // Extract favored and excluded ingredients
-  const favoredIngredients = surveyData.favored_ingredients || []
-  const excludedIngredients = surveyData.excluded_ingredients || []
+  const favoredIngredients = (surveyData.favored_ingredients || []) as string[]
+  const excludedIngredients = (surveyData.excluded_ingredients || []) as string[]
   
   let ingredientPreferencesSection = ''
   if (favoredIngredients.length > 0 || excludedIngredients.length > 0) {
@@ -178,8 +178,8 @@ export const bulkAdjustmentPrompt = (
   }
 
   // Check if protein requirement applies
-  const goals = surveyData['9'] || []
-  const priorities = surveyData['11'] || []
+  const goals = (surveyData['9'] || []) as string[]
+  const priorities = (surveyData['11'] || []) as string[]
   const requiresProtein = goals.includes('Eat healthier') || priorities[0] === 'Nutrition'
   
   let proteinRequirement = ''

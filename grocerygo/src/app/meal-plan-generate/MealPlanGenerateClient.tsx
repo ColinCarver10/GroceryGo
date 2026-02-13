@@ -41,10 +41,12 @@ interface DistinctCounts {
 
 interface MealPlanGenerateClientProps {
   surveyResponse: SurveyResponse
+  complexityMap?: Record<string, string>
+  weekScoreId?: string
 }
 
 function isErrorResponse(response: GenerateMealPlanResponse): response is GenerateMealPlanError {
-  return 'error' in response && !response.success
+  return 'error' in response && !('conflict' in response) && !('success' in response && response.success)
 }
 
 function parseLunchPreference(preference?: string, totalSlots?: number) {
@@ -85,7 +87,7 @@ function clampDistinctCounts(
   }
 }
 
-export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGenerateClientProps) {
+export default function MealPlanGenerateClient({ surveyResponse, complexityMap, weekScoreId }: MealPlanGenerateClientProps) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -101,8 +103,8 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
     }), {})
   )
 
-  const leftoverPreference = surveyResponse?.['12'] ?? surveyResponse?.[12]
-  const lunchPreference = surveyResponse?.['13'] ?? surveyResponse?.[13]
+  const leftoverPreference = (surveyResponse?.['12'] ?? surveyResponse?.[12]) as string | undefined
+  const lunchPreference = (surveyResponse?.['13'] ?? surveyResponse?.[13]) as string | undefined
 
   const initialTotals = useMemo(
     () => ({
@@ -243,7 +245,8 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
           dinner: totals.dinner
         },
         distinctCounts,
-        selectedSlots
+        selectedSlots,
+        complexityMap
       )
 
       // Check if there's a conflict (existing meal plan)
@@ -264,7 +267,7 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
           setTimeout(() => router.push('/onboarding'), 2000)
         }
         setLoading(false)
-      } else if (result.success) {
+      } else if ('success' in result && result.success) {
         // Redirect to streaming generation page
         router.push(`/meal-plan/generating/${result.mealPlanId}`)
       } else {
@@ -296,7 +299,8 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
           dinner: totals.dinner
         },
         distinctCounts,
-        selectedSlots
+        selectedSlots,
+        complexityMap
       )
 
       if (isErrorResponse(result)) {
@@ -306,7 +310,7 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
           setTimeout(() => router.push('/onboarding'), 2000)
         }
         setLoading(false)
-      } else if (result.success) {
+      } else if ('success' in result && result.success) {
         // Redirect to streaming generation page
         router.push(`/meal-plan/generating/${result.mealPlanId}`)
       } else {
