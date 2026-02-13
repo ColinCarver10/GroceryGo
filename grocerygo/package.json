@@ -12,6 +12,8 @@
     "test:e2e:debug": "playwright test --debug",
     "test:e2e:report": "playwright test --reporter=html",
     "test:create-issues": "tsx tests/scripts/create-github-issues.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "test:install": "playwright install chromium"
   },
   "dependencies": {
@@ -37,6 +39,7 @@
     "eslint-config-next": "15.5.5",
     "tailwindcss": "^4",
     "tsx": "^4.7.1",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.0.18"
   }
 }
