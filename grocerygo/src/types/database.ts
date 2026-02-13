@@ -101,6 +101,8 @@ export interface MealPlan {
   // Instacart caching fields
   instacart_link?: string
   instacart_link_expires_at?: string
+
+  week_score_id?: string
 }
 
 export interface MealPlanInsert {
@@ -118,6 +120,8 @@ export interface MealPlanInsert {
   // Instacart caching fields (optional on insert)
   instacart_link?: string
   instacart_link_expires_at?: string
+
+  week_score_id?: string
 }
 
 // Meal Plan Recipe junction
@@ -130,6 +134,7 @@ export interface MealPlanRecipe {
   notes?: string
   portion_multiplier?: number
   slot_label?: string
+  complexity_tier?: 'quick' | 'standard' | 'exploratory'
   recipe?: Recipe // For joins
 }
 
@@ -141,6 +146,7 @@ export interface MealPlanRecipeInsert {
   notes?: string
   portion_multiplier?: number
   slot_label?: string
+  complexity_tier?: 'quick' | 'standard' | 'exploratory'
 }
 
 // Grocery Item types
@@ -269,4 +275,58 @@ export interface AIGeneratedMealPlan {
     item: string
     quantity: string
   }>
+}
+
+// Calendar Connection types
+export interface CalendarConnection {
+  id: string
+  user_id: string
+  provider: 'google' | 'apple'
+  access_token: string
+  refresh_token?: string
+  token_expires_at?: string
+  connected_at: string
+  last_fetched_at?: string
+}
+
+export interface CalendarConnectionInsert {
+  user_id: string
+  provider: 'google' | 'apple'
+  access_token: string
+  refresh_token?: string
+  token_expires_at?: string
+}
+
+// Week Score types
+export interface WeekScore {
+  id: string
+  user_id: string
+  week_of: string
+  day_scores: Array<{
+    date: string
+    finalScore: number
+    tier: 'quick' | 'standard' | 'exploratory'
+    signalBreakdown: Array<{
+      score: number
+      reasoning: string
+      rawData: Record<string, unknown>
+    }>
+  }>
+  user_adjustments?: Record<string, 'quick' | 'standard' | 'exploratory'>
+  provider_version: string
+  recommended_pickup_day?: string
+  pickup_reasoning?: string
+  meal_plan_id?: string
+  created_at: string
+}
+
+export interface WeekScoreInsert {
+  user_id: string
+  week_of: string
+  day_scores: WeekScore['day_scores']
+  user_adjustments?: WeekScore['user_adjustments']
+  provider_version?: string
+  recommended_pickup_day?: string
+  pickup_reasoning?: string
+  meal_plan_id?: string
 }
