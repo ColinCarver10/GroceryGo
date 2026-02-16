@@ -8,19 +8,9 @@ import {
   getMealPlanForUser,
   insertGeneratingMealPlan
 } from '@/services/mealPlanService'
+import type { MealSelection, MealSlot } from '@/app/schemas/mealPlanSchemas'
 
 type MealPlanContextType = Awaited<ReturnType<typeof createMealPlanContext>>
-
-interface MealSelection {
-  breakfast: number
-  lunch: number
-  dinner: number
-}
-
-type MealSlot = {
-  day: string
-  mealType: 'breakfast' | 'lunch' | 'dinner'
-}
 
 export type GenerateMealPlanSuccess = {
   success: true
@@ -29,7 +19,6 @@ export type GenerateMealPlanSuccess = {
   mealSelection: MealSelection
   distinctRecipeCounts: MealSelection
   selectedSlots: MealSlot[]
-  replaced?: boolean
 }
 
 export type GenerateMealPlanConflict = {
@@ -102,7 +91,6 @@ export async function replaceExistingMealPlan(
       complexityMap
     )
 
-    // 'replaced' is not a property of the response; just return the result as-is
     return result
   } catch (error: unknown) {
     console.error('Meal plan replacement error:', error)

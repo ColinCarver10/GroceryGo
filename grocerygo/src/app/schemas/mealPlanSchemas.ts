@@ -64,6 +64,18 @@ export const SimplifyRecipeSchema = z.object({
   changes_made: z.string()
 })
 
+// Shared meal plan types
+export interface MealSelection {
+  breakfast: number
+  lunch: number
+  dinner: number
+}
+
+export type MealSlot = {
+  day: string
+  mealType: 'breakfast' | 'lunch' | 'dinner'
+}
+
 // Export types
 export type Recipe = z.infer<typeof RecipeSchema>
 export type Ingredient = z.infer<typeof IngredientSchema>

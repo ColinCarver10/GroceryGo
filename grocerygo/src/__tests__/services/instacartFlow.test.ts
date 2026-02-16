@@ -2,6 +2,19 @@ import { describe, it, expect } from 'vitest'
 import type { GroceryItem } from '@/types/database'
 import type { LineItem } from '@/types/instacart'
 
+function toLineItem(groceryItem: GroceryItem): LineItem {
+  const quantity = groceryItem.quantity ?? 1
+  const unit = groceryItem.unit ?? 'each'
+  return {
+    name: groceryItem.item_name,
+    quantity,
+    unit,
+    display_text: `${quantity} ${unit} ${groceryItem.item_name}`,
+    line_item_measurements: [{ quantity, unit }],
+    filters: { brand_filters: [], health_filters: [] },
+  }
+}
+
 describe('Instacart flow compatibility', () => {
   it('grocery items with category field convert to valid Instacart line items', () => {
     const groceryItem: GroceryItem = {
@@ -15,16 +28,7 @@ describe('Instacart flow compatibility', () => {
       purchased: false,
     }
 
-    const lineItem: LineItem = {
-      name: groceryItem.item_name,
-      quantity: groceryItem.quantity ?? 1,
-      unit: groceryItem.unit ?? 'each',
-      display_text: `${groceryItem.quantity ?? 1} ${groceryItem.unit ?? 'each'} ${groceryItem.item_name}`,
-      line_item_measurements: [
-        { quantity: groceryItem.quantity ?? 1, unit: groceryItem.unit ?? 'each' },
-      ],
-      filters: { brand_filters: [], health_filters: [] },
-    }
+    const lineItem = toLineItem(groceryItem)
 
     expect(lineItem.name).toBe('Salmon fillet')
     expect(lineItem.quantity).toBe(1)
@@ -41,16 +45,7 @@ describe('Instacart flow compatibility', () => {
       purchased: false,
     }
 
-    const lineItem: LineItem = {
-      name: groceryItem.item_name,
-      quantity: groceryItem.quantity ?? 1,
-      unit: groceryItem.unit ?? 'each',
-      display_text: `${groceryItem.quantity ?? 1} ${groceryItem.unit ?? 'each'} ${groceryItem.item_name}`,
-      line_item_measurements: [
-        { quantity: groceryItem.quantity ?? 1, unit: groceryItem.unit ?? 'each' },
-      ],
-      filters: { brand_filters: [], health_filters: [] },
-    }
+    const lineItem = toLineItem(groceryItem)
 
     expect(lineItem.name).toBe('Rice')
   })

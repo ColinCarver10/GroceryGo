@@ -1,7 +1,8 @@
 import { google } from 'googleapis'
 import { createClient } from '@/utils/supabase/server'
-import { decrypt, encrypt } from '@/utils/encryption'
-import type { CalendarProvider, CalendarEvent, OAuthTokens, CalendarSource } from '@/types/calendar'
+import { encrypt } from '@/utils/encryption'
+import type { CalendarEvent, OAuthTokens, CalendarSource } from '@/types/calendar'
+import { BaseCalendarProvider } from './base'
 
 const SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
 
@@ -13,30 +14,10 @@ function getOAuth2Client() {
   )
 }
 
-export class GoogleCalendarProvider implements CalendarProvider {
-  private source: CalendarSource = 'google'
-  private tokens: OAuthTokens | null = null
+export class GoogleCalendarProvider extends BaseCalendarProvider {
+  protected source: CalendarSource = 'google'
 
-  async authenticate(userId: string): Promise<OAuthTokens> {
-    const supabase = await createClient()
-
-    const { data: connection, error } = await supabase
-      .from('calendar_connections')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('provider', this.source)
-      .single()
-
-    if (error || !connection) {
-      throw new Error('No Google Calendar connection found. Please connect your calendar first.')
-    }
-
-    const tokens: OAuthTokens = {
-      accessToken: decrypt(connection.access_token),
-      refreshToken: connection.refresh_token ? decrypt(connection.refresh_token) : undefined,
-      expiresAt: connection.token_expires_at ? new Date(connection.token_expires_at) : undefined,
-    }
-
+  protected async onTokensLoaded(userId: string, tokens: OAuthTokens): Promise<OAuthTokens> {
     // Refresh if expired or expiring within 5 minutes
     if (tokens.expiresAt && tokens.expiresAt.getTime() < Date.now() + 5 * 60 * 1000) {
       if (!tokens.refreshToken) {
@@ -104,20 +85,6 @@ export class GoogleCalendarProvider implements CalendarProvider {
         },
       }
     })
-  }
-
-  async revokeAccess(userId: string): Promise<void> {
-    const supabase = await createClient()
-
-    const { error } = await supabase
-      .from('calendar_connections')
-      .delete()
-      .eq('user_id', userId)
-      .eq('provider', this.source)
-
-    if (error) {
-      throw new Error(`Failed to revoke Google Calendar access: ${error.message}`)
-    }
   }
 
   getAuthUrl(state: string): string {

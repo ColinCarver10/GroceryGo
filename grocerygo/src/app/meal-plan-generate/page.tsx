@@ -32,8 +32,8 @@ export default async function MealPlanGeneratePage({
   if (resolvedParams.complexityMap) {
     try {
       complexityMap = JSON.parse(resolvedParams.complexityMap)
-    } catch {
-      // Ignore invalid JSON
+    } catch (err) {
+      console.warn('Invalid complexityMap JSON in search params:', err)
     }
   }
 

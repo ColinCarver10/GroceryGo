@@ -1,37 +1,12 @@
 import { createDAVClient, DAVCalendar } from 'tsdav'
 import { createClient } from '@/utils/supabase/server'
-import { decrypt } from '@/utils/encryption'
-import type { CalendarProvider, CalendarEvent, OAuthTokens, CalendarSource } from '@/types/calendar'
+import type { CalendarEvent, CalendarSource } from '@/types/calendar'
+import { BaseCalendarProvider } from './base'
 
 const CALDAV_URL = 'https://caldav.icloud.com'
 
-export class AppleCalendarProvider implements CalendarProvider {
-  private source: CalendarSource = 'apple'
-  private tokens: OAuthTokens | null = null
-
-  async authenticate(userId: string): Promise<OAuthTokens> {
-    const supabase = await createClient()
-
-    const { data: connection, error } = await supabase
-      .from('calendar_connections')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('provider', this.source)
-      .single()
-
-    if (error || !connection) {
-      throw new Error('No Apple Calendar connection found. Please connect your calendar first.')
-    }
-
-    // For Apple CalDAV: access_token = app-specific password, refresh_token = Apple ID email
-    const tokens: OAuthTokens = {
-      accessToken: decrypt(connection.access_token),
-      refreshToken: connection.refresh_token ? decrypt(connection.refresh_token) : undefined,
-    }
-
-    this.tokens = tokens
-    return tokens
-  }
+export class AppleCalendarProvider extends BaseCalendarProvider {
+  protected source: CalendarSource = 'apple'
 
   async fetchEvents(startDate: Date, endDate: Date): Promise<CalendarEvent[]> {
     const supabase = await createClient()
@@ -45,6 +20,7 @@ export class AppleCalendarProvider implements CalendarProvider {
       await this.authenticate(user.id)
     }
 
+    // For Apple CalDAV: accessToken = app-specific password, refreshToken = Apple ID email
     const appleIdEmail = this.tokens!.refreshToken
     const appSpecificPassword = this.tokens!.accessToken
 
@@ -87,20 +63,6 @@ export class AppleCalendarProvider implements CalendarProvider {
 
     return allEvents
   }
-
-  async revokeAccess(userId: string): Promise<void> {
-    const supabase = await createClient()
-
-    const { error } = await supabase
-      .from('calendar_connections')
-      .delete()
-      .eq('user_id', userId)
-      .eq('provider', this.source)
-
-    if (error) {
-      throw new Error(`Failed to revoke Apple Calendar access: ${error.message}`)
-    }
-  }
 }
 
 function parseICSEvent(icsData: string, url: string): CalendarEvent | null {
@@ -112,28 +74,35 @@ function parseICSEvent(icsData: string, url: string): CalendarEvent | null {
   let location: string | undefined
   let description: string | undefined
   let uid = url
+  let found = 0
 
   for (const line of lines) {
     if (line.startsWith('SUMMARY:')) {
       summary = line.substring('SUMMARY:'.length).trim()
+      found++
     } else if (line.startsWith('DTSTART')) {
-      // Handle DTSTART;VALUE=DATE:20250101 or DTSTART:20250101T120000Z
       const colonIdx = line.indexOf(':')
       if (colonIdx !== -1) {
         dtstart = line.substring(colonIdx + 1).trim()
+        found++
       }
     } else if (line.startsWith('DTEND')) {
       const colonIdx = line.indexOf(':')
       if (colonIdx !== -1) {
         dtend = line.substring(colonIdx + 1).trim()
+        found++
       }
     } else if (line.startsWith('LOCATION:')) {
       location = line.substring('LOCATION:'.length).trim()
+      found++
     } else if (line.startsWith('DESCRIPTION:')) {
       description = line.substring('DESCRIPTION:'.length).trim()
+      found++
     } else if (line.startsWith('UID:')) {
       uid = line.substring('UID:'.length).trim()
+      found++
     }
+    if (found === 6) break
   }
 
   if (!dtstart) {

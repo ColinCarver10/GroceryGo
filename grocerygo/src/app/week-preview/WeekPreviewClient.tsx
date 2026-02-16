@@ -114,7 +114,6 @@ export default function WeekPreviewClient({ initialData }: WeekPreviewClientProp
 
       if ('error' in result && result.error) {
         setError(result.error)
-        setLoading(false)
         return
       }
 
@@ -127,6 +126,7 @@ export default function WeekPreviewClient({ initialData }: WeekPreviewClientProp
     } catch (err) {
       console.error('Generation error:', err)
       setError('An unexpected error occurred. Please try again.')
+    } finally {
       setLoading(false)
     }
   }

@@ -7,12 +7,7 @@ import {
   fetchUserSurveyResponse,
   getMealPlanForUser
 } from '@/services/mealPlanService'
-
-interface MealSelection {
-  breakfast: number
-  lunch: number
-  dinner: number
-}
+import type { MealSelection } from '@/app/schemas/mealPlanSchemas'
 
 export async function POST(request: NextRequest) {
   try {
@@ -85,26 +80,21 @@ export async function POST(request: NextRequest) {
       })
       .join('\n')
 
-    const surveyJson = surveyData ?? {}
-    const favoredIngredients =
-      Array.isArray((surveyJson as Record<string, unknown>)?.favored_ingredients)
-        ? (surveyJson as Record<string, unknown>).favored_ingredients
-        : []
-    const excludedIngredients =
-      Array.isArray((surveyJson as Record<string, unknown>)?.excluded_ingredients)
-        ? (surveyJson as Record<string, unknown>).excluded_ingredients
-        : []
+    const surveyJson = (surveyData ?? {}) as Record<string, unknown>
+    const favoredIngredients = Array.isArray(surveyJson.favored_ingredients)
+      ? (surveyJson.favored_ingredients as string[])
+      : []
+    const excludedIngredients = Array.isArray(surveyJson.excluded_ingredients)
+      ? (surveyJson.excluded_ingredients as string[])
+      : []
 
     let ingredientPreferencesSection = ''
-    if (
-      Array.isArray(favoredIngredients) && favoredIngredients.length > 0 ||
-      Array.isArray(excludedIngredients) && excludedIngredients.length > 0
-    ) {
+    if (favoredIngredients.length > 0 || excludedIngredients.length > 0) {
       ingredientPreferencesSection = '\n\n### Ingredient Preferences:\n'
-      if (Array.isArray(favoredIngredients) && favoredIngredients.length > 0) {
+      if (favoredIngredients.length > 0) {
         ingredientPreferencesSection += `**Favored Ingredients (prioritize using these):** ${favoredIngredients.join(', ')}\n`
       }
-      if (Array.isArray(excludedIngredients) && excludedIngredients.length > 0) {
+      if (excludedIngredients.length > 0) {
         ingredientPreferencesSection += `**Excluded Ingredients (NEVER use these):** ${excludedIngredients.join(', ')}\n`
       }
     }

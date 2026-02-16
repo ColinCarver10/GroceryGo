@@ -51,27 +51,29 @@ export async function fetchAllEvents(
     sources.map(async (source) => {
       const provider = getProvider(source)
       await provider.authenticate(user.id)
-      const events = await provider.fetchEvents(startDate, endDate)
-
-      // Update last_fetched_at on successful fetch
-      await supabase
-        .from('calendar_connections')
-        .update({ last_fetched_at: new Date().toISOString() })
-        .eq('user_id', user.id)
-        .eq('provider', source)
-
-      return events
+      return { source, events: await provider.fetchEvents(startDate, endDate) }
     })
   )
 
   const allEvents: CalendarEvent[] = []
+  const succeededSources: CalendarSource[] = []
 
   for (const result of results) {
     if (result.status === 'fulfilled') {
-      allEvents.push(...result.value)
+      allEvents.push(...result.value.events)
+      succeededSources.push(result.value.source)
     } else {
       console.error('Calendar fetch failed for a provider:', result.reason)
     }
+  }
+
+  // Batch-update last_fetched_at for all providers that succeeded
+  if (succeededSources.length > 0) {
+    await supabase
+      .from('calendar_connections')
+      .update({ last_fetched_at: new Date().toISOString() })
+      .eq('user_id', user.id)
+      .in('provider', succeededSources)
   }
 
   // Sort by startTime ascending
