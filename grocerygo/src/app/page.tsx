@@ -1,6 +1,7 @@
 import Link from 'next/link'
-import { createClient } from '@/utils/supabase/server'
+import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
+import HomeCtaLink from '@/components/HomeCtaLink'
 
 export default async function HomePage({
   searchParams,
@@ -8,33 +9,12 @@ export default async function HomePage({
   searchParams: Promise<{ code?: string }>
 }) {
   const params = await searchParams
-  
+
   // Redirect OAuth callback to the callback route
   if (params.code) {
     redirect(`/auth/callback?code=${params.code}`)
   }
-  
-  const supabase = await createClient()
-  
-  // Check if user is authenticated and has completed survey
-  const { data: { user } } = await supabase.auth.getUser()
-  
-  let ctaHref = '/onboarding'
-  
-  if (user) {
-    // Check if user has completed the questionnaire
-    const { data: userData } = await supabase
-      .from('users')
-      .select('survey_response')
-      .eq('user_id', user.id)
-      .single()
-    
-    // If user has completed survey, send them to dashboard
-    if (userData?.survey_response) {
-      ctaHref = '/dashboard'
-    }
-  }
-  
+
   return (
     <div className="gg-bg-page min-h-screen">
       {/* Hero Section */}
@@ -62,9 +42,15 @@ export default async function HomePage({
 
           {/* CTA Button */}
           <div className="mb-16">
-            <Link href={ctaHref} className="gg-btn-primary">
-              Get Started
-            </Link>
+            <Suspense
+              fallback={
+                <Link href="/onboarding" className="gg-btn-primary">
+                  Get Started
+                </Link>
+              }
+            >
+              <HomeCtaLink />
+            </Suspense>
           </div>
 
           {/* Feature Cards */}

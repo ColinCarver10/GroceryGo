@@ -1,11 +1,10 @@
 import Link from 'next/link'
-import { createClient } from '@/utils/supabase/server'
+import { getCachedUser } from '@/utils/supabase/server'
 import LogoutButton from '@/components/LogoutButton'
 import MobileNav from '@/components/MobileNav'
 
 export default async function Navbar() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getCachedUser()
 
   return (
     <nav className="border-b border-[var(--gg-border)] bg-white shadow-sm">
