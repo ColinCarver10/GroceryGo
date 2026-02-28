@@ -19,6 +19,10 @@ A `.env.local` file is required in `grocerygo/` with at minimum:
 
 The app can start with placeholder values for these, but Supabase-dependent features (auth, data) will not work. For full functionality, also set `OPENAI_API_KEY`.
 
+### PostHog runtime crash without API key
+
+The PostHog server client (`src/lib/posthog-server.ts`) passes `process.env.NEXT_PUBLIC_POSTHOG_KEY!` directly to the `PostHog` constructor, which throws if the value is empty/undefined. You **must** set `NEXT_PUBLIC_POSTHOG_KEY` to any non-empty string (e.g. `phc_placeholder`) in `.env.local` or server actions that use PostHog (login, onboarding, meal plan generation) will crash with "You must pass your PostHog project's api key."
+
 ### Middleware auth redirect
 
 The Supabase middleware (`src/utils/supabase/middleware.ts`) redirects unauthenticated users to `/login` for all routes except `/`, `/login`, `/auth/*`, and `/error`. With placeholder Supabase credentials the auth check silently fails (user = null), so protected routes like `/onboarding` will redirect to `/login` unless you have valid Supabase credentials.
