@@ -1,2 +1,6 @@
 .next/trace
 .vscode/launch.json
+
+# Ignore local agent configuration and skills
+.agents/
+skills-lock.json

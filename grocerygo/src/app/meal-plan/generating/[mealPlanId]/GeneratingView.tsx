@@ -454,7 +454,16 @@ export default function GeneratingView({
       })
 
       if (!response.ok) {
-        throw new Error('Failed to start meal plan generation')
+        let message = 'Failed to start meal plan generation'
+        try {
+          const data = await response.json()
+          if (data && typeof data.error === 'string') {
+            message = data.error
+          }
+        } catch {
+          // Ignore JSON parse errors and fall back to generic message
+        }
+        throw new Error(message)
       }
 
       const reader = response.body?.getReader()

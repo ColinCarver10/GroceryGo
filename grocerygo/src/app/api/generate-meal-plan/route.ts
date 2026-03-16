@@ -12,6 +12,8 @@ import {
   getEmbedPrompts,
   fetchRecipeDetailsByIds
 } from '@/services/mealPlanService'
+import { assertWithinDailyAIQuota } from '@/app/actions/quota'
+import { isQuotaError } from '@/lib/quota'
 
 interface MealSelection {
   breakfast: number
@@ -49,6 +51,16 @@ export async function POST(request: NextRequest) {
     }
 
     const context = await createMealPlanContext()
+
+    // Rate limit AI usage (server-controlled via Supabase RPC)
+    try {
+      await assertWithinDailyAIQuota(context.supabase)
+    } catch (e) {
+      if (isQuotaError(e)) {
+        return NextResponse.json({ error: e.message }, { status: 429 })
+      }
+      throw e
+    }
 
     if (!parsed.mealSelection) {
       logValidationError('POST /api/generate-meal-plan', new Error('Meal selection not found'), {

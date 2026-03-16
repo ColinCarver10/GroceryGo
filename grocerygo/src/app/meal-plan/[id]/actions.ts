@@ -27,6 +27,8 @@ import {
 } from '@/services/mealPlanService'
 import { getPostHogClient } from '@/lib/posthog-server';
 import { logDatabaseError, logApiError, logAuthError, logUnexpectedError, logFetchError, logParseError, logValidationError } from '@/utils/errorLogger';
+import { assertWithinInstacartQuota } from '@/app/actions/quota'
+import { isQuotaError } from '@/lib/quota'
 
 const INSTACART_API_URL = process.env.INSTACART_API_URL || 'https://connect.dev.instacart.tools/idp/v1/products/products_link'
 const INSTACART_API_KEY = process.env.INSTACART_API_KEY
@@ -78,6 +80,16 @@ export async function createInstacartOrder(
         authErrorType: authError ? 'auth_error' : 'user_not_found'
       })
       return { success: false, error: 'User not authenticated' }
+    }
+
+    // Rate limit Instacart link creation (server-controlled via Supabase RPC)
+    try {
+      await assertWithinInstacartQuota(supabase)
+    } catch (e) {
+      if (isQuotaError(e)) {
+        return { success: false, error: e.message }
+      }
+      throw e
     }
 
     // Convert grocery items to Instacart line items
