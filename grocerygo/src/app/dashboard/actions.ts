@@ -4,6 +4,8 @@ import { createClient } from '@/utils/supabase/server'
 import { revalidateTag } from 'next/cache'
 import type { MealPlanWithRecipes } from '@/types/database'
 import { logDatabaseError, logAuthError } from '@/utils/errorLogger'
+import { buildGlobalRecipesResult, type GlobalRecipeRow } from './globalRecipes'
+import type { Recipe } from '@/types/database'
 
 /**
  * Check if recipes already exist for a meal plan
@@ -316,6 +318,74 @@ export async function getSavedRecipesData(userId: string) {
   return {
     savedRecipes: savedRecipes || [],
   }
+}
+
+/**
+ * Get globally saved recipes (saved by other users), filtered and ranked by popularity.
+ */
+export async function getGlobalRecipesData(
+  userId: string,
+  params: {
+    search?: string
+    mealType?: string
+    limit?: number
+    offset?: number
+  } = {}
+) {
+  const supabase = await createClient()
+  const limit = Math.max(params.limit ?? 20, 1)
+  const offset = Math.max(params.offset ?? 0, 0)
+
+  // Pull a broad candidate set, then apply robust search/filter + dedupe server-side.
+  const { data: globalRows, error } = await supabase
+    .from('saved_recipes')
+    .select(`
+      recipe_id,
+      created_at,
+      recipe:recipes (*)
+    `)
+    .neq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(1500)
+
+  if (error) {
+    logDatabaseError('getGlobalRecipesData', error, {
+      table: 'saved_recipes',
+      operation: 'SELECT',
+      queryParams: {
+        excluded_user_id: userId,
+        search: params.search || null,
+        mealType: params.mealType || null,
+        limit,
+        offset
+      }
+    }, userId)
+
+    return {
+      recipes: [],
+      total: 0,
+      hasMore: false
+    }
+  }
+
+  const normalizedRows: GlobalRecipeRow[] = (globalRows || []).map((row: {
+    recipe_id: string
+    created_at: string
+    recipe: Recipe | Recipe[] | null
+  }) => ({
+    recipe_id: row.recipe_id,
+    created_at: row.created_at,
+    recipe: Array.isArray(row.recipe) ? (row.recipe[0] as Recipe | undefined) ?? null : (row.recipe as Recipe | null)
+  }))
+
+  const result = buildGlobalRecipesResult(normalizedRows, {
+    search: params.search,
+    mealType: params.mealType,
+    limit,
+    offset
+  })
+
+  return result
 }
 
 // ─── Mutation actions ────────────────────────────────────────────────────────

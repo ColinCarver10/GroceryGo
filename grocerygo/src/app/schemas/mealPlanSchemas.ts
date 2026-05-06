@@ -80,6 +80,27 @@ export const SimplifyRecipeSchema = z.object({
   changes_made: z.string()
 })
 
+// Recipe import schema (from URL/content extraction)
+export const ImportedRecipeSchema = z.object({
+  name: z.string().min(1).describe('Recipe name'),
+  description: z.string().optional().describe('Short recipe description'),
+  ingredients: z.array(
+    z.object({
+      item: z.string().min(1).describe('Ingredient name'),
+      quantity: z.string().min(1).describe('Ingredient quantity (e.g. "2 cups")'),
+      unit: z.string().optional().describe('Optional unit if separable from quantity')
+    })
+  ).min(1).describe('Extracted ingredient list'),
+  steps: z.array(z.string().min(1)).min(1).describe('Ordered cooking steps'),
+  prep_time_minutes: z.number().int().positive().optional().describe('Prep time in minutes'),
+  cook_time_minutes: z.number().int().positive().optional().describe('Cook time in minutes'),
+  servings: z.number().int().positive().optional().describe('Number of servings'),
+  difficulty: z.enum(['beginner', 'intermediate', 'advanced']).optional().describe('Difficulty'),
+  mealType: z.enum(['Breakfast', 'Lunch', 'Dinner']).optional().describe('Primary meal type'),
+  confidence: z.number().min(0).max(1).describe('Extraction confidence from 0 to 1'),
+  missingFields: z.array(z.string()).default([]).describe('Fields not confidently extracted')
+})
+
 // Export types
 export type Recipe = z.infer<typeof RecipeSchema>
 export type Ingredient = z.infer<typeof IngredientSchema>
@@ -87,4 +108,5 @@ export type GroceryItem = z.infer<typeof GroceryItemSchema>
 export type ReplaceRecipeResponse = z.infer<typeof ReplaceRecipeSchema>
 export type ReplaceRecipeWithTotalIngredientsResponse = z.infer<typeof ReplaceRecipeWithTotalIngredientsSchema>
 export type SimplifyRecipeResponse = z.infer<typeof SimplifyRecipeSchema>
+export type ImportedRecipe = z.infer<typeof ImportedRecipeSchema>
 

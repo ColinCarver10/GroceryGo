@@ -763,12 +763,13 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
     // Store the clicked slot's date to exclude it from "Also planned for" display
     const clickedDate = slots.length > 0 ? slots[0].planned_for_date ?? null : null
     setClickedSlotDate(clickedDate)
-    // Find all meal plan recipes that use this same recipe
-    // Use recipe_id from the clicked slot (parent id) which will be the same across all slots for the same recipe
-    // Get recipe_id from the first slot passed in (the clicked slot)
-    const recipeId = slots.length > 0 ? String(slots[0].recipe_id) : String(recipe.id)
+    // Find all meal plan recipes that use this same recipe.
+    // Prefer updated_recipe_id for generated/modified recipes and fall back to recipe_id.
+    const recipeId = slots.length > 0
+      ? String(slots[0].updated_recipe_id ?? slots[0].recipe_id ?? recipe.id)
+      : String(recipe.id)
     const allSlotsForRecipe = mealPlan.meal_plan_recipes.filter(
-      mpr => String(mpr.recipe_id) === recipeId
+      mpr => String(mpr.updated_recipe_id ?? mpr.recipe_id ?? '') === recipeId
     )
     // Fallback to the slots passed in if filter finds nothing (shouldn't happen, but safety check)
     setSelectedRecipeSlots(allSlotsForRecipe.length > 0 ? allSlotsForRecipe : slots)
@@ -793,7 +794,9 @@ export default function MealPlanView({ mealPlan, savedRecipeIds, totalIngredient
   }))
 
   // Count unique recipes for tab label
-  const uniqueRecipeIds = new Set(mealPlan.meal_plan_recipes.map(mpr => mpr.recipe_id))
+  const uniqueRecipeIds = new Set(
+    mealPlan.meal_plan_recipes.map(mpr => String(mpr.updated_recipe_id ?? mpr.recipe_id ?? ''))
+  )
 
   return (
     <div className="gg-bg-page min-h-screen">

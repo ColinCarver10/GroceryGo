@@ -4,7 +4,9 @@ import { useState } from 'react'
 import type { Recipe } from '@/types/database'
 import RecipeModal from '@/components/RecipeModal'
 import { invalidateDashboardCache } from './actions'
-import { unsaveRecipe } from '@/app/actions/userPreferences'
+import { getSavedRecipes, unsaveRecipe } from '@/app/actions/userPreferences'
+import { importRecipeFromUrl } from '@/app/actions/importRecipe'
+import GlobalRecipesModal from './GlobalRecipesModal'
 
 interface SavedRecipesClientProps {
   userId: string
@@ -29,6 +31,12 @@ export default function SavedRecipesClient({
     recipeId: string
     recipeName: string
   } | null>(null)
+  const [showImportModal, setShowImportModal] = useState(false)
+  const [showGlobalRecipesModal, setShowGlobalRecipesModal] = useState(false)
+  const [importUrl, setImportUrl] = useState('')
+  const [isImporting, setIsImporting] = useState(false)
+  const [importError, setImportError] = useState<string | null>(null)
+  const [importSuccess, setImportSuccess] = useState<string | null>(null)
 
   const handleUnsaveRecipeClick = (savedRecipeId: string, recipeId: string, recipeName: string) => {
     setRecipeToRemove({ savedRecipeId, recipeId, recipeName })
@@ -75,6 +83,62 @@ export default function SavedRecipesClient({
     setRecipeToRemove(null)
   }
 
+  const handleOpenImportModal = () => {
+    setImportUrl('')
+    setImportError(null)
+    setShowImportModal(true)
+  }
+
+  const handleCloseImportModal = () => {
+    if (isImporting) return
+    setShowImportModal(false)
+    setImportUrl('')
+    setImportError(null)
+  }
+
+  const handleImportRecipe = async () => {
+    const trimmedUrl = importUrl.trim()
+    if (!trimmedUrl) {
+      setImportError('Please enter a URL to import.')
+      return
+    }
+
+    setIsImporting(true)
+    setImportError(null)
+    setImportSuccess(null)
+
+    try {
+      const result = await importRecipeFromUrl({ url: trimmedUrl })
+
+      if (!result.success) {
+        setImportError(result.error || 'Failed to import recipe.')
+        return
+      }
+
+      setSavedRecipes((prev) => [result.savedRecipe, ...prev])
+      setImportSuccess(`Imported "${result.savedRecipe.recipe.name}"`)
+      setShowImportModal(false)
+      setImportUrl('')
+      await invalidateDashboardCache()
+    } catch (error) {
+      setImportError('An unexpected error occurred while importing.')
+      console.error('Error importing recipe:', error)
+    } finally {
+      setIsImporting(false)
+    }
+  }
+
+  const handleGlobalRecipeSaved = async (recipe: Recipe) => {
+    setImportSuccess(`Saved "${recipe.name}" to your recipes`)
+    try {
+      const refreshed = await getSavedRecipes(userId)
+      setSavedRecipes(refreshed as typeof initialSavedRecipes)
+      await invalidateDashboardCache()
+    } catch (error) {
+      console.error('Error refreshing saved recipes after global save:', error)
+    }
+  }
+
   return (
     <>
       <div className="gg-card mt-8">
@@ -98,6 +162,23 @@ export default function SavedRecipesClient({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
           </svg>
         </button>
+
+        <div className="mt-4">
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={handleOpenImportModal}
+              className="px-4 py-2 text-sm font-medium text-white bg-[var(--gg-primary)] rounded-lg hover:opacity-90 transition-opacity"
+            >
+              Import Recipe from URL
+            </button>
+            <button
+              onClick={() => setShowGlobalRecipesModal(true)}
+              className="px-4 py-2 text-sm font-medium text-[var(--gg-primary)] border-2 border-[var(--gg-primary)] rounded-lg hover:bg-[var(--gg-primary)] hover:text-white transition-colors"
+            >
+              Browse Global Recipes
+            </button>
+          </div>
+        </div>
 
         {showSavedRecipes && savedRecipes.length > 0 && (
           <div className="mt-6 border-t border-gray-200 pt-6">
@@ -222,6 +303,105 @@ export default function SavedRecipesClient({
           </div>
         </div>
       )}
+
+      {/* Import Status Toasts */}
+      {importError && (
+        <div className="fixed bottom-4 right-4 bg-red-50 border-2 border-red-500 rounded-lg p-4 shadow-lg z-50 max-w-md">
+          <div className="flex items-start gap-3">
+            <svg className="h-6 w-6 text-red-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-red-900">Import Failed</p>
+              <p className="text-sm text-red-800 mt-1">{importError}</p>
+            </div>
+            <button
+              onClick={() => setImportError(null)}
+              className="text-red-600 hover:text-red-800"
+            >
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {importSuccess && (
+        <div className="fixed bottom-4 right-4 bg-green-50 border-2 border-green-500 rounded-lg p-4 shadow-lg z-50 max-w-md">
+          <div className="flex items-start gap-3">
+            <svg className="h-6 w-6 text-green-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-green-900">Import Complete</p>
+              <p className="text-sm text-green-800 mt-1">{importSuccess}</p>
+            </div>
+            <button
+              onClick={() => setImportSuccess(null)}
+              className="text-green-600 hover:text-green-800"
+            >
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Import Recipe Modal */}
+      {showImportModal && (
+        <>
+          <div
+            className="fixed inset-0 bg-black opacity-40 z-50"
+            onClick={handleCloseImportModal}
+          />
+          <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none p-4">
+            <div className="bg-white rounded-xl shadow-2xl p-6 max-w-lg w-full pointer-events-auto">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Import Recipe from URL</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Paste a recipe, Instagram, TikTok, or YouTube link and we will extract the recipe.
+              </p>
+
+              <div className="mb-4">
+                <input
+                  type="url"
+                  value={importUrl}
+                  onChange={(e) => setImportUrl(e.target.value)}
+                  placeholder="https://..."
+                  disabled={isImporting}
+                  className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-[var(--gg-primary)] transition-colors disabled:bg-gray-100"
+                />
+              </div>
+
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={handleCloseImportModal}
+                  disabled={isImporting}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-60"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleImportRecipe}
+                  disabled={isImporting}
+                  className="px-4 py-2 text-sm font-medium text-white bg-[var(--gg-primary)] rounded-lg hover:opacity-90 transition-opacity disabled:opacity-60"
+                >
+                  {isImporting ? 'Importing...' : 'Import'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      <GlobalRecipesModal
+        isOpen={showGlobalRecipesModal}
+        onClose={() => setShowGlobalRecipesModal(false)}
+        userId={userId}
+        savedRecipeIds={savedRecipes.map((savedRecipe) => savedRecipe.recipe_id)}
+        onRecipeSaved={handleGlobalRecipeSaved}
+      />
 
       {/* Confirm Remove Recipe Modal */}
       {recipeToRemove && (

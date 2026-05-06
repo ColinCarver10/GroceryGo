@@ -11,7 +11,9 @@ import {
   type GenerateMealPlanConflict,
   type GenerateMealPlanError
 } from '@/app/meal-plan-generate/actions'
+import { getSavedRecipes } from '@/app/actions/userPreferences'
 import type { SurveyResponse } from '@/types/database'
+import type { Recipe } from '@/types/database'
 
 type MealType = 'breakfast' | 'lunch' | 'dinner'
 
@@ -38,6 +40,16 @@ interface MealSlot {
 
 interface MealPlanGenerateClientProps {
   surveyResponse: SurveyResponse
+  userId: string
+}
+
+type SelectedSavedRecipeIds = Record<MealType, string[]>
+
+interface SavedRecipeWithDetails {
+  id: string
+  recipe_id: string
+  created_at: string
+  recipe: Recipe
 }
 
 function isErrorResponse(response: GenerateMealPlanResponse): response is GenerateMealPlanError {
@@ -206,7 +218,6 @@ function MealChip({
 // Recipe Box Component - tappable target
 function RecipeBox({
   recipeIndex,
-  mealType,
   assignedSlots,
   selectedMealId,
   hasSelectedMeal,
@@ -214,7 +225,6 @@ function RecipeBox({
   onBoxTap,
 }: {
   recipeIndex: number
-  mealType: MealType
   assignedSlots: MealSlot[]
   selectedMealId: string | null
   hasSelectedMeal: boolean
@@ -386,7 +396,6 @@ function MealTypeSliderCard({
           <RecipeBox
             key={`${mealType}-recipe-${index}`}
             recipeIndex={index}
-            mealType={mealType}
             assignedSlots={slots}
             selectedMealId={selectedMealId}
             hasSelectedMeal={hasSelectedMealOfType}
@@ -406,7 +415,7 @@ function MealTypeSliderCard({
   )
 }
 
-export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGenerateClientProps) {
+export default function MealPlanGenerateClient({ surveyResponse, userId }: MealPlanGenerateClientProps) {
   const router = useRouter()
   const [currentStep, setCurrentStep] = useState<1 | 2>(1)
   const [loading, setLoading] = useState(false)
@@ -420,6 +429,15 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
 
   // Tap-to-swap state
   const [selectedMealId, setSelectedMealId] = useState<string | null>(null)
+  const [savedRecipes, setSavedRecipes] = useState<SavedRecipeWithDetails[]>([])
+  const [savedRecipesLoading, setSavedRecipesLoading] = useState(false)
+  const [savedRecipesError, setSavedRecipesError] = useState<string | null>(null)
+  const [selectionError, setSelectionError] = useState<string | null>(null)
+  const [selectedSavedRecipeIds, setSelectedSavedRecipeIds] = useState<SelectedSavedRecipeIds>({
+    breakfast: [],
+    lunch: [],
+    dinner: []
+  })
 
   // Calculate days for the week based on start date
   const weekDays = useMemo(() => {
@@ -557,6 +575,43 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
     }
   }, [currentStep, totals.breakfast, totals.lunch, totals.dinner, surveyResponse])
 
+  useEffect(() => {
+    if (currentStep !== 2) return
+
+    let isCancelled = false
+    const loadSavedRecipes = async () => {
+      setSavedRecipesLoading(true)
+      setSavedRecipesError(null)
+      try {
+        const recipes = await getSavedRecipes(userId)
+        if (!isCancelled) {
+          setSavedRecipes(recipes as SavedRecipeWithDetails[])
+        }
+      } catch {
+        if (!isCancelled) {
+          setSavedRecipesError('Failed to load saved recipes.')
+        }
+      } finally {
+        if (!isCancelled) {
+          setSavedRecipesLoading(false)
+        }
+      }
+    }
+
+    loadSavedRecipes()
+    return () => {
+      isCancelled = true
+    }
+  }, [currentStep, userId])
+
+  useEffect(() => {
+    setSelectedSavedRecipeIds((prev) => ({
+      breakfast: prev.breakfast.slice(0, recipeCount.breakfast),
+      lunch: prev.lunch.slice(0, recipeCount.lunch),
+      dinner: prev.dinner.slice(0, recipeCount.dinner)
+    }))
+  }, [recipeCount.breakfast, recipeCount.lunch, recipeCount.dinner])
+
   // Scroll to header description when moving to step 2
   useEffect(() => {
     if (currentStep === 2 && headerDescriptionRef.current) {
@@ -607,6 +662,68 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
     // Clear selection when slider changes
     setSelectedMealId(null)
   }, [totals.breakfast, totals.lunch, totals.dinner])
+
+  const totalSelectedSavedRecipes = useMemo(() => {
+    return selectedSavedRecipeIds.breakfast.length + selectedSavedRecipeIds.lunch.length + selectedSavedRecipeIds.dinner.length
+  }, [selectedSavedRecipeIds])
+
+  const findBestMealTypeForRecipe = useCallback((savedRecipe: SavedRecipeWithDetails): MealType | null => {
+    const recipeMealType = savedRecipe.recipe?.meal_type
+    const normalizedMealTypes = Array.isArray(recipeMealType)
+      ? recipeMealType.map((value) => String(value).toLowerCase())
+      : recipeMealType
+        ? [String(recipeMealType).toLowerCase()]
+        : []
+
+    const preferredOrder: MealType[] = []
+    if (normalizedMealTypes.includes('breakfast')) preferredOrder.push('breakfast')
+    if (normalizedMealTypes.includes('lunch')) preferredOrder.push('lunch')
+    if (normalizedMealTypes.includes('dinner')) preferredOrder.push('dinner')
+
+    const allTypes: MealType[] = ['breakfast', 'lunch', 'dinner']
+    const typeOrder = preferredOrder.length > 0
+      ? [...preferredOrder, ...allTypes.filter((type) => !preferredOrder.includes(type))]
+      : allTypes
+
+    for (const mealType of typeOrder) {
+      if (selectedSavedRecipeIds[mealType].length < recipeCount[mealType]) {
+        return mealType
+      }
+    }
+
+    return null
+  }, [recipeCount, selectedSavedRecipeIds])
+
+  const toggleSavedRecipeSelection = useCallback((savedRecipe: SavedRecipeWithDetails) => {
+    const recipeId = savedRecipe.recipe_id
+
+    setSelectedSavedRecipeIds((prev) => {
+      const selectedMealType = (['breakfast', 'lunch', 'dinner'] as MealType[]).find((type) =>
+        prev[type].includes(recipeId)
+      )
+
+      if (selectedMealType) {
+        setSelectionError(null)
+        return {
+          ...prev,
+          [selectedMealType]: prev[selectedMealType].filter((id) => id !== recipeId)
+        }
+      }
+
+      const targetMealType = findBestMealTypeForRecipe(savedRecipe)
+      if (!targetMealType) {
+        const maxSelectable = recipeCount.breakfast + recipeCount.lunch + recipeCount.dinner
+        setSelectionError(`You can select up to ${maxSelectable} saved recipe${maxSelectable === 1 ? '' : 's'} for this week.`)
+        return prev
+      }
+
+      setSelectionError(null)
+      return {
+        ...prev,
+        [targetMealType]: [...prev[targetMealType], recipeId]
+      }
+    })
+  }, [findBestMealTypeForRecipe, recipeCount])
 
   // Tap-to-swap handlers
   const handleMealTap = useCallback((mealSlotId: string) => {
@@ -676,7 +793,8 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
           dinner: totals.dinner
         },
         recipeCount,
-        selectedSlots
+        selectedSlots,
+        selectedSavedRecipeIds
       )
 
       if ('conflict' in result && result.conflict) {
@@ -726,7 +844,8 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
           dinner: totals.dinner
         },
         recipeCount,
-        selectedSlots
+        selectedSlots,
+        selectedSavedRecipeIds
       )
 
       if (isErrorResponse(result)) {
@@ -1137,6 +1256,63 @@ export default function MealPlanGenerateClient({ surveyResponse }: MealPlanGener
                       onRecipeBoxTap={handleRecipeBoxTap}
                     />
                   ))}
+                </div>
+
+                <div className="gg-card">
+                  <h2 className="gg-heading-section mb-4">Use Saved Recipes</h2>
+                  <p className="text-gray-600 mb-4">
+                    Pick saved recipes to include first. We&apos;ll fill any remaining recipe slots with AI picks.
+                  </p>
+
+                  {savedRecipesLoading ? (
+                    <p className="text-sm text-gray-600">Loading saved recipes...</p>
+                  ) : savedRecipesError ? (
+                    <p className="text-sm text-red-600">{savedRecipesError}</p>
+                  ) : (
+                    savedRecipes.length === 0 ? (
+                      <p className="text-sm text-gray-500">No saved recipes yet.</p>
+                    ) : (
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2 mb-3">
+                          <span className="text-xs text-gray-600">
+                            {totalSelectedSavedRecipes} / {recipeCount.breakfast + recipeCount.lunch + recipeCount.dinner} selected
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            (B: {selectedSavedRecipeIds.breakfast.length}/{recipeCount.breakfast}, L: {selectedSavedRecipeIds.lunch.length}/{recipeCount.lunch}, D: {selectedSavedRecipeIds.dinner.length}/{recipeCount.dinner})
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {savedRecipes.map((savedRecipe) => {
+                            const isSelected = (['breakfast', 'lunch', 'dinner'] as MealType[]).some((type) =>
+                              selectedSavedRecipeIds[type].includes(savedRecipe.recipe_id)
+                            )
+
+                            return (
+                              <button
+                                key={`saved-${savedRecipe.id}`}
+                                type="button"
+                                onClick={() => toggleSavedRecipeSelection(savedRecipe)}
+                                className={`text-left rounded-lg border p-3 transition-colors ${
+                                  isSelected
+                                    ? 'border-[var(--gg-primary)] bg-[var(--gg-primary)]/5'
+                                    : 'border-gray-200 hover:border-[var(--gg-primary)]'
+                                }`}
+                              >
+                                <p className="font-medium text-gray-900 capitalize">{savedRecipe.recipe.name}</p>
+                                <p className="text-xs text-gray-600 mt-1">
+                                  {savedRecipe.recipe.ingredients?.length || 0} ingredients
+                                </p>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  )}
+
+                  {selectionError && (
+                    <p className="mt-4 text-sm text-red-600">{selectionError}</p>
+                  )}
                 </div>
               </div>
 

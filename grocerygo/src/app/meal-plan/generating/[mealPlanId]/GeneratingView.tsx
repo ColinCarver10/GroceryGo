@@ -20,6 +20,11 @@ type SurveySnapshotData = SurveyResponse & {
     dinner: number
   }
   selected_slots?: SelectedSlot[]
+  selected_saved_recipe_ids?: {
+    breakfast: string[]
+    lunch: string[]
+    dinner: string[]
+  }
 }
 
 interface GeneratingViewProps {
@@ -87,6 +92,98 @@ interface ScheduleEntry {
   mealType: string
   recipeId: string
   portionMultiplier: number
+}
+
+function extractFirstJsonObject(text: string): string | null {
+  const start = text.indexOf('{')
+  if (start === -1) return null
+
+  let depth = 0
+  let inString = false
+  let escapeNext = false
+
+  for (let i = start; i < text.length; i++) {
+    const char = text[i]
+
+    if (escapeNext) {
+      escapeNext = false
+      continue
+    }
+
+    if (char === '\\') {
+      escapeNext = true
+      continue
+    }
+
+    if (char === '"') {
+      inString = !inString
+      continue
+    }
+
+    if (inString) continue
+
+    if (char === '{') depth += 1
+    if (char === '}') {
+      depth -= 1
+      if (depth === 0) {
+        return text.slice(start, i + 1)
+      }
+    }
+  }
+
+  return null
+}
+
+function sanitizeJsonLikeString(value: string): string {
+  return value
+    .replace(/^\uFEFF/, '')
+    .replace(/\/\/.*$/gm, '')
+    .replace(/,\s*([}\]])/g, '$1')
+    .trim()
+}
+
+function parseAiJsonPayload(
+  rawBuffer: string
+): {
+  recipes?: RecipeData[]
+  grocery_list?: Array<{ item: string; quantity: string }> | {
+    items: Array<{ item: string; quantity: string }>
+    seasonings: Array<{ item: string; quantity: string }>
+  }
+  schedule?: ScheduleEntry[]
+} {
+  const codeBlockMatch =
+    rawBuffer.match(/```json\s*([\s\S]*?)\s*```/i) ||
+    rawBuffer.match(/```\s*([\s\S]*?)\s*```/i)
+
+  const candidates = [
+    codeBlockMatch?.[1],
+    rawBuffer,
+    extractFirstJsonObject(rawBuffer)
+  ].filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+
+  let lastError: unknown = null
+  for (const candidate of candidates) {
+    const variants = [candidate, sanitizeJsonLikeString(candidate)]
+    for (const variant of variants) {
+      try {
+        return JSON.parse(variant) as {
+          recipes?: RecipeData[]
+          grocery_list?: Array<{ item: string; quantity: string }> | {
+            items: Array<{ item: string; quantity: string }>
+            seasonings: Array<{ item: string; quantity: string }>
+          }
+          schedule?: ScheduleEntry[]
+        }
+      } catch (error) {
+        lastError = error
+      }
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('Could not parse JSON payload from AI response')
 }
 
 function getScheduledDay(weekOf: string, index: number) {
@@ -246,6 +343,7 @@ export default function GeneratingView({
           mealSelection,
           mealPlanId,
           distinctRecipeCounts,
+          selectedSavedRecipeIds: surveySnapshot?.selected_saved_recipe_ids,
           fetchCandidatesOnly: true
         })
       })
@@ -449,7 +547,8 @@ export default function GeneratingView({
           mealSelection,
           mealPlanId,
           distinctRecipeCounts,
-          selectedSlots
+          selectedSlots,
+          selectedSavedRecipeIds: surveySnapshot?.selected_saved_recipe_ids
         })
       })
 
@@ -498,16 +597,7 @@ export default function GeneratingView({
         return
       }
 
-      const jsonMatch = buffer.match(/```json\n?([\s\S]*?)\n?```/) || buffer.match(/```\n?([\s\S]*?)\n?```/)
-      const jsonStr = jsonMatch ? jsonMatch[1] : buffer
-      const aiResponse = JSON.parse(jsonStr.trim()) as {
-        recipes?: RecipeData[]
-        grocery_list?: Array<{ item: string; quantity: string }> | {
-          items: Array<{ item: string; quantity: string }>
-          seasonings: Array<{ item: string; quantity: string }>
-        }
-        schedule?: ScheduleEntry[]
-      }
+      const aiResponse = parseAiJsonPayload(buffer)
 
       if (!Array.isArray(aiResponse.schedule)) {
         setError('Meal plan generation did not include schedule details. Please try again.')
@@ -525,6 +615,32 @@ export default function GeneratingView({
       if (!parsedRecipes.length) {
         setError('Meal plan generation did not include any recipes. Please try again.')
         return
+      }
+
+      const savedRecipeIds = [
+        ...(surveySnapshot?.selected_saved_recipe_ids?.breakfast ?? []),
+        ...(surveySnapshot?.selected_saved_recipe_ids?.lunch ?? []),
+        ...(surveySnapshot?.selected_saved_recipe_ids?.dinner ?? [])
+      ].map((id) => String(id))
+
+      if (savedRecipeIds.length > 0) {
+        const recipeIdsInOutput = new Set(
+          parsedRecipes
+            .map((recipe) => recipe.id || recipe.recipe_id)
+            .filter((id): id is string => typeof id === 'string' && id.length > 0)
+        )
+        const missingSavedRecipes = savedRecipeIds.filter((id) => !recipeIdsInOutput.has(id))
+        if (missingSavedRecipes.length > 0) {
+          setError('Generation failed: one or more selected saved recipes were replaced. Please retry.')
+          return
+        }
+
+        const scheduleRecipeIds = new Set(parsedSchedule.map((slot) => String(slot.recipeId)))
+        const unscheduledSavedRecipes = savedRecipeIds.filter((id) => !scheduleRecipeIds.has(id))
+        if (unscheduledSavedRecipes.length > 0) {
+          setError('Generation failed: selected saved recipes were not scheduled. Please retry.')
+          return
+        }
       }
 
       // Mark that streaming has started

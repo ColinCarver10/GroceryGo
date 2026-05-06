@@ -3,23 +3,35 @@ import { streamText } from 'ai'
 import { openai } from '@ai-sdk/openai'
 import { mealPlanFromSurveyPrompt } from '@/app/meal-plan-generate/prompts'
 import { REGULAR_MODEL } from '@/config/aiModels'
-import { logUnexpectedError, logValidationError, logApiError } from '@/utils/errorLogger'
+import { logUnexpectedError, logValidationError } from '@/utils/errorLogger'
 import {
   createMealPlanContext,
   fetchUserSurveyResponse,
   getMealPlanForUser,
   fetchCandidateRecipesForMealType,
   getEmbedPrompts,
-  fetchRecipeDetailsByIds
+  fetchRecipeDetailsByIds,
+  fetchSavedRecipeDetailsByIds
 } from '@/services/mealPlanService'
 import { assertWithinDailyAIQuota } from '@/app/actions/quota'
 import { isQuotaError } from '@/lib/quota'
+import {
+  mergeSelectedSavedWithAICandidates,
+  type SelectedSavedRecipeIds
+} from './candidateMerge'
+import {
+  buildProvidedRecipesPromptSection,
+  computeRemainingCounts,
+  normalizeSelectedSavedRecipeIds
+} from './promptContext'
 
 interface MealSelection {
   breakfast: number
   lunch: number
   dinner: number
 }
+
+type DistinctCounts = MealSelection
 
 /**
  * Map household size (Question 2) to servings per meal
@@ -47,6 +59,7 @@ export async function POST(request: NextRequest) {
       mealPlanId: string
       distinctRecipeCounts?: MealSelection
       selectedSlots?: Array<{ day: string; mealType: string }>
+      selectedSavedRecipeIds?: SelectedSavedRecipeIds
       fetchCandidatesOnly?: boolean
     }
 
@@ -115,11 +128,38 @@ export async function POST(request: NextRequest) {
         dinner: validatedMealSelection.dinner
       }
 
-    // Generate unique embedding prompts for each meal type based on distinct counts
+    const selectedSavedRecipeIds = parsed.selectedSavedRecipeIds
+      ?? (mealPlan.survey_snapshot?.selected_saved_recipe_ids as SelectedSavedRecipeIds | undefined)
+      ?? { breakfast: [], lunch: [], dinner: [] }
+
+    const selectedSavedIdsByType = normalizeSelectedSavedRecipeIds({
+      breakfast: selectedSavedRecipeIds.breakfast ?? [],
+      lunch: selectedSavedRecipeIds.lunch ?? [],
+      dinner: selectedSavedRecipeIds.dinner ?? []
+    })
+
+    const [selectedBreakfastRecipes, selectedLunchRecipes, selectedDinnerRecipes] = await Promise.all([
+      fetchSavedRecipeDetailsByIds(context, selectedSavedIdsByType.breakfast),
+      fetchSavedRecipeDetailsByIds(context, selectedSavedIdsByType.lunch),
+      fetchSavedRecipeDetailsByIds(context, selectedSavedIdsByType.dinner)
+    ])
+
+    const validSelectedSavedIds: SelectedSavedRecipeIds = {
+      breakfast: selectedBreakfastRecipes.map((recipe) => recipe.recipe_id),
+      lunch: selectedLunchRecipes.map((recipe) => recipe.recipe_id),
+      dinner: selectedDinnerRecipes.map((recipe) => recipe.recipe_id)
+    }
+
+    const remainingCounts: DistinctCounts = computeRemainingCounts(
+      distinctCounts,
+      validSelectedSavedIds
+    )
+
+    // Generate AI prompts only for remaining recipe counts
     const embedPrompts = await getEmbedPrompts(surveyData, {
-      breakfast: distinctCounts.breakfast,
-      lunch: distinctCounts.lunch,
-      dinner: distinctCounts.dinner
+      breakfast: remainingCounts.breakfast,
+      lunch: remainingCounts.lunch,
+      dinner: remainingCounts.dinner
     }) as { breakfast: string[]; lunch: string[]; dinner: string[] };
     
     // Fetch one recipe per prompt for each meal type
@@ -128,29 +168,69 @@ export async function POST(request: NextRequest) {
     const dinnerIDs: string[] = [];
 
     // Fetch breakfast recipes - one per prompt
-    for (const prompt of embedPrompts.breakfast) {
+    for (const prompt of embedPrompts.breakfast.slice(0, remainingCounts.breakfast)) {
       const ids = await fetchCandidateRecipesForMealType(prompt, context, 'breakfast', 1);
       breakfastIDs.push(...ids);
     }
 
     // Fetch lunch recipes - one per prompt
-    for (const prompt of embedPrompts.lunch) {
+    for (const prompt of embedPrompts.lunch.slice(0, remainingCounts.lunch)) {
       const ids = await fetchCandidateRecipesForMealType(prompt, context, 'lunch/dinner', 1);
       lunchIDs.push(...ids);
     }
 
     // Fetch dinner recipes - one per prompt
-    for (const prompt of embedPrompts.dinner) {
+    for (const prompt of embedPrompts.dinner.slice(0, remainingCounts.dinner)) {
       const ids = await fetchCandidateRecipesForMealType(prompt, context, 'lunch/dinner', 1);
       dinnerIDs.push(...ids);
     }
 
-    // Fetch full recipe details for each meal type
-    const [breakfastRecipes, lunchRecipes, dinnerRecipes] = await Promise.all([
-      fetchRecipeDetailsByIds(context, breakfastIDs),
-      fetchRecipeDetailsByIds(context, lunchIDs),
-      fetchRecipeDetailsByIds(context, dinnerIDs)
-    ]);
+    const aiCandidateIds = {
+      breakfast: breakfastIDs,
+      lunch: lunchIDs,
+      dinner: dinnerIDs
+    }
+
+    const mergedCandidateIds = mergeSelectedSavedWithAICandidates({
+      distinctCounts,
+      selectedSavedRecipeIds: validSelectedSavedIds,
+      aiCandidateIds
+    })
+
+    const aiOnlyIds = {
+      breakfast: mergedCandidateIds.breakfast.filter((id) => !validSelectedSavedIds.breakfast.includes(id)),
+      lunch: mergedCandidateIds.lunch.filter((id) => !validSelectedSavedIds.lunch.includes(id)),
+      dinner: mergedCandidateIds.dinner.filter((id) => !validSelectedSavedIds.dinner.includes(id))
+    }
+
+    const [breakfastAIRecipes, lunchAIRecipes, dinnerAIRecipes] = await Promise.all([
+      fetchRecipeDetailsByIds(context, aiOnlyIds.breakfast),
+      fetchRecipeDetailsByIds(context, aiOnlyIds.lunch),
+      fetchRecipeDetailsByIds(context, aiOnlyIds.dinner)
+    ])
+
+    const byId = <T extends { recipe_id: string }>(recipes: T[]) =>
+      new Map(recipes.map((recipe) => [recipe.recipe_id, recipe]))
+
+    const breakfastSavedMap = byId(selectedBreakfastRecipes)
+    const lunchSavedMap = byId(selectedLunchRecipes)
+    const dinnerSavedMap = byId(selectedDinnerRecipes)
+    const breakfastAIMap = byId(breakfastAIRecipes)
+    const lunchAIMap = byId(lunchAIRecipes)
+    const dinnerAIMap = byId(dinnerAIRecipes)
+
+    const assemble = (
+      orderedIds: string[],
+      savedMap: Map<string, Awaited<ReturnType<typeof fetchSavedRecipeDetailsByIds>>[number]>,
+      aiMap: Map<string, Awaited<ReturnType<typeof fetchRecipeDetailsByIds>>[number]>
+    ) =>
+      orderedIds
+        .map((id) => savedMap.get(id) ?? aiMap.get(id))
+        .filter((recipe): recipe is NonNullable<typeof recipe> => recipe != null)
+
+    const breakfastRecipes = assemble(mergedCandidateIds.breakfast, breakfastSavedMap, breakfastAIMap)
+    const lunchRecipes = assemble(mergedCandidateIds.lunch, lunchSavedMap, lunchAIMap)
+    const dinnerRecipes = assemble(mergedCandidateIds.dinner, dinnerSavedMap, dinnerAIMap)
 
     // If only fetching candidates, return them now
     if (fetchCandidatesOnly) {
@@ -232,20 +312,21 @@ export async function POST(request: NextRequest) {
     const priorities = (surveyJson as Record<string, unknown>)?.['11'] as string[] || []
     const requiresProtein = goals.includes('Eat healthier') || priorities[0] === 'Nutrition'
 
+    const providedRecipesSection = buildProvidedRecipesPromptSection({
+      distinctCounts,
+      breakfastRecipes,
+      lunchRecipes,
+      dinnerRecipes,
+      validSelectedSavedIds
+    })
+
     const enhancedPrompt = `${mealPlanFromSurveyPrompt(surveyData)}
 
 ### User Input:
 ${JSON.stringify(surveyData, null, 2)}
 ${ingredientPreferencesSection}
 
-### provided_recipes:
-You have been provided with exactly ONE recipe for each distinct meal type needed:
-- ${distinctCounts.breakfast} Breakfast recipe(s):
-${JSON.stringify(breakfastRecipes, null, 2)}
-- ${distinctCounts.lunch} Lunch recipe(s):
-${JSON.stringify(lunchRecipes, null, 2)}
-- ${distinctCounts.dinner} Dinner recipe(s):
-${JSON.stringify(dinnerRecipes, null, 2)}
+${providedRecipesSection}
 
 ### Meal Slots (authoritative: you MUST fill every one exactly once):
 ${slotListText}
@@ -271,10 +352,12 @@ You MUST MODIFY and use ALL provided recipes:
 - ${validatedMealSelection.dinner} Dinner slot(s)
 
 ### Critical modification rules
-1) You MUST modify ALL provided recipes to align with user goals. Do NOT use recipes as-is without modifications.
-2) If a provided recipe violates exclusions/restrictions (Question '13' - excluded ingredients, allergies Q7, dietary restrictions Q6), you MUST modify it to remove or replace those ingredients.
-3) Recipes may be reused across multiple slots by referencing the same recipeId in the schedule (after modification).
-4) When cost efficiency is a priority, MODIFY recipes to consolidate ingredients - use the same ingredients across multiple recipes to maximize reuse.
+1) Recipes with source="saved" are user-selected anchors. NEVER replace, remove, or swap them with different dishes. Only make minimal compliance edits if required (allergies, exclusions, dietary restrictions, unit corrections, serving scaling).
+2) If a provided recipe violates exclusions/restrictions (Question '13' - excluded ingredients, allergies Q7, dietary restrictions Q6), you MUST modify it to remove or replace those ingredients while preserving saved recipe identity.
+3) Recipes with source="ai_candidate" can be modified more freely to align with goals.
+4) Recipes may be reused across multiple slots by referencing the same recipeId in the schedule (after modification).
+5) When cost efficiency is a priority, MODIFY recipes to consolidate ingredients - use the same ingredients across multiple recipes to maximize reuse.
+6) Every recipe with source="saved" must appear in schedule at least once if there is a matching meal slot type.
 
 ### Household Size (Question 2) - Servings per Meal:
 Based on user's household size, set portionMultiplier for each schedule entry:
@@ -295,7 +378,7 @@ CRITICAL: When modifying recipes, you MUST adjust ingredient quantities to match
   (Example: if recipe-abc appears in 3 slots with multipliers ${servingsPerMeal},${servingsPerMeal},${servingsPerMeal} then servings must be ${servingsPerMeal * 3})
 
 ### Required process (follow exactly)
-1) MODIFY each provided recipe to align with user goals:
+1) MODIFY each provided recipe to align with user goals, while preserving all source="saved" recipe identity:
    ${requiresProtein ? '- For high protein goals: Add quality protein sources if missing' : ''}
    - For cost efficiency: Consolidate ingredients across ALL recipes (use same ingredients in multiple recipes)
    - Remove/replace excluded ingredients
@@ -316,7 +399,8 @@ CRITICAL: When modifying recipes, you MUST adjust ingredient quantities to match
    - Sum quantities for the same ingredient (e.g., if Recipe 1 has "2 cups eggs" and Recipe 2 has "1 cup eggs", grocery list should have "3 cups eggs")
    - DO NOT create duplicate entries for the same ingredient
 6) VALIDATE before returning (MANDATORY):
-   - ALL provided recipes are used and modified (one distinct modified recipe per provided recipe).
+   - ALL provided recipes are used (one distinct modified recipe per provided recipe).
+   - source="saved" recipes are preserved as the same dish identity and each appears at least once in schedule where feasible.
    - schedule length equals ${resolvedSlots.length} and covers every slot exactly once.
    - Every schedule entry references a valid recipe ID.
    - Every recipe.servings equals the total portions assigned to that recipe across schedule.
@@ -338,8 +422,10 @@ Return exactly the schema required above.`
 
       CRITICAL RULES:
       - Do NOT invent new recipes. Every recipe must be based on a provided_recipes entry, but you MUST modify them.
-      - You MUST modify ALL provided recipes to align with user goals (protein requirements, cost efficiency via ingredient consolidation, etc.).
+      - Recipes with source="saved" are user-selected anchors. NEVER replace, remove, or swap them; only minimal compliance edits are allowed.
+      - Recipes with source="ai_candidate" can be modified for goals (protein requirements, cost efficiency via ingredient consolidation, etc.).
       - Fill every requested slot exactly once in the schedule.
+      - Every source="saved" recipe must appear in schedule at least once where matching slot type exists.
       - recipes[].servings MUST equal the total portions assigned to that recipe across schedule (sum of portionMultiplier).
       - Follow measurement units strictly (NEVER "tbsp"; use "tbs" or "tb").
       - **INGREDIENT CONSOLIDATION IS MANDATORY**: Use consistent ingredient names across all recipes (e.g., always "eggs" not "egg", always "chicken breast" not variations). Grocery list must use the same names and consolidate quantities.

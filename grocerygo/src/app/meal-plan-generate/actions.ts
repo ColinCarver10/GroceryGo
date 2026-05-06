@@ -25,6 +25,12 @@ type MealSlot = {
   mealType: 'breakfast' | 'lunch' | 'dinner'
 }
 
+type SelectedSavedRecipeIds = {
+  breakfast: string[]
+  lunch: string[]
+  dinner: string[]
+}
+
 export type GenerateMealPlanSuccess = {
   success: true
   mealPlanId: string
@@ -32,6 +38,7 @@ export type GenerateMealPlanSuccess = {
   mealSelection: MealSelection
   distinctRecipeCounts: MealSelection
   selectedSlots: MealSlot[]
+  selectedSavedRecipeIds?: SelectedSavedRecipeIds
   replaced?: boolean
 }
 
@@ -58,7 +65,8 @@ export async function generateMealPlanFromPreferences(
   weekOf: string,
   mealSelection: MealSelection,
   distinctCounts: MealSelection,
-  selectedSlots: MealSlot[]
+  selectedSlots: MealSlot[],
+  selectedSavedRecipeIds?: SelectedSavedRecipeIds
 ): Promise<GenerateMealPlanResponse> {
   try {
     debugger
@@ -68,14 +76,16 @@ export async function generateMealPlanFromPreferences(
       weekOf,
       mealSelection,
       distinctCounts,
-      selectedSlots
+      selectedSlots,
+      selectedSavedRecipeIds
     )
   } catch (error: unknown) {
     logUnexpectedError('generateMealPlanFromPreferences', error, {
       weekOf,
       mealSelection,
       distinctCounts,
-      selectedSlots
+      selectedSlots,
+      selectedSavedRecipeIds
     })
     return {
       error: error instanceof Error ? error.message : 'Failed to generate meal plan'
@@ -88,7 +98,8 @@ export async function replaceExistingMealPlan(
   weekOf: string,
   mealSelection: MealSelection,
   distinctCounts: MealSelection,
-  selectedSlots: MealSlot[]
+  selectedSlots: MealSlot[],
+  selectedSavedRecipeIds?: SelectedSavedRecipeIds
 ): Promise<GenerateMealPlanResponse> {
   try {
     const context = await createMealPlanContext()
@@ -113,6 +124,7 @@ export async function replaceExistingMealPlan(
       mealSelection,
       distinctCounts,
       selectedSlots,
+      selectedSavedRecipeIds,
       true // skipConflictCheck = true
     )
 
@@ -124,7 +136,8 @@ export async function replaceExistingMealPlan(
       weekOf,
       mealSelection,
       distinctCounts,
-      selectedSlots
+      selectedSlots,
+      selectedSavedRecipeIds
     })
     return {
       error: error instanceof Error ? error.message : 'Failed to replace meal plan'
@@ -138,6 +151,7 @@ async function internalGenerateMealPlan(
   mealSelection: MealSelection,
   distinctCounts: MealSelection,
   selectedSlots: MealSlot[],
+  selectedSavedRecipeIds: SelectedSavedRecipeIds = { breakfast: [], lunch: [], dinner: [] },
   skipConflictCheck: boolean = false
 ): Promise<GenerateMealPlanResponse> {
   try {
@@ -176,7 +190,8 @@ async function internalGenerateMealPlan(
       ...surveyResponse,
       meal_selection: mealSelection,
       distinct_recipe_counts: distinctCounts,
-      selected_slots: selectedSlots
+      selected_slots: selectedSlots,
+      selected_saved_recipe_ids: selectedSavedRecipeIds
     }
 
     const mealPlan = await insertGeneratingMealPlan(context,
@@ -216,7 +231,8 @@ async function internalGenerateMealPlan(
       totalMeals,
       mealSelection,
       distinctRecipeCounts: distinctCounts,
-      selectedSlots
+      selectedSlots,
+      selectedSavedRecipeIds
     }
   } catch (error: unknown) {
     logUnexpectedError('internalGenerateMealPlan', error, {
@@ -224,6 +240,7 @@ async function internalGenerateMealPlan(
       mealSelection,
       distinctCounts,
       selectedSlots,
+      selectedSavedRecipeIds,
       skipConflictCheck
     }, context.user.id)
     return {

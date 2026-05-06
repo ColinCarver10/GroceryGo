@@ -24,6 +24,8 @@ export default function MealSlotCard({
   isReplacing = false
 }: MealSlotCardProps) {
   const { recipe } = mealPlanRecipe
+  const getRecipeKey = (mpr: MealPlanRecipe) => String(mpr.updated_recipe_id ?? mpr.recipe_id ?? '')
+  const currentRecipeKey = getRecipeKey(mealPlanRecipe)
   const isFavorite = favoriteRecipes.has(recipe.id)
   const mealType = mealPlanRecipe.meal_type
   const uniqueMealTypes = Array.from(
@@ -46,12 +48,12 @@ export default function MealSlotCard({
   const getPlannedDays = () => {
     if (!allMealPlanRecipes) return []
     
-    const currentRecipeId = String(mealPlanRecipe.recipe_id)
+    const currentRecipeId = currentRecipeKey
     const currentDate = mealPlanRecipe.planned_for_date
     
     // Count total occurrences of this recipe_id
     const totalOccurrences = allMealPlanRecipes.filter(
-      mpr => String(mpr.recipe_id) === currentRecipeId
+      mpr => getRecipeKey(mpr) === currentRecipeId
     ).length
     
     // Only show if recipe is used more than once
@@ -59,7 +61,7 @@ export default function MealSlotCard({
     
     // Get other slots with same recipe_id but different date
     const otherSlots = allMealPlanRecipes.filter(
-      mpr => String(mpr.recipe_id) === currentRecipeId && 
+      mpr => getRecipeKey(mpr) === currentRecipeId && 
              mpr.planned_for_date !== currentDate &&
              mpr.planned_for_date // must have a date
     )
@@ -89,7 +91,7 @@ export default function MealSlotCard({
 
   // Calculate total weekly servings when recipe is used multiple times
   const totalWeeklyServings = allMealPlanRecipes
-    ?.filter(mpr => String(mpr.recipe_id) === String(mealPlanRecipe.recipe_id))
+    ?.filter(mpr => getRecipeKey(mpr) === currentRecipeKey)
     .reduce((sum, mpr) => sum + (mpr.portion_multiplier ?? 1), 0) ?? 0
 
   const currentSlotServings = mealPlanRecipe.portion_multiplier ?? 1

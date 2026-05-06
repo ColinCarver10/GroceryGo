@@ -71,10 +71,45 @@ export async function saveGeneratedRecipes(
       }
     }
 
+    const snapshot = (mealPlan.survey_snapshot || {}) as Record<string, unknown>
+    const selectedSaved = snapshot.selected_saved_recipe_ids as
+      | { breakfast?: string[]; lunch?: string[]; dinner?: string[] }
+      | undefined
+
+    const lockedSavedRecipeIds = [
+      ...(selectedSaved?.breakfast ?? []),
+      ...(selectedSaved?.lunch ?? []),
+      ...(selectedSaved?.dinner ?? [])
+    ].map((id) => String(id))
+
+    if (lockedSavedRecipeIds.length > 0) {
+      const recipeIdsInPayload = new Set(
+        recipes
+          .map((recipe) => recipe.id)
+          .filter((id): id is string => typeof id === 'string' && id.length > 0)
+      )
+      const missingSavedRecipes = lockedSavedRecipeIds.filter((id) => !recipeIdsInPayload.has(id))
+      if (missingSavedRecipes.length > 0) {
+        return {
+          success: false,
+          error: 'Generation rejected: selected saved recipes were replaced before save.'
+        }
+      }
+
+      const scheduleRecipeIds = new Set(schedule.map((slot) => String(slot.recipeId)))
+      const unscheduledSavedRecipes = lockedSavedRecipeIds.filter((id) => !scheduleRecipeIds.has(id))
+      if (unscheduledSavedRecipes.length > 0) {
+        return {
+          success: false,
+          error: 'Generation rejected: selected saved recipes were not scheduled before save.'
+        }
+      }
+    }
+
     await persistGeneratedMealPlan(context, {
       mealPlan,
       recipes: recipes as RecipeInput[],
-      groceryList: groceryList as any, // Can be either array or nested structure
+      groceryList,
       schedule: schedule as ScheduleInput[]
     })
 

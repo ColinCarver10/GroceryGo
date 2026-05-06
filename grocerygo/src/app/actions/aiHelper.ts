@@ -56,7 +56,6 @@ export async function callOpenAIStructured<T extends z.ZodTypeAny>(
           strict: true
         }
       },
-      temperature: 0.7,
     })
 
     const response = completion.choices[0]?.message?.content
@@ -170,7 +169,6 @@ export async function callOpenAI<T>(
           content: userPrompt,
         },
       ],
-      temperature: 0.7,
     })
 
     const response = completion.choices[0]?.message?.content || ''

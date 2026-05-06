@@ -128,7 +128,7 @@ When modifying recipes, adjust flavors to match requested preferences (Savory/Sp
   }
   
   // Build validation checklist with conditional protein requirement
-  let validationChecklist = `### Validation Checklist (must satisfy before output):
+  const validationChecklist = `### Validation Checklist (must satisfy before output):
 1) schedule length === meal_slots length (every slot filled)
 2) Every schedule.recipeId exists in recipes[].id
 3) No excluded ingredients appear in any modified recipe
@@ -138,7 +138,7 @@ ${requiresProtein ? '6' : '5'}) Recipes are modified to align with user goals:
    - If cost efficiency/save money: ingredients are consolidated across recipes (same ingredients used in multiple recipes)
    ${requiresProtein ? '- If nutrition/eat healthier: quality protein sources are present in all recipes' : ''}
    - All other goals are addressed through modifications
-${requiresProtein ? '7' : '6'}) ALL provided recipes are used and modified (one distinct modified recipe per provided recipe)
+${requiresProtein ? '7' : '6'}) ALL provided recipes are used (one distinct modified recipe per provided recipe)
 ${requiresProtein ? '8' : '7'}) **INGREDIENT CONSOLIDATION VERIFIED:**
    - All recipes use consistent ingredient names (no variations like "egg" vs "eggs" or "chicken" vs "chicken breast")
    - Grocery list uses exact same ingredient names as recipes
@@ -156,7 +156,10 @@ You will be given:
    - Question '12' contains favored ingredients (Foods You Like)
    - Question '13' contains excluded ingredients (Foods You Dislike)
 4) meal_slots: an array of requested schedule slots (day + mealType) that MUST be filled
-5) provided_recipes: exactly ONE recipe for each distinct meal type (e.g., if there are 2 distinct breakfasts needed, you'll receive 2 breakfast recipes; if 2 distinct lunches, you'll receive 2 lunch recipes, etc.). You MUST modify and use ALL provided recipes.
+5) provided_recipes: exactly ONE recipe for each distinct meal type (e.g., if there are 2 distinct breakfasts needed, you'll receive 2 breakfast recipes; if 2 distinct lunches, you'll receive 2 lunch recipes, etc.). You MUST use ALL provided recipes.
+   - Each recipe may include source metadata:
+     - source: "saved" = user-selected saved recipe (anchor recipe)
+     - source: "ai_candidate" = AI-selected candidate recipe
 
 ### user_survey format example:
 {
@@ -175,6 +178,8 @@ You will be given:
 ### Your Task:
 Using the provided_recipes (one per distinct meal type):
 1) MODIFY each recipe to align with user goals and preferences:
+   - If source is "saved": preserve dish identity and name; only apply minimal compliance edits needed for restrictions/allergies/exclusions/serving scaling/valid units.
+   - If source is "ai_candidate": you may modify more freely for goals.
    ${requiresProtein ? '- For high protein goals: Ensure EVERY recipe includes a quality protein source. If a recipe lacks protein, ADD a quality protein source (e.g., chicken, fish, tofu, beans, eggs, Greek yogurt) that fits the dish.' : ''}
    - For cost efficiency goals: CONSOLIDATE ingredients across ALL recipes. Modify recipes to use the same ingredients where possible (e.g., if multiple recipes need vegetables, use the same vegetables; if multiple recipes need proteins, sometimes swap expensive protein source, but not always). This reduces grocery costs by maximizing ingredient reuse.
    - Adjust quantities, swap ingredients, or add/remove components as needed to meet goals
@@ -182,20 +187,23 @@ Using the provided_recipes (one per distinct meal type):
    - Ensure ingredients have valid quantities + units
    - Ensure steps are clear (4–10 steps)
 2) Schedule the modified recipes across ALL meal_slots (you may reuse the same modified recipe across multiple slots).
+   - Every recipe with source "saved" should appear at least once in schedule when a matching meal slot type exists.
 3) Produce:
    - recipes[] (all unique modified recipes, one per distinct meal type from provided_recipes)
    - schedule[] (one entry per requested meal slot)
    - grocery_list{} (consolidated totals with items and seasonings separated)
 
 ### Hard Rules (must follow):
-A) Do NOT invent new recipes. Every recipe MUST be based on a provided_recipes entry. You MUST modify ALL provided recipes to align with user goals.
+A) Do NOT invent new recipes. Every recipe MUST be based on a provided_recipes entry.
 B) Do NOT include any excluded ingredients (Question '13' - Foods You Dislike). If a provided recipe includes an excluded ingredient, you MUST remove or replace it.
 C) Respect dietary restrictions (Question 6) and allergies (Question 7). Modify recipes to comply with all restrictions.
 D) Fill EVERY meal slot in meal_slots with a schedule entry.
 E) schedule.recipeId MUST reference an id in recipes[].
 F) All recipes MUST include: id, name, mealType, servings, ingredients, steps.
 G) Follow Measurement Units rules exactly (no "tbsp"; use "tbs" or "tb").
-H) You MUST use ALL provided recipes. Each provided recipe becomes one distinct recipe in your output (modified to align with goals).
+H) You MUST use ALL provided recipes. Each provided recipe becomes one distinct recipe in your output.
+I) For recipes where source="saved", do NOT replace with a different dish. Preserve identity and only perform minimal compliance edits.
+J) NEVER remove a source="saved" recipe from the output recipes list or schedule mapping.
 
 ### Household Size (Question 2) - Servings per Meal:
 Based on user's household size from Question 2, set portionMultiplier for each schedule entry:
@@ -386,7 +394,7 @@ Rules for each phrase:
 
 You must return your response as a valid JSON object with exactly three fields: "breakfast", "lunch", and "dinner". Each field should contain a single string phrase.`;
 
-const embeddingPromptsUserPromptTemplate = (surveyData: any) => `${embeddingSentencePrompt}
+const embeddingPromptsUserPromptTemplate = (surveyData: unknown) => `${embeddingSentencePrompt}
 
 User Survey: ${JSON.stringify(surveyData, null, 2)}
 
@@ -432,7 +440,7 @@ Rules for each phrase:
 
 You must return your response as a valid JSON object with "breakfast", "lunch", and "dinner" fields. Each field should contain an array of strings (one string per prompt requested for that meal type).`;
 
-const multipleEmbedPromptsUserPromptTemplate = (surveyData: any, counts: { breakfast: number; lunch: number; dinner: number }, excludeRecipe?: { name?: string; ingredients?: Array<{ item: string }> }) => {
+const multipleEmbedPromptsUserPromptTemplate = (surveyData: unknown, counts: { breakfast: number; lunch: number; dinner: number }, excludeRecipe?: { name?: string; ingredients?: Array<{ item: string }> }) => {
   // Extract favored ingredients from survey data
   const surveyJson = surveyData ?? {};
   const favoredIngredients = Array.isArray((surveyJson as Record<string, unknown>)?.['12'])

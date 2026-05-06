@@ -181,6 +181,8 @@ export async function persistGeneratedMealPlan(
     throw new Error('No recipes provided to persist')
   }
 
+  const isNumericId = (id: string) => /^\d+$/.test(String(id).trim())
+
   // Validate that all recipes have IDs (from full_recipes_table)
   const recipesWithoutIds = recipes.filter((r) => !r.id)
   if (recipesWithoutIds.length > 0) {
@@ -189,45 +191,50 @@ export async function persistGeneratedMealPlan(
     )
   }
 
-  // Fetch existing recipes by ID to verify they exist and get their current data
+  // Split IDs by source table:
+  // - numeric IDs come from full_recipes_table.recipe_id
+  // - UUID IDs come from recipes.id (saved/imported/updated recipes)
   const recipeIds = recipes.map((r) => r.id!).filter(Boolean)
-  const { data: fetchedRecipes, error: fetchError } = await supabase
-    .from('full_recipes_table')
-    .select('recipe_id, name, times_used')
-    .in('recipe_id', recipeIds)
+  const numericRecipeIds = recipeIds.filter((id) => isNumericId(id))
+  const uuidRecipeIds = recipeIds.filter((id) => !isNumericId(id))
 
-  if (fetchError) {
-    throw new Error(
-      fetchError.message || 'Failed to fetch existing recipes'
-    )
-  }
-
-  if (!fetchedRecipes || fetchedRecipes.length === 0) {
-    throw new Error('No recipes found in database for the provided IDs')
-  }
-
-  const existingRecipes = fetchedRecipes as Array<{ recipe_id: string; name: string; times_used?: number }>
-  
-  // Verify all requested recipe IDs were found
-  const foundIds = new Set(fetchedRecipes.map((r) => r.recipe_id))
-
-  // Increment times_used for existing recipes
-  for (const recipe of existingRecipes) {
-    const currentTimesUsed = recipe.times_used ?? 0
-    const { error: updateError } = await supabase
+  // Fetch and update usage only for numeric parent recipes
+  const existingRecipes: Array<{ recipe_id: string; name: string; times_used?: number }> = []
+  if (numericRecipeIds.length > 0) {
+    const { data: fetchedRecipes, error: fetchError } = await supabase
       .from('full_recipes_table')
-      .update({ times_used: currentTimesUsed + 1 })
-      .eq('recipe_id', recipe.recipe_id)
+      .select('recipe_id, name, times_used')
+      .in('recipe_id', numericRecipeIds)
 
-    if (updateError) {
+    if (fetchError) {
       throw new Error(
-        updateError.message || `Failed to update times_used for recipe ${recipe.recipe_id}`
+        fetchError.message || 'Failed to fetch existing recipes'
       )
+    }
+
+    if (!fetchedRecipes || fetchedRecipes.length === 0) {
+      throw new Error('No parent recipes found in database for the provided numeric IDs')
+    }
+
+    existingRecipes.push(...(fetchedRecipes as Array<{ recipe_id: string; name: string; times_used?: number }>))
+
+    for (const recipe of existingRecipes) {
+      const currentTimesUsed = recipe.times_used ?? 0
+      const { error: updateError } = await supabase
+        .from('full_recipes_table')
+        .update({ times_used: currentTimesUsed + 1 })
+        .eq('recipe_id', recipe.recipe_id)
+
+      if (updateError) {
+        throw new Error(
+          updateError.message || `Failed to update times_used for recipe ${recipe.recipe_id}`
+        )
+      }
     }
   }
 
-  // Insert modified recipes into recipes table
-  const modifiedRecipeMap = new Map<string, string>() // parent_id (int4) -> modified_uuid
+  // Map source ID -> persisted UUID recipe ID for meal_plan_recipes.updated_recipe_id
+  const modifiedRecipeMap = new Map<string, string>()
   const recipeErrors: string[] = []
 
   for (const recipe of recipes) {
@@ -236,7 +243,14 @@ export async function persistGeneratedMealPlan(
       continue
     }
 
-    // Map RecipeInput to RecipeInsert format
+    // For UUID recipes (saved recipes), preserve existing recipe ID directly.
+    // Do not create a duplicate recipe row.
+    if (!isNumericId(recipe.id)) {
+      modifiedRecipeMap.set(recipe.id, recipe.id)
+      continue
+    }
+
+    // Map RecipeInput to RecipeInsert format for numeric parent recipes
     const recipeInsert: RecipeInsert = {
       name: recipe.name,
       ingredients: recipe.ingredients.map(ing => ({
@@ -291,9 +305,9 @@ export async function persistGeneratedMealPlan(
 
   const typedInsertedRecipes = existingRecipes as Array<{ recipe_id: string; name: string }>
 
-  const mealPlanRecipes: MealPlanRecipeInsert[] =
+  const mealPlanRecipes: Array<Record<string, unknown>> =
     schedule.length > 0
-      ? schedule.reduce<MealPlanRecipeInsert[]>((acc, slot, index) => {
+      ? schedule.reduce<Array<Record<string, unknown>>>((acc, slot) => {
 
           // Ensure portion_multiplier is always a valid integer
           let portionMultiplier = 1
@@ -308,8 +322,8 @@ export async function persistGeneratedMealPlan(
             }
           }
 
-          // Get parent recipe_id (int4) and modified recipe UUID
-          const parentRecipeId = parseInt(slot.recipeId)
+          // Get parent recipe_id (int4) when available, and updated recipe UUID
+          const parentRecipeId = isNumericId(slot.recipeId) ? parseInt(slot.recipeId, 10) : null
           const updatedRecipeId = modifiedRecipeMap.get(slot.recipeId)
 
           acc.push({
@@ -477,6 +491,58 @@ export interface FullRecipeDetails {
   description?: string
   ingredients: Array<{ item: string; quantity: string }>
   meal_type?: string
+}
+
+export async function fetchSavedRecipeDetailsByIds(
+  context: MealPlanContext,
+  recipeIds: string[]
+): Promise<FullRecipeDetails[]> {
+  const { supabase } = context
+
+  if (!recipeIds || recipeIds.length === 0) {
+    return []
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('recipes')
+      .select('id, name, steps, description, ingredients, meal_type, nutrition_info')
+      .in('id', recipeIds)
+
+    if (error) {
+      throw error
+    }
+
+    const mapped = (data ?? []).map((recipe) => {
+      const mealTypeValue = Array.isArray(recipe.meal_type)
+        ? (recipe.meal_type[0] ? String(recipe.meal_type[0]) : undefined)
+        : (recipe.meal_type ? String(recipe.meal_type) : undefined)
+
+      return {
+        recipe_id: String(recipe.id),
+        name: String(recipe.name),
+        steps: Array.isArray(recipe.steps) ? recipe.steps.map((step: unknown) => String(step)) : [],
+        description: recipe.description ? String(recipe.description) : undefined,
+        ingredients: Array.isArray(recipe.ingredients)
+          ? recipe.ingredients.map((ingredient: any) => ({
+              item: String(ingredient?.item ?? ''),
+              quantity: String(ingredient?.quantity ?? '')
+            }))
+          : [],
+        meal_type: mealTypeValue,
+        nutrition: recipe.nutrition_info
+      } as FullRecipeDetails
+    })
+
+    const order = new Map(recipeIds.map((id, index) => [id, index]))
+    return mapped.sort((a, b) => (order.get(a.recipe_id) ?? 0) - (order.get(b.recipe_id) ?? 0))
+  } catch (error) {
+    console.error('An error occurred while fetching saved recipe details:', { error, recipeIds })
+    throw new Error(
+      'CRITICAL: Failed to fetch saved recipe details. Meal plan generation aborted.',
+      { cause: error as Error }
+    )
+  }
 }
 
 export async function fetchRecipeDetailsByIds(
